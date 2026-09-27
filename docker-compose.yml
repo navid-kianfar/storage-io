@@ -1,0 +1,19 @@
+# Production-style deployment. Set the variables in a .env file next to this compose file.
+services:
+  storage-io:
+    build: .
+    image: storage-io:latest
+    restart: unless-stopped
+    ports:
+      - "${STORAGE_IO_PORT:-3000}:3000"
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?set ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET (>= 32 chars)}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - storage-io-data:/data
+volumes:
+  storage-io-data:

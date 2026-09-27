@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-*
+data/
+coverage/
+.DS_Store
+.turbo/
+*.log
+.vite/
