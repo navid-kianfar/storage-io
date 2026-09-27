@@ -1,0 +1,79 @@
+{
+  "overview": {
+    "title": "Overview",
+    "description": "Everything across your connected storage servers."
+  },
+  "welcome": {
+    "title": "Let's get your storage connected",
+    "description": "About two minutes. You can change everything later in Settings.",
+    "badge": "First-run setup",
+    "step": {
+      "connect": "Connect storage",
+      "verify": "Verify",
+      "preferences": "Preferences",
+      "done": "Done"
+    }
+  },
+  "servers": {
+    "title": "Servers",
+    "description": "Every storage endpoint storage-io manages."
+  },
+  "server": {
+    "title": "Server",
+    "description": "Health, capacity, buckets, users and connection settings."
+  },
+  "buckets": {
+    "title": "Buckets",
+    "description": "Every bucket across every connected server."
+  },
+  "bucket": {
+    "title": "Bucket settings",
+    "description": "Access, quota, versioning, lifecycle, replication, events and CORS."
+  },
+  "browse": {
+    "title": "Object browser",
+    "description": "Browse, upload, preview and act on objects."
+  },
+  "quotas": {
+    "title": "Quotas",
+    "description": "Bucket limits and how close each one is."
+  },
+  "jobs": {
+    "title": "Bulk jobs",
+    "description": "Copy, move, delete, tag and retention work running in the background."
+  },
+  "transfers": {
+    "title": "Transfers",
+    "description": "Uploads and downloads running in this browser."
+  },
+  "users": {
+    "title": "S3 users",
+    "description": "Users and groups on every server whose driver supports them."
+  },
+  "policies": {
+    "title": "Policies",
+    "description": "IAM policy documents, validation and simulation."
+  },
+  "keys": {
+    "title": "Access keys",
+    "description": "Keys, expiry and rotation across every server."
+  },
+  "activity": {
+    "title": "Activity log",
+    "description": "Every change, who made it and what happened."
+  },
+  "settings": {
+    "title": "Settings",
+    "description": "Profile, security, appearance, region, transfers, notifications and retention."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "That address does not match anything in storage-io.",
+    "backToOverview": "Back to overview"
+  },
+  "placeholder": {
+    "badge": "Not built yet",
+    "body": "This screen's route, breadcrumbs and shell are in place. The page itself is built in a later task.",
+    "kit": "Building blocks ready for it: {{components}}"
+  }
+}

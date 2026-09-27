@@ -1,0 +1,121 @@
+{
+  "provider": {
+    "minio": "MinIO",
+    "seaweedfs": "SeaweedFS",
+    "aws": "AWS S3",
+    "ceph": "Ceph RGW",
+    "garage": "Garage",
+    "r2": "Cloudflare R2",
+    "wasabi": "Wasabi",
+    "generic": "Other S3"
+  },
+  "serverStatus": {
+    "healthy": "Healthy",
+    "degraded": "Degraded",
+    "offline": "Offline",
+    "maintenance": "Maintenance",
+    "unknown": "Unknown"
+  },
+  "jobStatus": {
+    "queued": "Queued",
+    "scheduled": "Scheduled",
+    "running": "Running",
+    "paused": "Paused",
+    "completed": "Completed",
+    "completed_with_errors": "Completed with errors",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "jobType": {
+    "copy": "Copy objects",
+    "move": "Move objects",
+    "delete": "Delete objects",
+    "tag": "Apply tags",
+    "storage-class": "Change storage class",
+    "retention": "Set retention",
+    "restore-versions": "Restore versions",
+    "empty-bucket": "Empty bucket"
+  },
+  "keyStatus": {
+    "active": "Active",
+    "disabled": "Disabled",
+    "expired": "Expired",
+    "expiring": "Expiring"
+  },
+  "userStatus": {
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "unknown": "Unknown"
+  },
+  "versioning": {
+    "enabled": "Enabled",
+    "suspended": "Suspended",
+    "off": "Disabled"
+  },
+  "access": {
+    "private": "Private",
+    "public-read": "Public read",
+    "custom": "Custom"
+  },
+  "capability": {
+    "objects": "Buckets & objects",
+    "versioning": "Versioning",
+    "objectLock": "Object lock",
+    "lifecycle": "Lifecycle",
+    "cors": "CORS",
+    "bucketPolicy": "Bucket policy",
+    "tagging": "Tagging",
+    "replication": "Replication",
+    "notifications": "Event notifications",
+    "encryption": "Encryption",
+    "storageClasses": "Storage classes",
+    "iamUsers": "Users",
+    "iamGroups": "Groups",
+    "iamPolicies": "Policies",
+    "accessKeys": "Access keys",
+    "accessKeyExpiry": "Key expiry",
+    "bucketQuota": "Bucket quotas",
+    "usageStats": "Usage statistics",
+    "nodes": "Nodes & drives"
+  },
+  "capabilityState": {
+    "supported": "Supported",
+    "not_configured": "Not configured",
+    "not_supported": "Not supported"
+  },
+  "quotaMode": {
+    "hard": "Hard limit",
+    "alert": "Alert only"
+  },
+  "quotaSupport": {
+    "native": "Enforced by the server",
+    "alert-only": "Alert only",
+    "unavailable": "Unavailable"
+  },
+  "notificationLevel": {
+    "info": "Information",
+    "warning": "Warning",
+    "error": "Error"
+  },
+  "activityResult": {
+    "success": "Success",
+    "failure": "Failure",
+    "warning": "Warning"
+  },
+  "activityCategory": {
+    "objects": "Objects",
+    "buckets": "Buckets",
+    "access": "Access",
+    "servers": "Servers",
+    "jobs": "Jobs",
+    "system": "System",
+    "auth": "Authentication"
+  },
+  "unit": {
+    "objects": "objects",
+    "buckets": "buckets",
+    "servers": "servers",
+    "users": "users",
+    "keys": "keys"
+  }
+}

@@ -1,0 +1,5 @@
+dist
+coverage
+public/mockServiceWorker.js
+# Vendored by `shadcn add`; formatting them would churn on every regeneration.
+src/components/ui

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>storage-io</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!--
+      Pre-paint preferences. Runs before the first paint so there is never a flash
+      of the wrong theme, nor a LTR -> RTL jump. Keep the storage key and shape in
+      sync with src/stores/preferences.ts (STORAGE_KEY / PersistedPreferences).
+    -->
+    <script>
+      (function () {
+        var el = document.documentElement;
+        var prefs = {};
+        try {
+          prefs = JSON.parse(localStorage.getItem('sio.prefs') || '{}') || {};
+        } catch (e) {
+          prefs = {};
+        }
+        var query = new URLSearchParams(location.search);
+        var lang = query.get('lang') || prefs.language || 'en';
+        var theme = query.get('theme') || prefs.theme || 'system';
+        var density = prefs.density === 'compact' ? 'compact' : 'comfortable';
+        var dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        el.dataset.theme = dark ? 'dark' : 'light';
+        el.dataset.density = density;
+        el.lang = lang;
+        el.dir = lang === 'fa' || lang === 'ar' ? 'rtl' : 'ltr';
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

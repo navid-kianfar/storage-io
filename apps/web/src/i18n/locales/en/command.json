@@ -1,0 +1,41 @@
+{
+  "title": "Command palette",
+  "placeholder": "Type a command or search…",
+  "empty": "No results found.",
+  "group": {
+    "navigation": "Navigation",
+    "actions": "Actions",
+    "results": "Results",
+    "preferences": "Preferences"
+  },
+  "footer": {
+    "navigate": "navigate",
+    "select": "select",
+    "close": "close"
+  },
+  "action": {
+    "uploadFiles": "Upload files",
+    "createBucket": "Create bucket",
+    "addServer": "Add server",
+    "createAccessKey": "Create access key",
+    "createS3User": "Create S3 user",
+    "startBulkJob": "Start bulk job",
+    "shareLink": "Generate share link"
+  },
+  "preference": {
+    "toggleTheme": "Toggle theme",
+    "theme": "Theme: {{value}}",
+    "language": "Language: {{value}}",
+    "density": "Density: {{value}}"
+  },
+  "resultType": {
+    "server": "Server",
+    "bucket": "Bucket",
+    "user": "S3 user",
+    "key": "Access key",
+    "policy": "Policy",
+    "job": "Job"
+  },
+  "searching": "Searching…",
+  "searchHint": "Keep typing to search servers, buckets, users, keys, policies and jobs"
+}

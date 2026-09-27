@@ -1,0 +1,501 @@
+/* ==========================================================================
+   storage-io — design tokens, ported 1:1 from the approved concept
+   (design/concept/assets/css/global.css, section 0 "Refined" direction).
+
+   The concept deliberately used the shadcn/ui variable names, so this file is a
+   straight port: same names, same oklch values, light + dark. Tailwind v4 maps
+   them into the utility namespace through `@theme inline`, which is what makes
+   `bg-card`, `text-muted-foreground`, `border-border` resolve to these tokens.
+
+   Rules for everyone editing this file:
+   - Never hard-code a colour, radius or spacing value in a component. If a
+     token is missing, add it here (and to the concept) rather than inventing
+     a literal in one screen.
+   - Every directional rule uses logical properties, so RTL works for free.
+   ========================================================================== */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* Self-hosted fonts — the app runs on-premise and may be offline, so there is
+   no runtime CDN anywhere. Latin first, then the per-script faces. */
+@import '@fontsource-variable/geist/index.css';
+@import '@fontsource-variable/geist-mono/index.css';
+@import '@fontsource-variable/vazirmatn/index.css';
+@import '@fontsource/ibm-plex-sans-arabic/400.css';
+@import '@fontsource/ibm-plex-sans-arabic/500.css';
+@import '@fontsource/ibm-plex-sans-arabic/600.css';
+@import '@fontsource/ibm-plex-sans-arabic/700.css';
+
+/* The theme is a `data-theme` attribute on <html>, written before first paint by
+   the inline script in index.html. Tailwind's `dark:` variant follows it. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@custom-variant compact (&:where([data-density='compact'], [data-density='compact'] *));
+
+/* ---------- 0. Design tokens — light ---------- */
+:root {
+  --font-latin: 'Geist Variable';
+  --font-mono-latin: 'Geist Mono Variable';
+  --font-script: 'x-none';
+
+  --fs: 0.875rem;
+  --radius: 0.625rem;
+  --control-h: 2.25rem;
+  --row-h: 3rem;
+  --sidebar-w: 16rem;
+  --topbar-h: 3.5rem;
+  --content-pad-block-start: 2rem;
+  --content-pad-inline: 2rem;
+  --content-pad-block-end: 6rem;
+  --gap: 1rem;
+  --gap-lg: 1.75rem;
+  --card-pad: 1.25rem;
+  --h1: 1.625rem;
+  --kpi-fs: 1.75rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0.005 285.8);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.511 0.23 277);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0.001 286.4);
+  --secondary-foreground: oklch(0.21 0.006 285.9);
+  --muted: oklch(0.967 0.001 286.4);
+  --muted-foreground: oklch(0.552 0.016 285.9);
+  --accent: oklch(0.962 0.004 286.3);
+  --accent-foreground: oklch(0.21 0.006 285.9);
+  --destructive: oklch(0.577 0.245 27.3);
+  --destructive-foreground: oklch(0.5 0.2 27);
+  --success: oklch(0.62 0.16 152);
+  --success-foreground: oklch(0.45 0.13 152);
+  --warning: oklch(0.74 0.16 65);
+  --warning-foreground: oklch(0.52 0.14 55);
+  --info: oklch(0.6 0.16 245);
+  --info-foreground: oklch(0.48 0.15 250);
+  --border: oklch(0.922 0.004 286.3);
+  --input: oklch(0.9 0.005 286.3);
+  --ring: oklch(0.585 0.22 277);
+  --chart-1: oklch(0.585 0.22 277);
+  --chart-2: oklch(0.72 0.13 215);
+  --chart-3: oklch(0.7 0.15 160);
+  --chart-4: oklch(0.78 0.15 75);
+  --chart-5: oklch(0.66 0.2 350);
+  --sidebar: oklch(0.985 0.001 286);
+  --sidebar-foreground: oklch(0.25 0.006 285.9);
+  --sidebar-muted: oklch(0.56 0.014 285.9);
+  --sidebar-primary: oklch(0.511 0.23 277);
+  --sidebar-accent: oklch(0.955 0.003 286.3);
+  --sidebar-border: oklch(0.925 0.004 286.3);
+  --sidebar-active-bg: oklch(1 0 0);
+  --sidebar-active-fg: oklch(0.145 0.005 285.8);
+  --sidebar-accent-bg: oklch(1 0 0);
+  --table-head: oklch(0.985 0.001 286);
+  --input-bg: transparent;
+
+  /* shadcn's sidebar primitive also wants these three; the concept derives them. */
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent-foreground: var(--sidebar-active-fg);
+  --sidebar-ring: var(--ring);
+
+  /* Provider marks — the concept's brand colours, section 6. */
+  --provider-minio: oklch(0.58 0.21 22);
+  --provider-seaweedfs: oklch(0.6 0.14 150);
+  --provider-aws: oklch(0.7 0.17 60);
+  --provider-ceph: oklch(0.55 0.19 15);
+  --provider-garage: oklch(0.55 0.12 250);
+  --provider-r2: oklch(0.68 0.18 45);
+  --provider-wasabi: oklch(0.62 0.17 140);
+  --provider-generic: oklch(0.5 0.02 260);
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --shadow-concept-sm: 0 1px 2px oklch(0 0 0 / 0.05);
+  --shadow-concept-md: 0 4px 12px -2px oklch(0 0 0 / 0.08), 0 2px 4px -2px oklch(0 0 0 / 0.05);
+  --shadow-concept-lg: 0 12px 32px -8px oklch(0 0 0 / 0.18), 0 4px 8px -4px oklch(0 0 0 / 0.08);
+  --shadow-concept-xl: 0 24px 64px -12px oklch(0 0 0 / 0.35);
+
+  --font-sans:
+    var(--font-script), var(--font-latin), ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    sans-serif;
+  --font-mono: var(--font-mono-latin), ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* ---------- 0b. Design tokens — dark ---------- */
+[data-theme='dark'] {
+  color-scheme: dark;
+  --background: oklch(0.145 0.004 285.8);
+  --foreground: oklch(0.968 0.002 286);
+  --card: oklch(0.178 0.005 285.8);
+  --popover: oklch(0.2 0.006 285.8);
+  --primary: oklch(0.673 0.182 276.9);
+  --primary-foreground: oklch(0.16 0.02 277);
+  --secondary: oklch(0.26 0.006 286);
+  --secondary-foreground: oklch(0.968 0.002 286);
+  --muted: oklch(0.235 0.006 286);
+  --muted-foreground: oklch(0.71 0.012 286);
+  --accent: oklch(0.26 0.007 286);
+  --accent-foreground: oklch(0.968 0.002 286);
+  --destructive: oklch(0.66 0.2 22);
+  --destructive-foreground: oklch(0.76 0.15 22);
+  --success: oklch(0.7 0.16 152);
+  --success-foreground: oklch(0.8 0.14 152);
+  --warning: oklch(0.78 0.15 70);
+  --warning-foreground: oklch(0.84 0.13 75);
+  --info: oklch(0.7 0.14 240);
+  --info-foreground: oklch(0.8 0.11 240);
+  --border: oklch(1 0 0 / 0.09);
+  --input: oklch(1 0 0 / 0.14);
+  --ring: oklch(0.673 0.182 276.9);
+  --chart-1: oklch(0.673 0.182 276.9);
+  --chart-2: oklch(0.75 0.12 215);
+  --chart-3: oklch(0.74 0.15 160);
+  --sidebar: oklch(0.165 0.005 285.8);
+  --sidebar-foreground: oklch(0.9 0.004 286);
+  --sidebar-muted: oklch(0.62 0.012 286);
+  --sidebar-primary: oklch(0.72 0.16 277);
+  --sidebar-accent: oklch(0.23 0.006 286);
+  --sidebar-border: oklch(1 0 0 / 0.07);
+  --sidebar-active-bg: oklch(0.26 0.008 286);
+  --sidebar-active-fg: oklch(0.985 0 0);
+  --sidebar-accent-bg: oklch(0.2 0.006 286);
+  --table-head: oklch(0.19 0.005 286);
+  --input-bg: oklch(1 0 0 / 0.03);
+  --shadow-concept-lg: 0 12px 32px -8px oklch(0 0 0 / 0.6);
+}
+
+/* ---------- 0c. Density ---------- */
+:root[data-density='compact'] {
+  --control-h: 2rem;
+  --row-h: 2.5rem;
+  --card-pad: 1rem;
+  --content-pad-block-start: 1.25rem;
+  --content-pad-inline: 1.25rem;
+  --content-pad-block-end: 4rem;
+  --gap: 0.75rem;
+  --gap-lg: 1.25rem;
+  --h1: 1.5rem;
+  --kpi-fs: 1.5rem;
+}
+
+/* ---------- 1. Script-aware typography ---------- */
+:root:lang(fa) {
+  --font-script: 'Vazirmatn Variable';
+}
+:root:lang(ar) {
+  --font-script: 'IBM Plex Sans Arabic';
+}
+:root:lang(fa) *,
+:root:lang(ar) * {
+  letter-spacing: 0 !important;
+}
+
+/* ---------- 2. Tailwind theme mapping ---------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-bg: var(--input-bg);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent-bg: var(--sidebar-accent-bg);
+  --color-sidebar-active-bg: var(--sidebar-active-bg);
+  --color-sidebar-active-fg: var(--sidebar-active-fg);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-table-head: var(--table-head);
+
+  --color-provider-minio: var(--provider-minio);
+  --color-provider-seaweedfs: var(--provider-seaweedfs);
+  --color-provider-aws: var(--provider-aws);
+  --color-provider-ceph: var(--provider-ceph);
+  --color-provider-garage: var(--provider-garage);
+  --color-provider-r2: var(--provider-r2);
+  --color-provider-wasabi: var(--provider-wasabi);
+  --color-provider-generic: var(--provider-generic);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-xs: calc(var(--radius) - 6px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-xs: var(--shadow-concept-sm);
+  --shadow-sm: var(--shadow-concept-sm);
+  --shadow-md: var(--shadow-concept-md);
+  --shadow-lg: var(--shadow-concept-lg);
+  --shadow-xl: var(--shadow-concept-xl);
+
+  --spacing-control: var(--control-h);
+  --spacing-row: var(--row-h);
+  --spacing-sidebar: var(--sidebar-w);
+  --spacing-topbar: var(--topbar-h);
+  --spacing-card: var(--card-pad);
+  --spacing-gap: var(--gap);
+  --spacing-gap-lg: var(--gap-lg);
+
+  --text-h1: var(--h1);
+  --text-kpi: var(--kpi-fs);
+
+  --ease-concept: var(--ease);
+}
+
+/* ---------- 3. Base ---------- */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    min-height: 100dvh;
+    font-family: var(--font-sans);
+    font-size: var(--fs);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+  }
+
+  code,
+  kbd,
+  samp {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    unicode-bidi: isolate;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 25%, transparent);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+  }
+}
+
+/* ---------- 4. App utilities ----------
+   Deliberately few: everything a component can express with Tailwind utilities
+   does, and only the things Tailwind has no name for live here. */
+@utility num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Isolates a value that must always read left-to-right (an endpoint, a key ID,
+   a path) inside an RTL page. */
+@utility ltr-isolate {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+/* Mirrors a directional icon (arrow, chevron) when the document is RTL. */
+@utility flip-rtl {
+  &:where([dir='rtl'] *) {
+    transform: scaleX(-1);
+  }
+}
+
+@utility hero-glow {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 18rem;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(
+    60rem 14rem at 20% -4rem,
+    color-mix(in oklab, var(--primary) 9%, transparent),
+    transparent 70%
+  );
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Animated stripes on a meter that represents work in flight. */
+@utility meter-striped {
+  background-image: linear-gradient(
+    45deg,
+    oklch(1 0 0 / 0.18) 25%,
+    transparent 25% 50%,
+    oklch(1 0 0 / 0.18) 50% 75%,
+    transparent 75%
+  );
+  background-size: 12px 12px;
+  animation: sio-stripes 1s linear infinite;
+}
+
+@keyframes sio-stripes {
+  to {
+    background-position: 12px 0;
+  }
+}
+
+/* ---------- 5. Sheet: logical inline sides ----------
+   Radix positions a sheet with physical edges. The concept is logical-only, so
+   the two horizontal sides are expressed here instead: the edge and the slide
+   direction both follow `dir`, which is what makes the mobile sidebar enter from
+   the correct side in Persian and Arabic. `src/components/ui/sheet.tsx` maps its
+   `side="left" | "right"` onto these. */
+[data-slot='sheet-content'] {
+  --sheet-sign: 1;
+}
+[dir='rtl'] [data-slot='sheet-content'] {
+  --sheet-sign: -1;
+}
+
+.sheet-side-inline-end {
+  inset-block: 0;
+  inset-inline-end: 0;
+  height: 100%;
+  border-inline-start-width: 1px;
+}
+.sheet-side-inline-start {
+  inset-block: 0;
+  inset-inline-start: 0;
+  height: 100%;
+  border-inline-end-width: 1px;
+}
+.sheet-side-inline-end[data-state='open'] {
+  animation: sio-sheet-in-end 0.4s var(--ease) both;
+}
+.sheet-side-inline-end[data-state='closed'] {
+  animation: sio-sheet-out-end 0.25s var(--ease) both;
+}
+.sheet-side-inline-start[data-state='open'] {
+  animation: sio-sheet-in-start 0.4s var(--ease) both;
+}
+.sheet-side-inline-start[data-state='closed'] {
+  animation: sio-sheet-out-start 0.25s var(--ease) both;
+}
+
+@keyframes sio-sheet-in-end {
+  from {
+    transform: translateX(calc(var(--sheet-sign) * 100%));
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes sio-sheet-out-end {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateX(calc(var(--sheet-sign) * 100%));
+  }
+}
+@keyframes sio-sheet-in-start {
+  from {
+    transform: translateX(calc(var(--sheet-sign) * -100%));
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes sio-sheet-out-start {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateX(calc(var(--sheet-sign) * -100%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-side-inline-end,
+  .sheet-side-inline-start {
+    animation-duration: 1ms !important;
+  }
+}
+
+/* ---------- 6. CodeMirror, themed with the tokens ---------- */
+.cm-editor {
+  direction: ltr;
+  text-align: start;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  background: var(--muted);
+  color: var(--foreground);
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+.cm-editor .cm-scroller {
+  font-family: inherit;
+}
+.cm-editor .cm-gutters {
+  background: transparent;
+  border-inline-end: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+.cm-editor .cm-activeLine,
+.cm-editor .cm-activeLineGutter {
+  background: color-mix(in oklab, var(--primary) 7%, transparent);
+}
+.cm-editor .cm-selectionBackground,
+.cm-editor.cm-focused .cm-selectionBackground,
+.cm-editor ::selection {
+  background: color-mix(in oklab, var(--primary) 22%, transparent) !important;
+}
+.cm-editor .cm-cursor {
+  border-left-color: var(--foreground);
+}
+.cm-editor .cm-placeholder {
+  color: var(--muted-foreground);
+}

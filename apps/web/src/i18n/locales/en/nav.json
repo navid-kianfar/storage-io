@@ -1,0 +1,54 @@
+{
+  "group": {
+    "general": "General",
+    "storage": "Storage",
+    "access": "Access",
+    "system": "System"
+  },
+  "item": {
+    "overview": "Overview",
+    "servers": "Servers",
+    "buckets": "Buckets",
+    "browse": "Object browser",
+    "quotas": "Quotas",
+    "jobs": "Bulk jobs",
+    "transfers": "Transfers",
+    "users": "S3 users",
+    "policies": "Policies",
+    "keys": "Access keys",
+    "activity": "Activity log",
+    "settings": "Settings"
+  },
+  "topbar": {
+    "toggleSidebar": "Toggle sidebar",
+    "breadcrumb": "Breadcrumb",
+    "searchTrigger": "Search or run a command…",
+    "transfers": "Transfers",
+    "notifications": "Notifications",
+    "unreadCount": "{{count}} unread"
+  },
+  "sidebar": {
+    "label": "Main navigation",
+    "allServers": "All servers",
+    "connectedCount": "{{count}} connected",
+    "storageUsed": "Storage used",
+    "addServer": "Add server",
+    "manageServers": "Manage servers",
+    "accountAndSecurity": "Account & security",
+    "commandPalette": "Command palette",
+    "keyboardShortcuts": "Keyboard shortcuts",
+    "serverSwitcher": "Switch server"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "empty": "No notifications",
+    "viewActivity": "View activity log"
+  },
+  "transfers": {
+    "title": "Transfers",
+    "summary": "{{uploading}} uploading · {{downloading}} downloading",
+    "empty": "No transfers in progress",
+    "openManager": "Open transfer manager"
+  }
+}
