@@ -1268,8 +1268,15 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
         .expect(200);
       expect(single.body.items.map((user: { name: string }) => user.name)).toContain(SEAWEED_USER);
 
-      // One page big enough for every user the suite created on both servers:
-      // the default page (50) can end before the SeaweedFS rows begin.
+      // The aggregated list must contain every server that has users of its own.
+      // Whether MinIO has any at this point depends on what earlier blocks left
+      // behind (none in a fresh CI container), so compare against its own list
+      // rather than assuming. One large page: the default (50) can end early.
+      const minio = await harness
+        .http()
+        .get(`/api/v1/iam/users?serverId=${MINIO_SERVER}&pageSize=500`)
+        .set('Cookie', cookie)
+        .expect(200);
       const all = await harness
         .http()
         .get('/api/v1/iam/users?pageSize=500')
@@ -1279,7 +1286,8 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
         all.body.items.map((user: { serverName: string }) => user.serverName),
       );
       expect(servers.has(SEAWEED_SERVER)).toBe(true);
-      expect(servers.has(MINIO_SERVER)).toBe(true);
+      expect(servers.has(MINIO_SERVER)).toBe(minio.body.items.length > 0);
+      expect(all.body.total).toBe(single.body.total + minio.body.total);
       expect(all.body.unavailable).toEqual([]);
     });
 
