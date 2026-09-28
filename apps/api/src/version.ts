@@ -3,4 +3,4 @@
  * copies it next to dist/. A literal keeps `/health` from needing a filesystem
  * read on every call; bump it with the package version.
  */
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.1.1';
