@@ -2,7 +2,7 @@
 
 On-premise web console for many S3-compatible storage servers (MinIO, SeaweedFS, AWS S3, Ceph RGW, Garage, Cloudflare R2, Wasabi, generic S3). A single administrator manages servers, buckets, objects, S3/IAM users, policies, access keys, quotas, bulk jobs and transfers.
 
-The UI source of truth is the approved concept in `design/concept/` ("Refined" direction). Every screen, flow, dialog and state in it must exist in the real app. The only exception is two-factor authentication, which is dropped.
+The UI follows the "Refined" direction: zinc neutrals, a single indigo accent and Geist type, in light and dark themes with full RTL support.
 
 ## Monorepo (pnpm workspaces)
 
@@ -10,7 +10,6 @@ The UI source of truth is the approved concept in `design/concept/` ("Refined" d
 apps/api            NestJS REST API + SSE, SQLite, provider drivers, job engine
 apps/web            React 19 + Vite + TypeScript + Tailwind v4 + shadcn/ui
 packages/contracts  zod v4 schemas + inferred types for every request/response (shared by api and web)
-design/concept      approved static concept (reference only)
 docker/             docker-compose.dev.yml with MinIO + SeaweedFS for local dev and integration tests
 Dockerfile          single production image: api serves the built web app
 ```

@@ -25,7 +25,6 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/coverage/**',
       '**/drizzle/**',
-      'design/**',
       '**/*.d.ts',
       // Its own flat config; see the note above.
       'apps/web/**',

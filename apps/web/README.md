@@ -1,11 +1,11 @@
 # @storage-io/web
 
 The storage-io console: React 19 + Vite + TypeScript (strict) + Tailwind CSS v4 +
-shadcn/ui, reproducing the approved concept in `design/concept/` ("Refined").
+shadcn/ui, in the "Refined" design direction.
 
-This document is for the agents building the feature pages on top of this
-foundation. Read `docs/BUILD-RULES.md`, `docs/ARCHITECTURE.md` and `docs/API.md`
-first; this is the web app's own contract.
+This document is for anyone building pages on top of this foundation. Read
+`docs/ARCHITECTURE.md`, `docs/API.md` and `docs/ROUTES.md` first; this is the web
+app's own contract.
 
 ---
 

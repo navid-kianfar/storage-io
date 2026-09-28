@@ -4,7 +4,7 @@ NestJS REST API + SSE for storage-io. SQLite via Drizzle, provider drivers per
 storage backend, a single admin from the environment.
 
 Read first: `docs/ARCHITECTURE.md` (decisions), `docs/API.md` (the contract) and
-`docs/BUILD-RULES.md` (workspace etiquette). `packages/contracts` is the single
+`CONTRIBUTING.md` (workflow and conventions). `packages/contracts` is the single
 source of truth for every request and response shape; no DTO in this app restates
 a field.
 

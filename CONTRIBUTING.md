@@ -12,7 +12,7 @@ decisions, not a tour:
 | `docs/ARCHITECTURE.md` | Why the pieces are shaped this way                         |
 | `docs/API.md`          | The contract. Changing it changes `packages/contracts` too |
 | `docs/ROUTES.md`       | The web route map, and the two binding rules about URLs    |
-| `docs/BUILD-RULES.md`  | Workspace etiquette and the quality bar                    |
+| `docs/FEATURE-CHECKLIST.md` | Every user-facing feature the app ships               |
 | `apps/api/README.md`   | The API's module map and the traps worth knowing           |
 | `apps/web/README.md`   | The UI kit, the lint rules that are errors, and the layout |
 
@@ -63,13 +63,6 @@ page has something on it. It is idempotent: run it twice and nothing doubles.
 > The credentials in `docker/docker-compose.dev.yml` and in the seed script are
 > **development values**, fixed so the integration tests can find them. They must
 > never appear in a deployed environment.
-
-### The `pnpm` mutex you may see mentioned
-
-`docs/BUILD-RULES.md` asks for a lock file around every `pnpm install`. That rule
-exists because several automated agents work in this repo in parallel and two
-concurrent installs corrupt the store. **If you are a human with your own
-checkout, ignore it** — just run `pnpm install`.
 
 ---
 

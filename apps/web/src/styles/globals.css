@@ -1,6 +1,6 @@
 /* ==========================================================================
    storage-io — design tokens, ported 1:1 from the approved concept
-   (design/concept/assets/css/global.css, section 0 "Refined" direction).
+   (the "Refined" design direction).
 
    The concept deliberately used the shadcn/ui variable names, so this file is a
    straight port: same names, same oklch values, light + dark. Tailwind v4 maps

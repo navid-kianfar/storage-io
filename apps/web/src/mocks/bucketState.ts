@@ -23,7 +23,7 @@ import { bucketId } from './ids';
  * It is mutable on purpose: the point of `pnpm dev:mock` is to exercise the real
  * flows, and a create that does not appear in the list, or a lifecycle rule that
  * does not survive a save, exercises nothing. The data starts from the concept's
- * demo inventory so a screenshot lines up with `design/concept/`.
+ * demo inventory so every page has realistic content in mock mode.
  *
  * Not shipped: `src/mocks` only loads when `VITE_MOCK_API=1`.
  */
