@@ -14,3 +14,8 @@ Web ↔ real API (switch every `features/*/api.ts` from MSW to the live API, the
 - [ ] Server card "S3 users" uses `Server.counts.users`.
 
 End-to-end verification (the real API on :3000 + the MinIO and SeaweedFS containers). Walk docs/FEATURE-CHECKLIST.md item by item in the browser: 1440 and 375 widths, light/dark, and RTL.
+
+## Carried into final verification (not yet exercised live by integration pass 1)
+- [ ] Add/edit/test a server from the UI; upload a folder; image preview; rename; move; share link opened without a cookie; download ZIP; import from URL; bulk bucket quota/tags/lifecycle/access actions.
+- [ ] Rebuild and restart the API on :3000 before verifying (restore-version fallback for SeaweedFS landed after the running process started).
+- Harness tips: in the built-in browser a Combobox option needs a `hover` before `left_click`; the pane can show a stale frame after click-only interactions, so re-screenshot before concluding.

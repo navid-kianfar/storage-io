@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/command';
 import { Kbd } from '@/components/ui/kbd';
 import { Spinner } from '@/components/ui/spinner';
-import { useGlobalSearch, useServerList } from '@/features/shell/api';
+import { useGlobalSearch } from '@/features/shell/api';
 import type { DialogKey } from '@/lib/dialogs/registry';
 import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { LANGUAGES, THEMES, usePreferences, type Theme } from '@/stores/preferences';
@@ -165,7 +165,6 @@ function CommandPaletteBody({ onOpenChange }: { readonly onOpenChange: (open: bo
   const [term, setTerm] = useState('');
 
   const search = useGlobalSearch(term);
-  const servers = useServerList();
   const results = [...(search.data?.items ?? [])].sort(byTypeThenLabel);
 
   const run = (action: () => void) => {
@@ -181,23 +180,22 @@ function CommandPaletteBody({ onOpenChange }: { readonly onOpenChange: (open: bo
    * Reported to the lead. Every target below is derived from `type` and `id`,
    * which are stable, and typed against the real route tree.
    *
-   * `/servers/$server` and `/browse/$server/…` both accept an id or a name; the
-   * name is used when the switcher's already-loaded list has it, because that is
-   * what the operator sees in the address bar and in the breadcrumb.
+   * Route params carry ids, never names (docs/ROUTES.md rule 1). The bucket
+   * segment is still a name because `/browse/$server/$bucket/$` has no bucket id
+   * in it yet; the routing refactor replaces that route with
+   * `/buckets/$bucketId/browse/$` and this switch with it.
    */
   const openResult = (result: SearchResult): void => {
     const { serverId, name } = splitScopedId(result.id);
-    const found = (servers.data?.items ?? []).find((item) => item.id === serverId);
-    const serverSegment = found?.name ?? serverId;
 
     switch (result.type) {
       case 'server':
-        void navigate({ to: '/servers/$server', params: { server: result.label } });
+        void navigate({ to: '/servers/$server', params: { server: result.id } });
         return;
       case 'bucket':
         void navigate({
           to: '/browse/$server/$bucket/$',
-          params: { server: serverSegment, bucket: name, _splat: '' },
+          params: { server: serverId, bucket: name, _splat: '' },
         });
         return;
       case 'user':

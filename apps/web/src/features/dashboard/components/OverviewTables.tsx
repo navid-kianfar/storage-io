@@ -150,7 +150,7 @@ export function ServersOverviewTable({
         getRowId={(server) => server.id}
         loading={loading}
         onRowClick={(server) =>
-          void navigate({ to: '/servers/$server', params: { server: server.name } })
+          void navigate({ to: '/servers/$server', params: { server: server.id } })
         }
         emptyState={
           <EmptyState
@@ -313,7 +313,7 @@ export function LargestBucketsTable({
         onRowClick={(bucket) =>
           void navigate({
             to: '/buckets/$server/$bucket',
-            params: { server: bucket.serverName, bucket: bucket.name },
+            params: { server: bucket.serverId, bucket: bucket.name },
           })
         }
         emptyState={<EmptyState icon={DatabaseIcon} title={t('overview.buckets.emptyTitle')} />}

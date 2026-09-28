@@ -6,6 +6,7 @@ import {
   formatDuration,
   formatMilliseconds,
   formatPercent,
+  formatPerSecond,
   formatRelativeSeconds,
   intlLocale,
   type FormatOptions,
@@ -106,5 +107,26 @@ describe('intlLocale', () => {
     expect(intlLocale('fa', { ...region, calendar: 'gregory', digits: 'latn' })).toBe(
       'fa-u-ca-gregory-nu-latn',
     );
+  });
+});
+
+/**
+ * Traffic rates span four orders of magnitude between an idle server and a busy
+ * one, so a fixed number of fraction digits either rounds an idle server to a
+ * flat zero or fills a busy one's axis with noise.
+ */
+describe('formatPerSecond', () => {
+  it('keeps two fraction digits for a rate below ten', () => {
+    expect(formatPerSecond(0.0333, options())).toBe('0.03/s');
+    expect(formatPerSecond(9.876, options())).toBe('9.88/s');
+  });
+
+  it('rounds to whole units from ten upward, with a thousands separator', () => {
+    expect(formatPerSecond(93.6, options())).toBe('94/s');
+    expect(formatPerSecond(1840.4, options())).toBe('1,840/s');
+  });
+
+  it('shows an exact zero rather than "0.00"', () => {
+    expect(formatPerSecond(0, options())).toBe('0/s');
   });
 });

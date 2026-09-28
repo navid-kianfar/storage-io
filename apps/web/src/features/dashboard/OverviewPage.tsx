@@ -290,7 +290,7 @@ function IncidentBanner({
           {tCommon('action.retry')}
         </Button>
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/servers/$server" params={{ server: incident.serverName }}>
+          <Link to="/servers/$server" params={{ server: incident.serverId }}>
             {tCommon('action.details')}
             <ArrowRightIcon className="flip-rtl" />
           </Link>

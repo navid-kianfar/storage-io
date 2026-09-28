@@ -24,9 +24,10 @@ const INVALIDATIONS: Readonly<Record<SseEventName, readonly QueryKey[]>> = {
   // The activity scope goes stale on a notification too: every event the API
   // notifies about (a server going offline, a quota crossed, a key expiring) is
   // also written to the activity log, so the log is live for those without a poll.
-  // There is no dedicated `activity.*` event in the contract — anything the API
-  // records without notifying still needs a refresh to appear.
   notification: [queryKeys.notifications.all, queryKeys.activity.all],
+  // Every row written to the trail, notified or not. The dashboard carries the
+  // six most recent of them in `activity`, so its card is live as well.
+  'activity.created': [queryKeys.activity.all, queryKeys.dashboard.all],
   'inventory.updated': [
     queryKeys.buckets.all,
     queryKeys.quotas.all,

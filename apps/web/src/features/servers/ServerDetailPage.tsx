@@ -306,7 +306,11 @@ export function ServerDetailPage() {
           <OverviewKpis server={current} capacityTrend={capacityTrendOf(metrics.data)} />
 
           <div className="grid gap-(--gap) xl:grid-cols-3">
-            <div className="xl:col-span-2">
+            {/* `min-w-0`: a grid track is min-content-sized by default, so the
+                nodes table's six columns widened this one past the viewport and
+                the whole page scrolled sideways at 375px instead of the table
+                scrolling inside its own container. */}
+            <div className="min-w-0 xl:col-span-2">
               <ServerNodesCard serverId={current.id} capability={current.capabilities.nodes} />
             </div>
             <ServerHealthCard

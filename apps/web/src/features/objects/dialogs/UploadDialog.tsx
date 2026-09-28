@@ -14,11 +14,11 @@ import {
 } from '@/components/app/Dialog';
 import { FileDropzone, type DroppedFile } from '@/components/app/FileDropzone';
 import { Input } from '@/components/app/Input';
-import { Label } from '@/components/app/Label';
+import { FormField } from '@/components/app/FormField';
 import { OptionRow } from '@/components/app/FormRow';
 import { Switch } from '@/components/app/Switch';
 import { TagEditor } from '@/components/app/TagEditor';
-import { useBucketDetail, useBucketQuota } from '@/features/buckets/api';
+import { useBucketDetail, useBucketQuota, useBuckets } from '@/features/buckets/api';
 import { useServerList } from '@/features/shell/api';
 import { enqueueUploads } from '@/features/transfers/engine';
 import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
@@ -48,7 +48,6 @@ function UploadDialog({ params, onClose }: DialogProps) {
 
   const serverParam = params.server ?? '';
   const bucketParam = params.bucket ?? '';
-  const prefixId = 'upload-prefix';
 
   const servers = useServerList();
   const [serverId, setServerId] = useState<string | null>(serverParam === '' ? null : serverParam);
@@ -87,6 +86,14 @@ function UploadDialog({ params, onClose }: DialogProps) {
         disabled: server.status === 'offline',
       })),
     [servers.data],
+  );
+  const serverBuckets = useBuckets({ serverId: serverId ?? undefined, sort: 'name', page: 1, pageSize: 500 });
+  const bucketOptions = useMemo(
+    () =>
+      serverId === null
+        ? []
+        : (serverBuckets.data?.items ?? []).map((item) => ({ value: item.name, label: item.name })),
+    [serverId, serverBuckets.data],
   );
 
   const serverName =
@@ -138,26 +145,33 @@ function UploadDialog({ params, onClose }: DialogProps) {
         </DialogHeader>
 
         {bucketParam === '' ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{t('browse.copy.server')}</span>
-              <Combobox
-                options={serverOptions}
-                value={serverId}
-                onValueChange={setServerId}
-                placeholder={tCommon('form.comboboxPlaceholder')}
-                aria-label={t('browse.copy.server')}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="upload-bucket">{t('browse.copy.bucket')}</Label>
-              <Input
-                id="upload-bucket"
-                value={bucket}
-                onChange={(event) => setBucket(event.target.value)}
-                className="ltr-isolate font-mono"
-              />
-            </div>
+          <div className="grid items-start gap-4 sm:grid-cols-2">
+            <FormField label={t('browse.copy.server')}>
+              {({ id }) => (
+                <Combobox
+                  id={id}
+                  options={serverOptions}
+                  value={serverId}
+                  onValueChange={(value) => {
+                    setServerId(value);
+                    setBucket('');
+                  }}
+                  placeholder={tCommon('form.comboboxPlaceholder')}
+                />
+              )}
+            </FormField>
+            <FormField label={t('browse.copy.bucket')}>
+              {({ id }) => (
+                <Combobox
+                  id={id}
+                  options={bucketOptions}
+                  value={bucket === '' ? null : bucket}
+                  onValueChange={(value) => setBucket(value ?? '')}
+                  placeholder={tCommon('form.comboboxPlaceholder')}
+                  disabled={serverId === null}
+                />
+              )}
+            </FormField>
           </div>
         ) : null}
 
@@ -168,28 +182,30 @@ function UploadDialog({ params, onClose }: DialogProps) {
           multiple
         />
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={prefixId}>{t('browse.upload.prefix')}</Label>
-            <Input
-              id={prefixId}
-              value={prefix}
-              onChange={(event) => setPrefix(event.target.value)}
-              placeholder="2026/09/"
-              className="ltr-isolate font-mono"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">{t('browse.upload.storageClass')}</span>
-            <Combobox
-              options={STORAGE_CLASSES.map((name) => ({ value: name, label: name }))}
-              value={storageClass}
-              onValueChange={setStorageClass}
-              placeholder={detail.data?.defaultStorageClass ?? 'STANDARD'}
-              clearable
-              aria-label={t('browse.upload.storageClass')}
-            />
-          </div>
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          <FormField label={t('browse.upload.prefix')}>
+            {({ id }) => (
+              <Input
+                id={id}
+                value={prefix}
+                onChange={(event) => setPrefix(event.target.value)}
+                placeholder="2026/09/"
+                className="ltr-isolate font-mono"
+              />
+            )}
+          </FormField>
+          <FormField label={t('browse.upload.storageClass')}>
+            {({ id }) => (
+              <Combobox
+                id={id}
+                options={STORAGE_CLASSES.map((name) => ({ value: name, label: name }))}
+                value={storageClass}
+                onValueChange={setStorageClass}
+                placeholder={detail.data?.defaultStorageClass ?? 'STANDARD'}
+                clearable
+              />
+            )}
+          </FormField>
         </div>
 
         <div className="rounded-lg border px-(--card-pad)">

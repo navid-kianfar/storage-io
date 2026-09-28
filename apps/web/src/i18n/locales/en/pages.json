@@ -135,7 +135,8 @@
     },
     "done": {
       "title": "You're all set",
-      "body": "{{name}} is connected with {{count}} buckets. Add more servers any time from the sidebar.",
+      "body_one": "{{name}} is connected with {{count}} bucket. Add more servers any time from the sidebar.",
+      "body_other": "{{name}} is connected with {{count}} buckets. Add more servers any time from the sidebar.",
       "generic": "Your server is connected. Add more any time from the sidebar.",
       "addAnother": "Add another server",
       "browse": "Browse objects",
