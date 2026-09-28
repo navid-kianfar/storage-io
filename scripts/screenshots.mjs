@@ -212,8 +212,8 @@ async function newContext(browser, { viewport = DESKTOP, language = 'en', theme 
 async function signIn(page) {
   await page.goto(`${CONFIG.web}/login`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await settle(page);
-  await page.fill('#username', CONFIG.username);
-  await page.fill('#password', CONFIG.password);
+  await page.fill('input[autocomplete="username"]', CONFIG.username);
+  await page.fill('input[autocomplete="current-password"]', CONFIG.password);
   await Promise.all([
     page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 }),
     page.click('form button[type="submit"]'),

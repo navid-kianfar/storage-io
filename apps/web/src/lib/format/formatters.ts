@@ -92,8 +92,11 @@ export function formatBytes(value: number, options: FormatOptions): string {
   const scaled = sign * (magnitude / step ** index);
   const maximumFractionDigits = index > 0 && Math.abs(scaled) < ONE_DECIMAL_BELOW ? 1 : 0;
 
-  if (binary) {
+  // Below one kilobyte Intl's `byte` unit spells the word out ("374 byte"),
+  // unlike every larger unit ("2.5 MB"); use the same "B" suffix both systems share.
+  if (binary || index === 0) {
     const number = new Intl.NumberFormat(locale, { maximumFractionDigits }).format(scaled);
+    if (index === 0) return `${number} B`;
     return `${number} ${BINARY_SUFFIXES[index] ?? BINARY_SUFFIXES[MAX_UNIT_INDEX]}`;
   }
 

@@ -30,8 +30,8 @@ const MIB = KIB * 1024;
 
 describe('formatBytes', () => {
   it('uses Intl byte units in decimal mode', () => {
-    expect(formatBytes(0, decimal)).toBe('0 byte');
-    expect(formatBytes(940, decimal)).toBe('940 byte');
+    expect(formatBytes(0, decimal)).toBe('0 B');
+    expect(formatBytes(940, decimal)).toBe('940 B');
     expect(formatBytes(1.5 * MB, decimal)).toBe('1.5 MB');
     expect(formatBytes(18.4 * TB, decimal)).toBe('18.4 TB');
   });
