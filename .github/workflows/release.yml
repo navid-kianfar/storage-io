@@ -56,76 +56,123 @@ jobs:
           fi
           echo "version $pkg"
 
-  image:
-    name: multi-arch image → Docker Hub
-    runs-on: ubuntu-latest
+  # One native runner per platform (no QEMU): each pushes its image by digest,
+  # then `image` stitches the digests into one multi-arch manifest list.
+  build:
+    name: image (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     needs: verify
-    timeout-minutes: 60
-    outputs:
-      version: ${{ steps.version.outputs.version }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
+      - name: Platform pair
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
-
-      - id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      # linux/arm64 is emulated on an amd64 runner. better-sqlite3 ships an
-      # arm64 prebuild, so the slow part is the JS build, not a native compile.
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
       - uses: docker/setup-buildx-action@v3
 
-      # Repository secrets, exactly these names. DOCKER_PASSWORD should be a
-      # Docker Hub *access token* scoped to read/write, not the account
-      # password — a token can be revoked without changing the login.
+      # Repository secrets on this repo, same names as the other kianfar images.
+      # DOCKERHUB_TOKEN should be a Docker Hub access token with read/write scope.
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          # `latest` is decided here rather than by flavor=latest=auto, so a
-          # pre-release tag (v0.2.0-rc.1) never becomes the default pull.
+          labels: |
+            org.opencontainers.image.title=storage-io
+            org.opencontainers.image.description=Self-hosted web console for S3-compatible object storage (MinIO, SeaweedFS, AWS S3, Ceph RGW, Garage, R2, Wasabi).
+            org.opencontainers.image.source=https://github.com/navid-kianfar/storage-io
+            org.opencontainers.image.url=https://github.com/navid-kianfar/storage-io
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  image:
+    name: multi-arch manifest → Docker Hub
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # `latest` is requested explicitly: `latest=auto` does not fire on a tag
+      # event, and pre-release tags (v0.2.0-rc.1) must never become the default.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
-          labels: |
-            org.opencontainers.image.title=storage-io
-            org.opencontainers.image.description=Self-hosted web console for S3-compatible object storage (MinIO, SeaweedFS, Ceph RGW, Garage, AWS S3).
-            org.opencontainers.image.source=https://github.com/navid-kianfar/storage-io
-            org.opencontainers.image.url=https://github.com/navid-kianfar/storage-io
-            org.opencontainers.image.licenses=MIT
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: ${{ steps.meta.outputs.annotations }}
-          provenance: mode=max
-          sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create and push the manifest list
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
 
-      # Non-fatal on purpose: updating the repository description needs a Docker
-      # Hub token with more than push scope, and a release must not fail because
-      # the blurb did not sync.
+      - name: Inspect
+        run: docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+
+      # Non-fatal on purpose: updating the repository description needs a token
+      # with more than push scope, and a release must not fail over the blurb.
       - name: Sync the Docker Hub description
         uses: peter-evans/dockerhub-description@v4
         continue-on-error: true
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.IMAGE }}
           short-description: 'One console for all your S3-compatible storage (MinIO, SeaweedFS, AWS S3, Ceph, Garage, R2, Wasabi).'
           readme-filepath: ./README.md
