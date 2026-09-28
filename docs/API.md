@@ -41,7 +41,8 @@ type Capability =
   | 'accessKeyExpiry'
   | 'bucketQuota'
   | 'usageStats'
-  | 'nodes';
+  | 'nodes'
+  | 'traffic';
 type CapabilityState = 'supported' | 'not_configured' | 'not_supported';
 
 interface Server {
@@ -141,7 +142,7 @@ interface CheckResult {
 | POST   | `/servers/:id/check`       | —                                                                                                                    | `Server` (runs a health check now)                                                                                                                                                                                            |
 | POST   | `/servers/check-all`       | —                                                                                                                    | 202                                                                                                                                                                                                                           |
 | PUT    | `/servers/:id/maintenance` | `{ enabled }`                                                                                                        | `Server`                                                                                                                                                                                                                      |
-| GET    | `/servers/:id/metrics`     | `?range=24h\|7d\|30d`                                                                                                | `{ capacity: [{ t, usedBytes, totalBytes }], latency: [{ t, ms }], uptime: number }`                                                                                                                                          |
+| GET    | `/servers/:id/metrics`     | `?range=24h\|7d\|30d`                                                                                                | `{ capacity: [{ t, usedBytes, totalBytes }], latency: [{ t, ms }], uptime: number, traffic: [{ t, requestsPerSec, errorsPerSec, rxBytesPerSec, txBytesPerSec }] \| null }`                                                    |
 | GET    | `/servers/:id/nodes`       | —                                                                                                                    | `{ items: [{ name, endpoint, state: 'online'\|'offline'\|'degraded', drivesOnline, drivesTotal, uptimeSec, cpu: number\|null, mem: number\|null, usedBytes, totalBytes }] }` (`NOT_SUPPORTED` when the capability is missing) |
 | GET    | `/servers/:id/events`      | `?limit`                                                                                                             | `{ items: [{ at, kind: 'up'\|'down'\|'degraded'\|'latency'\|'check', detail }] }`                                                                                                                                             |
 
@@ -383,7 +384,13 @@ interface Job {
   name;
   type: JobType;
   status: JobStatus;
-  source: { serverId; serverName; bucket; filters: JobFilters };
+  source: {
+    serverId;
+    serverName;
+    bucket;
+    filters: JobFilters;
+    keyCount: number | null;
+  };
   target: { serverId; serverName; bucket; prefix } | null;
   params: {
     tags?;
@@ -420,6 +427,7 @@ interface Job {
   startedAt;
   finishedAt;
   waitingFor: string | null; /* e.g. "ceph-lab offline" */
+  parentId: string | null; /* set on each run of a recurring job */
 }
 ```
 
@@ -581,3 +589,146 @@ Behaviour a caller can observe that the tables above do not spell out:
 - `POST …/objects/batch` applies its keys sequentially: it runs while an operator waits, and a thousand parallel requests at one bucket is how the console becomes the reason the storage server is slow.
 - A part upload is not written to the activity log — a large upload is thousands of them. The start, the completion and the abort are.
 - `GET …/objects/archive-entries` never downloads a whole object. A ZIP costs two or three ranged reads whatever its size; a tar has no index, so it is read from the start and reports `truncated` once its budget is spent.
+
+## Implementation notes (backend wave 2c)
+
+Behaviour a caller can observe that the tables above do not spell out.
+
+### Traffic metrics (contract change)
+
+- `GET /servers/:id/metrics` gained `traffic`. It is an **array of per-second
+  rates** derived from the provider's cumulative counters, sampled with the health
+  check and stored in `metrics_traffic`.
+- `traffic: null` means "this server has no traffic data": the provider has no
+  metrics endpoint (capability `traffic: 'not_supported'`), or it has never been
+  sampled. An **empty array** means "it has data, none in this range" — the
+  difference matters, because an empty series draws as a flat line at zero requests
+  per second and `null` draws as "not available".
+- Only MinIO reports it today, from `/minio/v2/metrics/cluster`, authenticated with
+  the same JWT `mc admin prometheus generate` produces (HS512 over the secret key;
+  claims `exp`, `sub`, `iss: "prometheus"`). The new `traffic` capability is
+  `supported` when the admin surface answered, `not_configured` when it did not, and
+  `not_supported` for every other provider.
+- The first sample of a series, and any sample where a counter went backwards (the
+  storage server restarted), is stored with null rates and is absent from the
+  series. So a restart costs one point, not a spike.
+
+### Jobs
+
+- **Views.** `active` is `queued|running|paused`, `scheduled` is `scheduled`,
+  `history` is the four terminal statuses. `counts` always describes all three
+  whatever `?view=` asked for.
+- **A cron schedule never runs itself.** It stays `scheduled` and produces a child
+  `Job` per fire, with `parentId` set; `GET /jobs/:id/runs` is that history. An `at`
+  schedule _is_ the run: it goes `scheduled → queued` when its time comes.
+- **A missed schedule fires once**, not once per missed interval, and `nextRunAt` is
+  recomputed from now. A schedule whose previous run has not finished is skipped
+  with a line in the parent's log.
+- **`POST /jobs/:id/run-now`**: on a schedule it creates and returns a child run and
+  leaves `nextRunAt` alone; on a finished job it resets that row (counters,
+  checkpoint and **log** cleared) back to `queued`; on a paused job it resumes.
+- **`DELETE /jobs/:id` answers 409 `CONFLICT` while the job is running.** Cancel it
+  first — deleting the row from under the engine is the alternative.
+- **`concurrency` changes live.** A PATCH takes effect on the running job's next
+  page. Raising it applies as soon as a worker frees up; lowering it does not
+  interrupt transfers already in flight.
+- **`progress.total`** is the estimate taken when the run starts, and is `null` when
+  the time-boxed listing did not finish — a progress bar against a number known to
+  be too small is worse than no bar. `objectsPerSec`, `bytesPerSec` and `etaSeconds`
+  are averaged over a 15-second window and are zero/null once the job ends.
+- **`waitingFor`** carries `"<server> offline"` for a queued job whose source or
+  target is unreachable or in maintenance; the engine starts it by itself once the
+  health checker sees the server again. A server that goes offline mid-run puts the
+  job back to `queued` with the same text rather than failing it.
+- **Resume is exact to one page.** Progress and the listing's continuation token are
+  written together at the end of each page, so a restart or a pause replays at most
+  one page. A job the process died inside is requeued at boot.
+- **A dry run reports what the filters matched** — `processed` and `bytes` — and
+  changes nothing. It deliberately does not probe the destination for conflicts, so
+  `skipped` is 0 on a dry run even where a real run would skip.
+- **`empty-bucket` and `restore-versions` always walk versions**, whatever
+  `params.includeVersions` says: deleting only current versions leaves a versioned
+  bucket full, and a delete marker is the only thing a restore acts on.
+  `restore-versions` removes the current delete marker of each key and skips
+  everything else.
+- **A `tag` job merges** its tags onto each object's existing set rather than
+  replacing it.
+- **Per-object failures are counted, not raised.** `completed` means nothing failed;
+  `completed_with_errors` means some did; `failed` means none succeeded. The first
+  200 failures are in the job log with their keys, after which they are counted only.
+- **`JobSource.keyCount`** is how many explicitly selected keys a job works on (a
+  job started from a selection in the object browser), or `null` for a filter-defined
+  job. The keys themselves are **not** in the contract: a selection can be thousands
+  of keys and would then appear in every page of `GET /jobs`.
+- **`GET /jobs/:id/logs`** pages by `cursor`, which is opaque and monotonic — not an
+  offset, so lines arriving while an operator reads are never shown twice.
+
+### Notifications and syslog
+
+- **`email`, `webhook` and `telegram` are real transports now.** Delivery is
+  best-effort and never retried: the in-app row is always written, and a channel
+  that is misconfigured shows up in `POST /settings/notifications/test` rather than
+  in a silent retry queue.
+- **Webhook requests are signed** when a secret is set:
+  `x-storage-io-signature: hex(HMAC-SHA256(secret, "<timestamp>.<body>"))` with the
+  same timestamp in `x-storage-io-timestamp` and the event name in
+  `x-storage-io-event`. Signing the timestamp with the body is what makes a captured
+  request unreplayable. Without a secret the request is sent unsigned and the header
+  is absent. The body is `{ event, data }`; `event` is `notification` or `test`.
+- **Repeated alerts are deduplicated**, not rate-limited per channel: an alert
+  carries a fingerprint (rule key plus the thing it is about) and the same
+  fingerprint is silent for 15 minutes. The next one that gets through says how many
+  repeats were folded into it, so nothing is dropped without a trace.
+- **Activity is forwarded to syslog** when `Settings.activity.syslog.enabled` is on —
+  every row, RFC 5424 or JSON, over UDP, TCP or TLS, newline-framed on the two stream
+  transports. The local trail is written first and is authoritative; a collector that
+  is down never fails the request that produced the line.
+
+### Dashboard and search
+
+- **`GET /dashboard` never contacts a storage server.** Every figure is local: the
+  bucket cache, the daily size samples, the metrics tables, the activity trail,
+  `key_meta`, the jobs table and the cached IAM counts. It is therefore fast and a
+  few minutes stale, which is the right trade for a headline — and it still answers
+  during the outage an operator opened it to look at.
+- `growth` is as long as there are samples, not padded to 30 points.
+  `totals.objectsDeltaToday` is `null` until there are two days of samples.
+  `totals.capacityBytes` is `null` when no server reports a capacity.
+- `incidents[].since` is when the server last transitioned into its current
+  unhealthy state, from the health-event log — not the last check time.
+- **`GET /search` runs on two speeds.** Servers, buckets and jobs are local queries.
+  Users, keys and policies are live against every capable server and share a
+  **1.5-second budget**: whatever answers in time is included, whatever does not is
+  simply absent from that keystroke's results. An unreachable server never turns a
+  search into an error.
+- Results are grouped by type in a fixed order (server, bucket, user, key, policy,
+  job), not interleaved by relevance, so a palette can be read by shape.
+
+### Configuration export and import
+
+- `POST /settings/export` returns `application/octet-stream`, `Cache-Control:
+no-store`, filename `storage-io-<date>.sioconf`. It contains **every settings
+  section including its secrets and every server connection including its secret
+  access key and admin token** — that is what makes it a restore.
+- The envelope is `magic(7) ‖ version(1) ‖ salt(32) ‖ nonce(12) ‖ AES-256-GCM
+ciphertext ‖ tag(16)`; the key is `scrypt(passphrase, salt, N=2^15, r=8, p=1)` and
+  the magic and version are authenticated as AAD. The passphrase, not `APP_SECRET`,
+  is the key — an archive has to be readable on the machine it is restored onto.
+- `POST /settings/import` is a multipart form (`file` + `passphrase`). Settings are
+  **replaced** section by section, not merged. Servers are matched **by name**: an
+  existing name is updated in place (keeping its id, and therefore its buckets,
+  quotas, metrics and job history), a new one is inserted, and nothing is ever
+  deleted. No connection test is run — the imported rows start `unknown` and the
+  health checker settles them within one interval.
+- A wrong passphrase, a truncated file or a payload that no longer validates all
+  answer 400 `VALIDATION` with a sentence. A wrong passphrase and a tampered file are
+  reported identically, because AES-GCM cannot tell them apart either.
+
+### Serving the web app
+
+- With `WEB_DIST` set (the Dockerfile sets `/app/public`) the API serves the built
+  app with an SPA fallback for every path outside `/api` and `/health`, so a deep
+  link like `/buckets/photos` loads the client router instead of 404ing.
+- Vite's fingerprinted assets are `public, max-age=31536000, immutable`;
+  `index.html` is `no-cache` (still revalidated by ETag, so an unchanged deploy
+  answers 304). An unknown `/api` path is still a problem+json 404, never HTML.

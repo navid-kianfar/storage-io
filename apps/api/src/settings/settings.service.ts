@@ -108,6 +108,36 @@ export class SettingsService {
     return stripWriteOnly(parsed.data);
   }
 
+  /**
+   * Replaces every section, for a configuration import. A merge would be wrong
+   * here: restoring a backup means the configuration in the file, not the file's
+   * values layered over whatever this install had drifted to — and a merge cannot
+   * express "this section had nothing set".
+   *
+   * One transaction, so a failed import cannot leave half the sections restored.
+   */
+  replaceAll(next: Settings): Settings {
+    const parsed = settingsSchema.safeParse(next);
+    if (!parsed.success) {
+      throw new Error(`The imported settings are not valid: ${parsed.error.message}`);
+    }
+
+    const updatedAt = new Date().toISOString();
+    this.db.transaction((tx) => {
+      for (const section of SECTIONS) {
+        const value = parsed.data[section] as Record<string, unknown>;
+        tx.insert(settingsTable)
+          .values({ section, value, updatedAt })
+          .onConflictDoUpdate({ target: settingsTable.section, set: { value, updatedAt } })
+          .run();
+      }
+    });
+
+    this.cached = parsed.data;
+    this.logger.log({ sections: SECTIONS.length }, 'Settings replaced from a configuration import');
+    return stripWriteOnly(parsed.data);
+  }
+
   /** Used by `PATCH /auth/me`, which writes into the profile section. */
   updateProfile(profile: Partial<Settings['profile']>): Settings['profile'] {
     const updated = this.update({ profile });

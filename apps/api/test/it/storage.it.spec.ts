@@ -1024,7 +1024,13 @@ describe.skipIf(!IT_ENABLED)('storage against live containers', () => {
         .http()
         .post(`/api/v1/servers/${SEAWEEDFS.name}/buckets`)
         .set(auth())
-        .send({ name: `sio-it-sw-lock-${run}`, versioning: false, objectLock: true, quota: null, access: 'private' });
+        .send({
+          name: `sio-it-sw-lock-${run}`,
+          versioning: false,
+          objectLock: true,
+          quota: null,
+          access: 'private',
+        });
       expect(response.status).toBe(409);
       expect(response.body.code).toBe('NOT_SUPPORTED');
     });

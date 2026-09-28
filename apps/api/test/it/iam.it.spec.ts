@@ -4,6 +4,7 @@ import { KeyExpiryService } from '../../src/modules/iam-core/key-expiry.service'
 import { KeyMetaRepository } from '../../src/modules/iam-core/key-meta.repository';
 import { createTestApp, type TestHarness } from '../support/test-app';
 import { IT_ENABLED, MINIO, SEAWEEDFS, assertContainersUp } from './containers';
+import { restoreIdentities, snapshotIdentities } from './seaweed-identities';
 
 /**
  * IAM against the real MinIO and SeaweedFS containers.
@@ -475,7 +476,9 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
         );
         try {
           // The one claim no mock can make good on: the credential works.
-          const listed = await client.send(new ListObjectsV2Command({ Bucket: BUCKET, MaxKeys: 1 }));
+          const listed = await client.send(
+            new ListObjectsV2Command({ Bucket: BUCKET, MaxKeys: 1 }),
+          );
           expect(listed.$metadata.httpStatusCode).toBe(200);
         } finally {
           client.destroy();
@@ -989,7 +992,11 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
           .http()
           .post(`/api/v1/servers/${ROTATE_SERVER}/rotate-credentials`)
           .set(auth())
-          .send({ mode: 'manual', accessKeyId: 'NOTAREALKEY000001', secretAccessKey: 'nor-is-this-one' })
+          .send({
+            mode: 'manual',
+            accessKeyId: 'NOTAREALKEY000001',
+            secretAccessKey: 'nor-is-this-one',
+          })
           .expect(400);
 
         expect(response.body.code).toBe('VALIDATION');
@@ -1065,7 +1072,10 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
           .put(`/api/v1/servers/${MINIO_SERVER}/iam/users/${name}/groups`)
           .set(auth())
           .send({ groups: [] });
-        await harness.http().delete(`/api/v1/servers/${MINIO_SERVER}/iam/users/${name}`).set(auth());
+        await harness
+          .http()
+          .delete(`/api/v1/servers/${MINIO_SERVER}/iam/users/${name}`)
+          .set(auth());
       }
       await harness
         .http()
@@ -1089,7 +1099,17 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
   /* ---------------------------- SeaweedFS -------------------------- */
 
   describe('SeaweedFS', () => {
+    /**
+     * SeaweedFS's IAM API rewrites the filer's whole identity store, so a
+     * `DeleteUser` here can take the seeded `sio-dev-admin` identity with it and
+     * break the documented dev credentials for everyone. The store is snapshotted
+     * before this block touches IAM and restored after — see
+     * `seaweed-identities.ts`.
+     */
+    let identitySnapshot: string | null = null;
+
     beforeAll(async () => {
+      identitySnapshot = await snapshotIdentities();
       await harness
         .http()
         .post('/api/v1/servers')
@@ -1120,6 +1140,7 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
         .http()
         .delete(`/api/v1/servers/${SEAWEED_SERVER}/iam/users/${SEAWEED_USER}`)
         .set(auth());
+      await restoreIdentities(identitySnapshot);
     });
 
     it('reports users and access keys supported, groups and policies not', async () => {
@@ -1144,7 +1165,13 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
         .http()
         .post(`/api/v1/servers/${SEAWEED_SERVER}/iam/users`)
         .set(auth())
-        .send({ name: SEAWEED_USER, secret: null, policies: [], groups: [], createAccessKey: false })
+        .send({
+          name: SEAWEED_USER,
+          secret: null,
+          policies: [],
+          groups: [],
+          createAccessKey: false,
+        })
         .expect(201);
 
       expect(response.body.user).toMatchObject({
@@ -1164,7 +1191,9 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
       expect(single.body.items.map((user: { name: string }) => user.name)).toContain(SEAWEED_USER);
 
       const all = await harness.http().get('/api/v1/iam/users').set('Cookie', cookie).expect(200);
-      const servers = new Set(all.body.items.map((user: { serverName: string }) => user.serverName));
+      const servers = new Set(
+        all.body.items.map((user: { serverName: string }) => user.serverName),
+      );
       expect(servers.has(SEAWEED_SERVER)).toBe(true);
       expect(servers.has(MINIO_SERVER)).toBe(true);
       expect(all.body.unavailable).toEqual([]);
@@ -1245,7 +1274,11 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
     });
 
     it('leaves SeaweedFS out of the aggregated group and policy lists entirely', async () => {
-      const groups = await harness.http().get('/api/v1/iam/groups').set('Cookie', cookie).expect(200);
+      const groups = await harness
+        .http()
+        .get('/api/v1/iam/groups')
+        .set('Cookie', cookie)
+        .expect(200);
       const policies = await harness
         .http()
         .get('/api/v1/iam/policies')

@@ -14,3 +14,12 @@ Scope (`apps/api/src/modules/{jobs,notifications,dashboard,search,settings,reten
 Report: short; what you ran and results; any contract changes.
 
 Also (deployment): in production serve the built web app from `WEB_DIST` (env, set by the Dockerfile to /app/public) with SPA fallback for every non-`/api` path (`@nestjs/serve-static`), long cache headers for hashed assets and no-cache for index.html. Make `docker build .` (root Dockerfile, uses `pnpm deploy`) succeed and the container start, log in and serve the UI; fix the Dockerfile if needed. `docker-compose.yml` at the root is the production example.
+
+Also (traffic metrics, contract change): the concept's server "Traffic — requests per second" chart needs data. Extend `GET /servers/:id/metrics` with `traffic: [{ t, requestsPerSec, errorsPerSec, rxBytesPerSec, txBytesPerSec }] | null` (update docs/API.md + contracts). Source: MinIO Prometheus cluster metrics (`/minio/v2/metrics/cluster`, bearer JWT signed with the server's access/secret — see MinIO's `mc admin prometheus generate`), sampled with the health check and stored in a metrics table; `null` for providers without a metrics endpoint. Add a `traffic` capability.
+
+Notes from the IAM wave (use these, don't re-implement):
+- `IamStatsService` (exported by `IamCoreModule`): `await stats.counts()` → `{ users, accessKeys, at }` (cached; `cached()` non-blocking) → `Dashboard.totals.users/accessKeys`.
+- Expiring keys: `KeyMetaRepository.expiringWithin(nowIso, untilIso)` + `toAccessKey` from `iam-core/access-key.mapper.ts`.
+- Search users/keys/policies: `IamUsersService.list`, `AccessKeysService.list`, `IamPoliciesService.list` with `q`.
+- Document env var `IAM_SCHEDULER_ENABLED` (default true) with the other env docs.
+- The storage wave (buckets/objects/quotas/inventory) may still be finishing in parallel; a minimal `JobsService.enqueue()` port may exist at `src/modules/jobs/` — implement the real engine behind it without breaking its callers. Coordinate edits to `app.module.ts` / shared files additively.

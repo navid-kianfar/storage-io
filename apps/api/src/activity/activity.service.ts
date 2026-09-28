@@ -13,6 +13,7 @@ import { DB } from '../db/db.module';
 import type { AppDatabase } from '../db/migrate';
 import { activity } from '../db/schema';
 import { CryptoService } from '../crypto/crypto.service';
+import { ActivitySyslogService } from './activity-syslog.service';
 
 /** Keys whose values never reach the log, whatever nesting they sit at. */
 const REDACTED_KEYS = new Set([
@@ -52,13 +53,15 @@ export interface RecordActivityInput {
  * transition, a job finishing, a quota crossing its threshold).
  *
  * Whatever the source, `details` is sanitized here rather than at each call site
- * — one place to get right, and a new caller cannot forget.
+ * — one place to get right, and a new caller cannot forget. The same is true of
+ * syslog forwarding: it hangs off `record`, so no call site can leave it out.
  */
 @Injectable()
 export class ActivityService {
   constructor(
     @Inject(DB) private readonly db: AppDatabase,
     private readonly crypto: CryptoService,
+    private readonly syslog: ActivitySyslogService,
   ) {}
 
   record(input: RecordActivityInput): ActivityEvent {
@@ -98,6 +101,9 @@ export class ActivityService {
       })
       .run();
 
+    // After the row is written, and never instead of it: the local trail is the
+    // authoritative one and a collector is an extra copy.
+    this.syslog.forward(event);
     return event;
   }
 

@@ -396,6 +396,28 @@ export class InventoryRepository {
       .map((row) => ({ day: row.day, usedBytes: row.usedBytes ?? 0 }));
   }
 
+  /**
+   * The same series for object counts, which the dashboard's "objects added today"
+   * figure is the difference of. Separate from `dailyTotals` because a null
+   * `objects` sample must not be counted as zero, and mixing the two into one query
+   * would make either the bytes or the objects wrong on a bucket whose count is
+   * unknown.
+   */
+  dailyObjectTotals(days: number): readonly { day: string; objects: number }[] {
+    const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+    return this.db
+      .select({
+        day: bucketSizeDaily.day,
+        objects: sum(bucketSizeDaily.objects).mapWith(Number),
+      })
+      .from(bucketSizeDaily)
+      .where(and(gte(bucketSizeDaily.day, since), sql`${bucketSizeDaily.objects} is not null`))
+      .groupBy(bucketSizeDaily.day)
+      .orderBy(asc(bucketSizeDaily.day))
+      .all()
+      .map((row) => ({ day: row.day, objects: row.objects ?? 0 }));
+  }
+
   /** Retention sweep for the samples, on the same budget as the other metrics. */
   deleteSamplesOlderThan(days: number): number {
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);

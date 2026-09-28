@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { ActivityController } from './activity.controller';
 import { ActivityInterceptor } from './activity.interceptor';
 import { ActivityService } from './activity.service';
+import { ActivitySyslogService } from './activity-syslog.service';
 
 /**
  * Global: the interceptor is registered app-wide and every feature module
@@ -11,7 +12,7 @@ import { ActivityService } from './activity.service';
 @Global()
 @Module({
   controllers: [ActivityController],
-  providers: [ActivityService, ActivityInterceptor],
-  exports: [ActivityService, ActivityInterceptor],
+  providers: [ActivityService, ActivityInterceptor, ActivitySyslogService],
+  exports: [ActivityService, ActivityInterceptor, ActivitySyslogService],
 })
 export class ActivityModule {}

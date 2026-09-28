@@ -59,10 +59,18 @@ export async function createTestApp(
     // and the count cache would fan out to every unreachable endpoint. Tests that
     // want a sweep call `KeyExpiryService.run()` directly, which is deterministic.
     IAM_SCHEDULER_ENABLED: 'false',
+    // And the job engine: its tick would claim a queued row in the middle of a
+    // test that just asserted the row was queued. A test that wants a run calls
+    // `JobEngineService.tick()` directly, which is deterministic.
+    JOB_ENGINE_ENABLED: 'false',
+    // The API is JSON only in tests; the SPA fallback would answer an unknown
+    // route with HTML and hide a routing mistake.
+    WEB_DIST: undefined,
     ...overrides,
   });
   // Assigning `undefined` leaves the key present with the string "undefined".
   if (overrides['ADMIN_PASSWORD_HASH'] === undefined) delete process.env['ADMIN_PASSWORD_HASH'];
+  if (overrides['WEB_DIST'] === undefined) delete process.env['WEB_DIST'];
 
   const app = await createApp();
   // Bound to an ephemeral port so `origin` is a real one; supertest then reuses

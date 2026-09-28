@@ -9,7 +9,7 @@ import {
 } from '@storage-io/contracts';
 import { DB } from '../db/db.module';
 import type { AppDatabase } from '../db/migrate';
-import { notifications } from '../db/schema';
+import { notificationDedup, notifications } from '../db/schema';
 import { CryptoService } from '../crypto/crypto.service';
 import { EventBusService } from '../events/event-bus.service';
 import { SettingsService } from '../settings/settings.service';
@@ -19,7 +19,18 @@ import {
   type NotificationChannelDriver,
 } from './delivery/notification-channel';
 
+/** Distinguishes "suppressed" from "zero previous repeats". */
+const SUPPRESSED = Symbol('SUPPRESSED');
+
 const LIST_LIMIT = 200;
+
+/**
+ * How long the same fingerprint stays quiet. Fifteen minutes is the compromise
+ * the alternatives make badly: a shorter window mails an operator every health
+ * tick while a server is down, and a longer one hides a second outage inside the
+ * first one's silence.
+ */
+export const DEFAULT_DEDUP_WINDOW_SEC = 15 * 60;
 
 export interface RaiseNotificationInput {
   readonly level: NotificationLevel;
@@ -28,6 +39,17 @@ export interface RaiseNotificationInput {
   readonly href?: string | null;
   /** Which rule row decides the channels. Omit for a notification with no rule. */
   readonly ruleKey?: NotificationRuleKey | null;
+  /**
+   * The caller's identity for this alert — rule key plus the thing it is about,
+   * e.g. `server.offline:minio-lab`. Two raises with the same fingerprint inside
+   * `dedupWindowSec` produce one notification, and the next one that gets through
+   * says how many were folded into it.
+   *
+   * Omit it for news that is new every time (a job finishing, a key created).
+   */
+  readonly fingerprint?: string;
+  /** Defaults to `DEFAULT_DEDUP_WINDOW_SEC`. */
+  readonly dedupWindowSec?: number;
 }
 
 /**
@@ -52,8 +74,17 @@ export class NotificationsService {
     private readonly bus: EventBusService,
   ) {}
 
-  /** Stores the notification, pushes it over SSE, then attempts each channel. */
-  raise(input: RaiseNotificationInput): Notification {
+  /**
+   * Stores the notification, pushes it over SSE, then attempts each channel.
+   *
+   * Returns `null` when a fingerprint suppressed it — the caller does not need to
+   * know, but a test does, and so does anything that would otherwise log "raised"
+   * for something nobody saw.
+   */
+  raise(input: RaiseNotificationInput): Notification | null {
+    const suppressedCount = this.checkDedup(input);
+    if (suppressedCount === SUPPRESSED) return null;
+
     const settings = this.settings.getInternal();
     const rule =
       input.ruleKey === undefined || input.ruleKey === null
@@ -65,7 +96,10 @@ export class NotificationsService {
       at: new Date().toISOString(),
       level: input.level,
       title: input.title,
-      detail: input.detail,
+      detail:
+        suppressedCount === 0
+          ? input.detail
+          : `${input.detail} (${suppressedCount} repeat${suppressedCount === 1 ? '' : 's'} suppressed since the last alert)`,
       href: input.href ?? null,
       read: false,
     };
@@ -131,6 +165,53 @@ export class NotificationsService {
     return result.changes;
   }
 
+  /**
+   * `SUPPRESSED` when this fingerprint fired recently; otherwise the number of
+   * raises that were folded into this one, which goes into the detail so nothing
+   * is silently dropped.
+   *
+   * One upsert either way: reading and then writing would let two callers past the
+   * window in the same millisecond.
+   */
+  private checkDedup(input: RaiseNotificationInput): number | typeof SUPPRESSED {
+    const fingerprint = input.fingerprint;
+    if (fingerprint === undefined) return 0;
+
+    const windowSec = input.dedupWindowSec ?? DEFAULT_DEDUP_WINDOW_SEC;
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const [existing] = this.db
+      .select()
+      .from(notificationDedup)
+      .where(eq(notificationDedup.fingerprint, fingerprint))
+      .limit(1)
+      .all();
+
+    const withinWindow =
+      existing !== undefined &&
+      now.getTime() - Date.parse(existing.lastRaisedAt) < windowSec * 1000;
+
+    if (withinWindow) {
+      this.db
+        .update(notificationDedup)
+        .set({ suppressed: existing.suppressed + 1 })
+        .where(eq(notificationDedup.fingerprint, fingerprint))
+        .run();
+      return SUPPRESSED;
+    }
+
+    const suppressed = existing?.suppressed ?? 0;
+    this.db
+      .insert(notificationDedup)
+      .values({ fingerprint, lastRaisedAt: nowIso, suppressed: 0 })
+      .onConflictDoUpdate({
+        target: notificationDedup.fingerprint,
+        set: { lastRaisedAt: nowIso, suppressed: 0 },
+      })
+      .run();
+    return suppressed;
+  }
+
   unreadCount(): number {
     const [row] = this.db
       .select({ total: count() })
@@ -138,6 +219,11 @@ export class NotificationsService {
       .where(eq(notifications.read, false))
       .all();
     return row?.total ?? 0;
+  }
+
+  /** Forgets a fingerprint, so the next alert about it is raised immediately. */
+  clearDedup(fingerprint: string): void {
+    this.db.delete(notificationDedup).where(eq(notificationDedup.fingerprint, fingerprint)).run();
   }
 
   /** `POST /settings/notifications/test`. Uses the stored settings. */

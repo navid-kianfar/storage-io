@@ -49,8 +49,7 @@ export async function startAdminFixture(): Promise<AdminFixture> {
       });
 
       const reply = queued.shift() ?? { status: 200, json: {} };
-      const payload =
-        reply.text ?? (reply.json === undefined ? '' : JSON.stringify(reply.json));
+      const payload = reply.text ?? (reply.json === undefined ? '' : JSON.stringify(reply.json));
       response.writeHead(reply.status ?? 200, { 'content-type': 'application/json' });
       response.end(payload);
     });

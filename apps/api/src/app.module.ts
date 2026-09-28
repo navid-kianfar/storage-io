@@ -28,6 +28,10 @@ import { IamUsersModule } from './modules/iam-users/iam-users.module';
 import { IamGroupsModule } from './modules/iam-groups/iam-groups.module';
 import { IamPoliciesModule } from './modules/iam-policies/iam-policies.module';
 import { ServerCredentialsModule } from './modules/server-credentials/server-credentials.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { SearchModule } from './modules/search/search.module';
+import { ConfigBackupModule } from './modules/config-backup/config-backup.module';
+import { WebStaticModule } from './web/web-static.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { HealthController } from './health/health.controller';
 import { ProblemExceptionFilter } from './common/filters/problem.filter';
@@ -109,7 +113,16 @@ import { buildLoggerOptions } from './logging';
     IamGroupsModule,
     IamPoliciesModule,
     ServerCredentialsModule,
+    // Wave 2c: the jobs engine lives behind the same JOBS_PORT wave 2a bound, and
+    // these three aggregate what every module above them owns — so they come last
+    // and own no table of their own.
+    DashboardModule,
+    SearchModule,
+    ConfigBackupModule,
     MaintenanceModule,
+    // Last of all: the SPA fallback matches every path no controller claimed, so
+    // anything registered after it would never be reached.
+    WebStaticModule.forRoot(),
   ],
   controllers: [HealthController],
   providers: [

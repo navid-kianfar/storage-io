@@ -65,6 +65,17 @@ export const jobSourceSchema = z.object({
   serverName: z.string(),
   bucket: z.string(),
   filters: jobFiltersSchema,
+  /**
+   * How many explicitly chosen object keys the job works on, for a job started
+   * from a selection in the object browser rather than from a filter; `null` when
+   * the job is defined by its filters.
+   *
+   * The keys themselves are deliberately **not** in the contract: a selection can
+   * be thousands of keys, and putting them here would put that array in every page
+   * of `GET /jobs`. The count is what a client renders ("137 selected objects"),
+   * and the keys stay server-side.
+   */
+  keyCount: z.number().int().min(0).nullable(),
 });
 export type JobSource = z.infer<typeof jobSourceSchema>;
 

@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NOTIFICATION_RULE_KEYS, SETTINGS_DEFAULTS } from '@storage-io/contracts';
+import {
+  WEBHOOK_EVENT_HEADER,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+  verifyWebhook,
+} from '../../src/notifications/delivery/channels';
 import { createTestApp, type TestHarness } from '../support/test-app';
+import { startWebhookReceiver, type WebhookReceiver } from '../support/webhook-receiver';
 
 /** Settings, notifications, the SSE stream and the allowed-networks middleware. */
 describe('platform (e2e)', () => {
@@ -168,25 +175,54 @@ describe('platform (e2e)', () => {
       expect(response.body).toEqual({ ok: false, detail: expect.stringContaining('disabled') });
     });
 
-    it('reports the transport as not implemented once the channel is enabled', async () => {
-      // The delivery drivers are a later task; the interface and the routing are
-      // what exist today, and this is what proves the wiring reaches them.
-      await harness
-        .http()
-        .patch('/api/v1/settings')
-        .set(auth())
-        .send({ notifications: { webhook: { enabled: true, url: 'https://example.com/hook' } } })
-        .expect(200);
+    it('posts a signed JSON body to the configured webhook', async () => {
+      // A real local receiver rather than a mock: the claim worth proving is that
+      // what leaves the process is a body a third party can verify, and only an
+      // actual HTTP round trip shows that.
+      let receiver: WebhookReceiver | undefined;
+      try {
+        receiver = await startWebhookReceiver();
+        const secret = 'webhook-signing-secret';
 
-      const response = await harness
-        .http()
-        .post('/api/v1/settings/notifications/test')
-        .set(auth())
-        .send({ channel: 'webhook' })
-        .expect(201);
+        await harness
+          .http()
+          .patch('/api/v1/settings')
+          .set(auth())
+          .send({ notifications: { webhook: { enabled: true, url: receiver.url, secret } } })
+          .expect(200);
 
-      expect(response.body.ok).toBe(false);
-      expect(response.body.detail).toMatch(/not implemented/i);
+        const response = await harness
+          .http()
+          .post('/api/v1/settings/notifications/test')
+          .set(auth())
+          .send({ channel: 'webhook' })
+          .expect(201);
+
+        expect(response.body.ok).toBe(true);
+
+        const received = await receiver.next();
+        expect(received.headers[WEBHOOK_EVENT_HEADER]).toBe('test');
+        expect(JSON.parse(received.body)).toMatchObject({ event: 'test' });
+
+        const timestamp = received.headers[WEBHOOK_TIMESTAMP_HEADER];
+        const signature = received.headers[WEBHOOK_SIGNATURE_HEADER];
+        expect(timestamp).toBeDefined();
+        expect(signature).toBeDefined();
+        expect(verifyWebhook(secret, timestamp as string, received.body, signature as string)).toBe(
+          true,
+        );
+        // The body alone must not verify: the timestamp is part of what is signed,
+        // which is what stops a captured request being replayed.
+        expect(verifyWebhook(secret, '0', received.body, signature as string)).toBe(false);
+      } finally {
+        await receiver?.close();
+        await harness
+          .http()
+          .patch('/api/v1/settings')
+          .set(auth())
+          .send({ notifications: { webhook: { enabled: false, url: '' } } })
+          .expect(200);
+      }
     });
 
     it('accepts every documented channel and refuses anything else', async () => {

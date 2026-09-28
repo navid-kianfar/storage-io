@@ -7,5 +7,8 @@ import { IamPoliciesService } from './iam-policies.service';
   imports: [IamCoreModule],
   controllers: [IamPoliciesController],
   providers: [IamPoliciesService],
+  // Exported for `GET /search`, which searches policies alongside servers,
+  // buckets, users, keys and jobs.
+  exports: [IamPoliciesService],
 })
 export class IamPoliciesModule {}

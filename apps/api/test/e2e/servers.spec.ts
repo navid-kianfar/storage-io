@@ -514,7 +514,9 @@ describe('servers (e2e)', () => {
         .set('Cookie', cookie)
         .expect(200);
 
-      expect(response.body).toEqual({ capacity: [], latency: [], uptime: 0 });
+      // `traffic: null` rather than `[]`: this server has never been sampled, and
+      // an empty series would draw as a flat line at zero requests per second.
+      expect(response.body).toEqual({ capacity: [], latency: [], uptime: 0, traffic: null });
     });
 
     it('accepts every documented range and rejects anything else', async () => {

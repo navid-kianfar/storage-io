@@ -120,11 +120,13 @@ src/
   settings/              the Settings document, one row per section, cached (@Global)
   events/                EventBusService + GET /events (SSE) (@Global)
   activity/              the audit trail: service, global interceptor, list/detail/CSV (@Global)
-  notifications/         in-app notifications + the channel driver interface (@Global)
+  notifications/         in-app notifications, dedup, and the real channel drivers
+                         (SMTP, signed webhook, Telegram, syslog) (@Global)
   auth/                  login/logout/me, sessions, API tokens
   providers/             the provider framework — see below
-  servers/               /servers endpoints, repository, health checker
+  servers/               /servers endpoints, repository, health checker, traffic sampler
   maintenance/           the hourly retention sweep
+  web/                   WebStaticModule: serves the built app from WEB_DIST (prod only)
   health/                GET /health (public)
 
   modules/               wave 2 feature modules, imported by app.module in this order
@@ -132,11 +134,14 @@ src/
                          + capability map. Every storage operation starts here.
     inventory/           the bucket cache and the sweep that fills it. No controllers;
                          buckets and quotas read it, and it emits inventory.updated.
-    jobs/                jobs.port.ts (JOBS_PORT) + an enqueue-only implementation.
-                         Wave 2c adds the engine behind the same token.
+    jobs/                the bulk-job engine behind JOBS_PORT: /jobs, the runner,
+                         the cron scheduler, checkpointing and the job log
     quotas/              GET /quotas (+ export.csv), the quota table, threshold watcher
     objects/             the object browser's endpoints, streaming throughout
     buckets/             /buckets, /buckets/bulk and every per-bucket setting
+    dashboard/           GET /dashboard — aggregates the tables above, never a server
+    search/              GET /search — local tables plus a budgeted live IAM fan-out
+    config-backup/       POST /settings/{export,import}: the encrypted config archive
 
   common/
     actor.ts             who made the request, and @CurrentActor()
@@ -364,16 +369,35 @@ produced, and encrypting an `add-user` body MinIO accepts.
 ## Notification channels
 
 `notifications/delivery/notification-channel.ts` defines
-`NotificationChannelDriver` and ships an `UnimplementedChannel` per channel, so
-the routing, the settings matrix and `POST /settings/notifications/test` all work
-today and report "not implemented yet".
+`NotificationChannelDriver`; `delivery/channels.ts` implements all four and
+`NotificationsModule` binds them through `NOTIFICATION_CHANNELS`. To add a
+transport, add a class there — nothing outside `delivery/` changes.
 
-To add a real transport, replace one entry in `defaultChannels()`. `deliver` must
-**not** throw: the callers are the health checker and the job engine, and a dead
-SMTP host must not fail the thing that noticed the problem.
+- **email** — SMTP through nodemailer, a transport per delivery (settings can
+  change between two notifications, and a pool keyed on them buys nothing at a few
+  messages an hour). `secure` is the operator's choice because it is not
+  inferable: 465 is implicit TLS, 587 is STARTTLS.
+- **webhook** — a JSON POST signed
+  `HMAC-SHA256(secret, "<timestamp>.<body>")` in `x-storage-io-signature`, with the
+  timestamp in `x-storage-io-timestamp`. Signing the timestamp _with_ the body is
+  what makes a captured request unreplayable. No secret means no header, and the
+  request still goes.
+- **telegram** — Bot API `sendMessage`, deliberately plain text: a bucket name with
+  an underscore breaks Markdown parsing and Telegram answers 400.
+- **syslog** — carries _activity_, not notifications, so the fan-out skips it;
+  `ActivitySyslogService` is what writes to it and this driver exists so
+  `POST /settings/notifications/test` can exercise the collector.
 
-`syslog` is in the list but carries activity, not notifications, so the fan-out
-skips it; `Settings.activity.syslog` is its configuration.
+`deliver` must **not** throw, and none of them do: the callers are the health
+checker and the job engine, and a dead SMTP host must not fail the thing that
+noticed the problem. Nothing is retried either — a notification is news, not a
+task, and the in-app row is always written.
+
+**Repeated alerts are deduplicated by fingerprint.** `raise({ fingerprint })`
+keeps the same alert quiet for 15 minutes (`notification_dedup`), and the next one
+that gets through reports how many repeats were folded into it, so nothing is
+dropped silently. Alerts that are new every time — a job finishing, a key created —
+pass no fingerprint.
 
 ---
 
@@ -406,3 +430,53 @@ skips it; `Settings.activity.syslog` is its configuration.
 - **The health checker is one interval that asks which servers are due**, not a
   timer per server, so an edit to `healthIntervalSec` takes effect on the next
   tick with no bookkeeping.
+
+### The job engine (wave 2c)
+
+- **A page is the unit of work.** The engine lists a page, runs its objects through
+  a pool, and only then writes the counters and the page's continuation token. A
+  crash or a pause replays at most one page, and every action is idempotent enough
+  to survive that replay. Persisting per object would need a second record of which
+  keys in the page had finished — a checkpoint format nobody needs.
+- **`onApplicationBootstrap` requeues anything the database still calls `running`.**
+  Nothing is running at boot, so every such row is a job the process died inside; it
+  goes back to `queued` with its checkpoint intact.
+- **A queued job whose server is offline is left queued with `waitingFor`**, and the
+  tick retries — so it starts by itself when the health checker sees the server
+  come back. The queue scan is deliberately wider than the number of run slots, or
+  two such jobs at the head would block every other job in the installation.
+- **A cron schedule never runs itself**: it stays `scheduled` and spawns a child run
+  per fire (`parentId`), which is what makes `GET /jobs/:id/runs` a history. An
+  `at` schedule _is_ the run. A missed schedule fires **once**, not once per missed
+  interval, and `nextRunAt` re-bases from now.
+- **`JOB_ENGINE_ENABLED=false` in tests**, and `JobEngineService.drain()` is the
+  same pass without that guard — that is how a spec drives a run deterministically.
+  A background tick would claim a row in the middle of an assertion about it.
+- **The S3 verbs a job uses live in `job-actions.service.ts`, not in
+  `modules/objects`.** Objects already imports this module for `JOBS_PORT`, so
+  reaching back would be a cycle; one duplicated `CopyObjectCommand` is cheaper
+  than a circular module graph.
+
+### Traffic metrics
+
+- Sampled **with the health check** (`TrafficSamplerService`), not on a timer of its
+  own: the check already decides which servers are due, already holds a decrypted
+  connection and already skips maintenance.
+- The **previous sample is read from the database**, not held in memory, so a
+  restart costs one point instead of the whole series.
+- **MinIO caches its cluster metrics for about ten seconds** (verified against
+  DEVELOPMENT.2025-05-24T17-08-30Z), so the series is meaningful over the health
+  interval and would be noise at one-second sampling.
+- `traffic: null` in `GET /servers/:id/metrics` means "no data for this server";
+  `[]` means "data exists, none in this range". An empty array would draw as a flat
+  line at zero requests per second, which is a different and false claim.
+
+### Serving the web app
+
+- `WEB_DIST` set (the Dockerfile sets `/app/public`) turns on `WebStaticModule`,
+  which must be **last** in `AppModule`: its SPA fallback answers every GET no
+  controller claimed. `/api{/*path}` and `/health{/*path}` are excluded by hand, so
+  an unknown API route is still problem+json and a probe is never handed HTML.
+- Vite's fingerprinted assets are immutable for a year; `index.html` is `no-cache`,
+  because it is the document that names those fingerprints and a cached copy after a
+  deploy points at files that no longer exist.

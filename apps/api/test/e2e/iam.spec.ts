@@ -366,7 +366,13 @@ describe('iam (e2e)', () => {
         .http()
         .post('/api/v1/servers/ghost/iam/users')
         .set(auth())
-        .send({ name: 'alice', secret: 'a-secret-1234', policies: [], groups: [], createAccessKey: false })
+        .send({
+          name: 'alice',
+          secret: 'a-secret-1234',
+          policies: [],
+          groups: [],
+          createAccessKey: false,
+        })
         .expect(404);
 
       expect(response.body.code).toBe('NOT_FOUND');
@@ -379,7 +385,13 @@ describe('iam (e2e)', () => {
         .http()
         .post('/api/v1/servers/iam-minio/iam/users')
         .set(auth())
-        .send({ name: '', secret: 'a-secret-1234', policies: [], groups: [], createAccessKey: false })
+        .send({
+          name: '',
+          secret: 'a-secret-1234',
+          policies: [],
+          groups: [],
+          createAccessKey: false,
+        })
         .expect(400);
     });
 
@@ -441,7 +453,13 @@ describe('iam (e2e)', () => {
         .http()
         .post('/api/v1/servers/iam-minio/iam/users')
         .set('Cookie', cookie)
-        .send({ name: 'alice', secret: 'a-secret-1234', policies: [], groups: [], createAccessKey: false })
+        .send({
+          name: 'alice',
+          secret: 'a-secret-1234',
+          policies: [],
+          groups: [],
+          createAccessKey: false,
+        })
         .expect(403);
     });
   });

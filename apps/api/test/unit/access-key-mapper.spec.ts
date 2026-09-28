@@ -108,7 +108,12 @@ describe('toAccessKey', () => {
   it('keeps restricted when only the tracked row remembers the session policy', () => {
     // MinIO drops `impliedPolicy: false` after any update-service-account, so the
     // provider stops admitting a key is scoped. The recorded flag is the authority.
-    const key = toAccessKey(STAMP, rawKey({ restricted: false }), metaRow({ restricted: true }), NOW);
+    const key = toAccessKey(
+      STAMP,
+      rawKey({ restricted: false }),
+      metaRow({ restricted: true }),
+      NOW,
+    );
 
     expect(key.restricted).toBe(true);
   });

@@ -151,9 +151,7 @@ describe('CephIamDriver', () => {
     const request = lastRequest();
     expect(request.method).toBe('PUT');
     // `key` is a bare flag, not `key=` — RGW routes on the sub-resource.
-    expect(request.url).toBe(
-      '/admin/user?key&uid=analytics&key-type=s3&generate-key=True',
-    );
+    expect(request.url).toBe('/admin/user?key&uid=analytics&key-type=s3&generate-key=True');
     expect(created).toEqual({
       accessKeyId: 'CEPHKEY0003',
       secretAccessKey: 'brand-new-secret',
@@ -175,7 +173,9 @@ describe('CephIamDriver', () => {
   it('treats deleting a key that is already gone as done', async () => {
     fixture.reply({ status: 404, json: { Code: 'InvalidAccessKeyId' } });
 
-    await expect(driver.keys.delete(connection, 'CEPHKEY0009', 'analytics')).resolves.toBeUndefined();
+    await expect(
+      driver.keys.delete(connection, 'CEPHKEY0009', 'analytics'),
+    ).resolves.toBeUndefined();
   });
 
   it('offers no group or policy surface, so the registry can refuse once', () => {

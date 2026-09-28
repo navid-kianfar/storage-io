@@ -5,6 +5,7 @@ import { SessionService } from '../auth/session.service';
 import { SettingsService } from '../settings/settings.service';
 import { ServerRepository } from '../servers/server.repository';
 import { InventoryRepository } from '../modules/inventory/inventory.repository';
+import { JobsRepository } from '../modules/jobs/jobs.repository';
 
 /**
  * The housekeeping the architecture asks for: prune the activity log and the
@@ -14,8 +15,10 @@ import { InventoryRepository } from '../modules/inventory/inventory.repository';
  * day's worth of rows to delete in one transaction, and so a retention change
  * takes effect the same day it is made.
  *
- * The job-engine and key-expiry sweeps belong to the tasks that own those
- * tables; this service is the place they go.
+ * Finished job runs (and, through the schema's cascade, their log lines) are pruned
+ * on the activity budget: they are the same kind of history, and an operator keeping
+ * 90 days of one means 90 days of the other. Recurring schedules are configuration
+ * and are never pruned.
  */
 @Injectable()
 export class RetentionService {
@@ -27,6 +30,7 @@ export class RetentionService {
     private readonly servers: ServerRepository,
     private readonly sessions: SessionService,
     private readonly inventory: InventoryRepository,
+    private readonly jobs: JobsRepository,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR, { name: 'retention' })
@@ -41,10 +45,15 @@ export class RetentionService {
         // trend only ever reads the last week of them.
         this.inventory.deleteSamplesOlderThan(retention.metricsDays);
       const sessions = this.sessions.deleteExpired();
+      // Finished job runs and their logs are history like the activity trail, and
+      // an operator who keeps 90 days of one wants 90 days of the other — so they
+      // share `activityDays` rather than gaining a setting nobody would tune
+      // separately. A schedule is configuration, not history, and is never pruned.
+      const jobRows = this.jobs.pruneFinishedOlderThan(retention.activityDays);
 
-      if (activityRows + metricRows + sessions > 0) {
+      if (activityRows + metricRows + sessions + jobRows > 0) {
         this.logger.log(
-          { activityRows, metricRows, sessions },
+          { activityRows, metricRows, sessions, jobRows },
           'Retention sweep removed expired rows',
         );
       }
