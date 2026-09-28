@@ -1,0 +1,105 @@
+name: Bug report
+description: Something in storage-io behaves incorrectly.
+title: '[bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **Never paste a real secret.** Access keys, `APP_SECRET`, admin
+        passwords and `Authorization` headers do not belong in a public issue —
+        redact them before you paste a log or a config. If you believe you have
+        found a security vulnerability, do not file an issue: see
+        [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a MinIO server
+        2. Open the bucket's object browser
+        3. …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: storage-io version
+      description: The image tag, or the version shown under Settings → About.
+      placeholder: '0.1.0'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is it running
+      options:
+        - Docker image
+        - docker compose
+        - From source (pnpm dev)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Storage provider involved
+      description: Leave blank if the problem is not specific to one.
+      multiple: true
+      options:
+        - MinIO
+        - SeaweedFS
+        - AWS S3
+        - Ceph RGW
+        - Garage
+        - Cloudflare R2
+        - Wasabi
+        - Generic S3
+        - Not provider-specific
+
+  - type: input
+    id: provider-version
+    attributes:
+      label: Provider version
+      description: Where you know it — several bugs here are a provider quirk.
+      placeholder: 'MinIO RELEASE.2025-…'
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Browser and OS
+      placeholder: 'Firefox 140 on Ubuntu 24.04 / Safari 18 on macOS 15'
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        API output (`docker logs storage-io`) and the browser console. Include
+        the `x-request-id` from the failing response if you have it — it ties a
+        log line to the request. Redact secrets first.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues.
+          required: true
+        - label: I removed every credential, token and secret from what I pasted.
+          required: true

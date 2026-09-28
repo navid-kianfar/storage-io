@@ -1,35 +1,117 @@
 name: ci
+
 on:
-  push: { branches: [main] }
+  push:
+    branches: [main]
   pull_request:
+
+# A new push to the same branch or PR makes the run in flight pointless.
+# `github.head_ref || github.run_id` keeps pushes to main from cancelling each
+# other (head_ref is empty for a push, and run_id is unique per run).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Matches the Dockerfile's runtime image; package.json requires >= 22.
+  NODE_VERSION: '24'
+
 jobs:
   verify:
+    name: lint, typecheck, unit + e2e
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      # No `version:` input on purpose — the action reads `packageManager`
+      # (pnpm@10.18.0) from package.json, so CI and every developer share one
+      # pnpm. Setting it here would give us a second place to bump.
       - uses: pnpm/action-setup@v4
+
+      # setup-node's pnpm cache needs pnpm on PATH, so it comes second.
       - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: pnpm }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
       - run: pnpm install --frozen-lockfile
+
+      # better-sqlite3@13 ships prebuilt binaries for linux-x64/arm64 and is
+      # deliberately absent from `pnpm.onlyBuiltDependencies`, so nothing here
+      # runs node-gyp and no compiler toolchain is installed. If that package
+      # ever loses its prebuild for this runner, install python3/make/g++ and add
+      # it to that list — do not add a blanket `--config.ignore-scripts=false`.
+
+      # The API and the web app both compile against the contracts' `dist`, so
+      # this must precede typecheck, lint (type-aware rules) and test.
       - run: pnpm --filter @storage-io/contracts build
+
       - run: pnpm lint
       - run: pnpm typecheck
+      # `pnpm format:check` is deliberately NOT a gate yet: 158 files in the
+      # repository are not Prettier-clean today, so adding it would make CI red
+      # on the first run. Run `pnpm format` once across the tree, commit that,
+      # and then add `- run: pnpm format:check` here (and in release.yml).
+
+      # Root `pnpm test` is `pnpm -r test`: contracts, the API's unit + e2e
+      # projects (its `it` project skips itself without S3_IT) and the web app.
       - run: pnpm test
+
   integration:
+    name: integration (MinIO + SeaweedFS)
     runs-on: ubuntu-latest
     needs: verify
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: pnpm }
-      - run: docker compose -f docker/docker-compose.dev.yml up -d --wait
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      # Started before the install so the containers reach their healthchecks
+      # while pnpm works. `--wait` blocks on the healthchecks both services
+      # define, so the suite never races a half-started MinIO.
+      - name: Start the dev storage servers
+        run: docker compose -f docker/docker-compose.dev.yml up -d --wait --wait-timeout 180
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @storage-io/contracts build
-      - run: S3_IT=1 pnpm --filter @storage-io/api test
+
+      # Only the `it` project: `verify` already ran unit and e2e, and this job
+      # exists to exercise the real containers.
+      - run: pnpm --filter @storage-io/api test:it
+
+      - name: Container logs
+        if: failure()
+        run: docker compose -f docker/docker-compose.dev.yml logs --no-color --tail 200
+
+      - name: Stop the dev storage servers
+        if: always()
+        run: docker compose -f docker/docker-compose.dev.yml down -v
+
   image:
+    name: docker image
     runs-on: ubuntu-latest
     needs: verify
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t storage-io:ci .
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only — amd64, no push. The multi-arch build and the push to GHCR
+      # belong to release.yml, which runs on a tag.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: false
+          tags: storage-io:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

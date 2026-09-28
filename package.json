@@ -1,6 +1,39 @@
 {
   "name": "storage-io",
+  "version": "0.1.0",
   "private": true,
+  "description": "Self-hosted web console for S3-compatible object storage — MinIO, SeaweedFS, Ceph RGW, Garage, AWS S3 and friends: servers, buckets, objects, IAM, quotas and bulk jobs from one admin UI.",
+  "keywords": [
+    "s3",
+    "object-storage",
+    "s3-compatible",
+    "minio",
+    "seaweedfs",
+    "ceph",
+    "garage",
+    "aws-s3",
+    "cloudflare-r2",
+    "wasabi",
+    "storage-management",
+    "admin-console",
+    "iam",
+    "self-hosted",
+    "on-premise",
+    "nestjs",
+    "react",
+    "shadcn",
+    "typescript",
+    "monorepo"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/navid-kianfar/storage-io.git"
+  },
+  "homepage": "https://github.com/navid-kianfar/storage-io#readme",
+  "bugs": {
+    "url": "https://github.com/navid-kianfar/storage-io/issues"
+  },
   "packageManager": "pnpm@10.18.0",
   "engines": {
     "node": ">=22"
@@ -12,7 +45,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "seed:demo": "node scripts/seed-demo.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -27,6 +62,7 @@
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^16.5.0",
+    "playwright-core": "^1.63.0",
     "prettier": "^3.9.9",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.1"

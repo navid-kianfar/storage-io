@@ -11,3 +11,7 @@ coverage/
 .turbo/
 *.log
 .vite/
+.idea/
+.claude/
+.vscode/*
+!.vscode/extensions.json

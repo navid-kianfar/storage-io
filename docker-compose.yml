@@ -1,8 +1,9 @@
 # Production-style deployment. Set the variables in a .env file next to this compose file.
 services:
   storage-io:
-    build: .
-    image: storage-io:latest
+    # Published image. To run a local build instead: `docker build -t storage-io:local .`
+    # and set STORAGE_IO_IMAGE=storage-io:local.
+    image: ${STORAGE_IO_IMAGE:-kianfar/storage-io:latest}
     restart: unless-stopped
     ports:
       - "${STORAGE_IO_PORT:-3000}:3000"

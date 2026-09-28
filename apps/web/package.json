@@ -2,6 +2,39 @@
   "name": "@storage-io/web",
   "version": "0.1.0",
   "private": true,
+  "description": "storage-io web console: React 19, Vite, TanStack Router/Query, Tailwind v4 and shadcn/ui, with i18n and RTL.",
+  "keywords": [
+    "s3",
+    "object-storage",
+    "s3-compatible",
+    "minio",
+    "seaweedfs",
+    "ceph",
+    "garage",
+    "aws-s3",
+    "cloudflare-r2",
+    "wasabi",
+    "storage-management",
+    "admin-console",
+    "iam",
+    "self-hosted",
+    "on-premise",
+    "react",
+    "vite",
+    "shadcn",
+    "tailwindcss",
+    "tanstack-router"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/navid-kianfar/storage-io.git",
+    "directory": "apps/web"
+  },
+  "homepage": "https://github.com/navid-kianfar/storage-io/tree/main/apps/web#readme",
+  "bugs": {
+    "url": "https://github.com/navid-kianfar/storage-io/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

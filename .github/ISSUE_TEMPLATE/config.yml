@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/navid-kianfar/storage-io/security/advisories/new
+    about: >
+      Report privately through a GitHub security advisory. Please do not open a
+      public issue for a vulnerability.
+  - name: Question or idea
+    url: https://github.com/navid-kianfar/storage-io/discussions
+    about: Usage questions and open-ended ideas belong in Discussions.

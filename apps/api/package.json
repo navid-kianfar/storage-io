@@ -2,7 +2,39 @@
   "name": "@storage-io/api",
   "version": "0.1.0",
   "private": true,
-  "description": "storage-io REST API: NestJS, SQLite (Drizzle), provider drivers, SSE",
+  "description": "storage-io REST API: NestJS, SQLite (Drizzle), S3-compatible provider drivers, IAM drivers, bulk-job engine and SSE.",
+  "keywords": [
+    "s3",
+    "object-storage",
+    "s3-compatible",
+    "minio",
+    "seaweedfs",
+    "ceph",
+    "garage",
+    "aws-s3",
+    "cloudflare-r2",
+    "wasabi",
+    "storage-management",
+    "admin-console",
+    "iam",
+    "self-hosted",
+    "on-premise",
+    "nestjs",
+    "rest-api",
+    "drizzle",
+    "sqlite",
+    "sse"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/navid-kianfar/storage-io.git",
+    "directory": "apps/api"
+  },
+  "homepage": "https://github.com/navid-kianfar/storage-io/tree/main/apps/api#readme",
+  "bugs": {
+    "url": "https://github.com/navid-kianfar/storage-io/issues"
+  },
   "main": "dist/main.js",
   "scripts": {
     "dev": "nest start --watch",

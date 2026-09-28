@@ -1,0 +1,63 @@
+name: Feature request
+description: Suggest a capability or a change to how something works.
+title: '[feature] '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        storage-io aims to be a complete console for S3-compatible storage that
+        an operator can self-host. Requests that fit that shape are the easiest
+        to accept; ones that need a hosted service, an account or telemetry are
+        the hardest.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do today, and where does it stop?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like instead
+      description: >
+        A screen, an action, a setting — describe it as an operator would use
+        it, not as an implementation.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Servers and health
+        - Buckets
+        - Object browser and transfers
+        - S3 users, groups, policies, access keys
+        - Quotas
+        - Bulk jobs
+        - Activity and notifications
+        - Settings
+        - API
+        - Deployment and packaging
+        - i18n / RTL / accessibility
+
+  - type: textarea
+    id: providers
+    attributes:
+      label: Which providers this applies to
+      description: >
+        Most capabilities are not universal. If this is a MinIO admin-API
+        feature or an AWS-only one, say so — a provider that lacks it reports
+        the capability as unsupported rather than failing at the call.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including "I currently do it with mc / aws-cli / the provider's own console".

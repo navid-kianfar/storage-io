@@ -1,0 +1,181 @@
+name: release
+
+# Fires only on a version tag someone pushed deliberately. Nothing here runs on
+# a branch push, so a release is always a human action.
+on:
+  push:
+    tags: ['v*']
+
+# Two tags pushed close together are two different releases; cancelling one
+# would leave a tag with no image. So: never cancel, just serialise.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+  IMAGE: kianfar/storage-io
+
+jobs:
+  # The same gate as ci.yml's `verify`. A tag can be pushed to any commit, so
+  # this is not a duplicate of the branch run — it is the check that *this*
+  # commit is releasable.
+  verify:
+    name: lint, typecheck, unit + e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @storage-io/contracts build
+      - run: pnpm lint
+      # See the note in ci.yml: `pnpm format:check` joins both workflows once
+      # the tree has been formatted once.
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # A tag that disagrees with package.json produces an image whose
+      # `/health` reports a different version from its own tag. Catch it here,
+      # before anything is published.
+      - name: Tag matches package.json version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json version $pkg"
+            exit 1
+          fi
+          echo "version $pkg"
+
+  image:
+    name: multi-arch image → Docker Hub
+    runs-on: ubuntu-latest
+    needs: verify
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # linux/arm64 is emulated on an amd64 runner. better-sqlite3 ships an
+      # arm64 prebuild, so the slow part is the JS build, not a native compile.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+
+      # Repository secrets, exactly these names. DOCKER_PASSWORD should be a
+      # Docker Hub *access token* scoped to read/write, not the account
+      # password — a token can be revoked without changing the login.
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # `latest` is decided here rather than by flavor=latest=auto, so a
+          # pre-release tag (v0.2.0-rc.1) never becomes the default pull.
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+          labels: |
+            org.opencontainers.image.title=storage-io
+            org.opencontainers.image.description=Self-hosted web console for S3-compatible object storage (MinIO, SeaweedFS, Ceph RGW, Garage, AWS S3).
+            org.opencontainers.image.source=https://github.com/navid-kianfar/storage-io
+            org.opencontainers.image.url=https://github.com/navid-kianfar/storage-io
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Non-fatal on purpose: updating the repository description needs a Docker
+      # Hub token with more than push scope, and a release must not fail because
+      # the blurb did not sync.
+      - name: Sync the Docker Hub description
+        uses: peter-evans/dockerhub-description@v4
+        continue-on-error: true
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          repository: ${{ env.IMAGE }}
+          short-description: 'One console for all your S3-compatible storage (MinIO, SeaweedFS, AWS S3, Ceph, Garage, R2, Wasabi).'
+          readme-filepath: ./README.md
+
+  release:
+    name: github release
+    runs-on: ubuntu-latest
+    needs: image
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.image.outputs.version }}
+        run: |
+          set -euo pipefail
+          # YAML strips this block's own indentation, so the heredoc body reaches
+          # the shell flush left — which it has to be, because an indented ```
+          # fence is not a fence and the snippet would render as prose.
+          cat > /tmp/notes.md <<EOF
+          ### Install
+
+          \`\`\`bash
+          docker run -d --name storage-io \\
+            -p 3000:3000 \\
+            -v storage-io-data:/data \\
+            -e ADMIN_USERNAME=admin \\
+            -e ADMIN_PASSWORD='<a long password>' \\
+            -e APP_SECRET='<32+ random characters>' \\
+            ${IMAGE}:${VERSION}
+          \`\`\`
+
+          Then open <http://localhost:3000>.
+
+          \`APP_SECRET\` encrypts every stored storage-server secret: keep it, back it
+          up, and never change it on a live installation — every saved server would
+          have to be entered again.
+
+          Images: \`${IMAGE}:${VERSION}\`, \`${IMAGE}:latest\` — \`linux/amd64\` and \`linux/arm64\`.
+          EOF
+          # `--notes` (not `--notes-file`) is the flag gh documents as prepending
+          # to `--generate-notes`, so the snippet lands above the changelog.
+          gh release create "$GITHUB_REF_NAME" \
+            --title "storage-io $GITHUB_REF_NAME" \
+            --notes "$(cat /tmp/notes.md)" \
+            --generate-notes \
+            --verify-tag

@@ -44,7 +44,9 @@ export default tseslint.config(
       globals: { ...globals.node },
       parserOptions: {
         projectService: {
-          // Config files that belong to no package tsconfig.
+          // Config files that belong to no package tsconfig. `scripts/*.mjs` is
+          // deliberately absent: those files turn type-aware linting off
+          // entirely in their own block near the end of this file.
           allowDefaultProject: [
             '*.js',
             '*.mjs',
@@ -148,6 +150,23 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'off',
       'max-depth': 'off',
     },
+  },
+
+  // Repo scripts (`scripts/*.mjs`): plain Node, dependency-light, outside every
+  // package tsconfig. They talk to the running API over HTTP, so every response
+  // is `any` by construction and the type-aware rules have nothing real to say
+  // about them — they would just demand a second copy of the contract. The
+  // syntactic rules still apply.
+  {
+    files: ['scripts/**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // The callbacks passed to Playwright's `page.evaluate` are serialised and
+    // run inside the browser, so `document` and `navigator` are real there even
+    // though the file itself is Node.
+    files: ['scripts/screenshots.mjs'],
+    languageOptions: { globals: { ...globals.browser } },
   },
 
   prettier,
