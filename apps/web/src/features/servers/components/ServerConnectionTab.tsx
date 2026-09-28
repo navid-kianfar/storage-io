@@ -83,12 +83,11 @@ export function ServerConnectionTab({
    * request is cleared as soon as it has been turned into dialog state so that
    * closing the dialog does not immediately reopen it.
    */
-  const askToRemove = removeRequested && !removing;
-  useEffect(() => {
-    if (!askToRemove) return;
-    setRemoving(true);
-    onRemoveHandled?.();
-  }, [askToRemove, onRemoveHandled]);
+  const removeOpen = removing || removeRequested === true;
+  const setRemoveOpen = (open: boolean) => {
+    setRemoving(open);
+    if (!open) onRemoveHandled?.();
+  };
 
   /**
    * The check result is the mutation's own state rather than a copy in `useState`:
@@ -155,7 +154,7 @@ export function ServerConnectionTab({
     remove.mutate(server.id, {
       onSuccess: () => {
         toast.success(t('servers.toast.removed'), { description: server.name });
-        setRemoving(false);
+        setRemoveOpen(false);
         void navigate({ to: '/servers' });
       },
       onError: (error) => apiError.toastError(error, t('servers.toast.removeFailed')),
@@ -245,8 +244,8 @@ export function ServerConnectionTab({
       </Card>
 
       <ConfirmDialog
-        open={removing}
-        onOpenChange={setRemoving}
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
         destructive
         title={t('server.danger.confirmTitle')}
         description={t('server.danger.confirmDescription')}

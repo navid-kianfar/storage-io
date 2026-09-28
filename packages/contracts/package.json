@@ -1,6 +1,6 @@
 {
   "name": "@storage-io/contracts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "storage-io shared contract: zod v4 schemas, inferred types, enums and helpers for every storage-io API request and response.",
   "keywords": [

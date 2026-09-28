@@ -1,6 +1,6 @@
 {
   "name": "@storage-io/api",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "storage-io REST API: NestJS, SQLite (Drizzle), S3-compatible provider drivers, IAM drivers, bulk-job engine and SSE.",
   "keywords": [

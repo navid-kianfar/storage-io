@@ -1,6 +1,6 @@
 {
   "name": "@storage-io/web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "storage-io web console: React 19, Vite, TanStack Router/Query, Tailwind v4 and shadcn/ui, with i18n and RTL.",
   "keywords": [

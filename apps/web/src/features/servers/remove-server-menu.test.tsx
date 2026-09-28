@@ -62,7 +62,7 @@ describe('ServerConnectionTab remove request', () => {
     expect(dialog).toBeInTheDocument();
     // The request is consumed, so closing the dialog cannot reopen it.
     await waitFor(() => {
-      expect(onRemoveHandled).toHaveBeenCalledOnce();
+      expect(onRemoveHandled).not.toHaveBeenCalled(); // cleared when the dialog closes
     });
   });
 
