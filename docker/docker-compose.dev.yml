@@ -1,0 +1,98 @@
+# storage-io — local S3 targets for development and integration tests.
+#
+#   docker compose -f docker/docker-compose.dev.yml up -d
+#   docker compose -f docker/docker-compose.dev.yml down -v      # also drops the data
+#
+# ---------------------------------------------------------------------------
+# MinIO  (provider: minio, IAM driver: minio-admin)
+#   S3 endpoint     http://localhost:9000
+#   Admin endpoint  http://localhost:9000      (same origin; /minio/admin/v3/…)
+#   Console         http://localhost:9001
+#   Access key      sio-dev-admin
+#   Secret key      sio-dev-secret-key
+#   Region          us-east-1        path-style: yes        TLS: no
+#
+# SeaweedFS  (provider: seaweedfs, IAM driver: aws-iam)
+#   S3 endpoint     http://localhost:8333
+#   IAM endpoint    http://localhost:8111
+#   Filer UI        http://localhost:8888
+#   Master UI       http://localhost:9333
+#   Access key      sio-dev-seaweed
+#   Secret key      sio-dev-seaweed-secret
+#   Region          us-east-1        path-style: yes        TLS: no
+#
+# These credentials are fixed on purpose: apps/api's integration tests
+# (S3_IT=1) read them from apps/api/test/it/containers.ts. They are development
+# values and must never appear in a deployed environment.
+# ---------------------------------------------------------------------------
+#
+# Image note: docker.io/minio/minio is no longer anonymously pullable, so this
+# file uses Broadcom's legacy Bitnami image, which packages the upstream MinIO
+# server binary — minio DEVELOPMENT.2025-05-24T17-08-30Z in the pinned tag
+# below — with the Admin API v3 intact (verified: /minio/admin/v3/info and
+# list-users answer, and list-users returns a madmin-encrypted payload). If the
+# official image becomes reachable again, swap the `image:` line; nothing else
+# here depends on Bitnami.
+
+name: storage-io-dev
+
+services:
+  minio:
+    image: bitnamilegacy/minio:2025.5.24-debian-12-r5
+    container_name: sio-dev-minio
+    environment:
+      MINIO_ROOT_USER: sio-dev-admin
+      MINIO_ROOT_PASSWORD: sio-dev-secret-key
+      MINIO_DEFAULT_BUCKETS: sio-dev-bucket
+      # Keep the browser out of the way of the API surface under test.
+      MINIO_BROWSER: 'on'
+      MINIO_SCHEME: http
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/bitnami/minio/data
+    healthcheck:
+      # /minio/health/live needs no credentials.
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:9000/minio/health/live']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.97
+    container_name: sio-dev-seaweedfs
+    # `server` runs master + volume + filer in one process; -s3 and -iam add the
+    # S3 gateway and the IAM-compatible API the aws-iam driver talks to.
+    command: >
+      server
+      -dir=/data
+      -master.volumeSizeLimitMB=256
+      -volume.max=8
+      -filer
+      -s3
+      -s3.port=8333
+      -s3.config=/etc/seaweedfs/s3.json
+      -s3.allowEmptyFolder=false
+      -iam
+      -iam.port=8111
+    ports:
+      - '8333:8333'
+      - '8111:8111'
+      - '8888:8888'
+      - '9333:9333'
+    volumes:
+      - seaweedfs-data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test:
+        ['CMD', 'wget', '-q', '-O', '-', 'http://127.0.0.1:9333/cluster/status']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  minio-data:
+  seaweedfs-data:

@@ -1,0 +1,99 @@
+import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { LoggerModule } from 'nestjs-pino';
+import { ZodValidationPipe } from 'nestjs-zod';
+import { AppConfigModule } from './config/config.module';
+import { AppConfigService } from './config/app-config.service';
+import { DbModule } from './db/db.module';
+import { CryptoModule } from './crypto/crypto.module';
+import { SettingsModule } from './settings/settings.module';
+import { EventsModule } from './events/events.module';
+import { ActivityModule } from './activity/activity.module';
+import { ActivityInterceptor } from './activity/activity.interceptor';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AuthModule } from './auth/auth.module';
+import { ProvidersModule } from './providers/providers.module';
+import { ServersModule } from './servers/servers.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
+import { HealthController } from './health/health.controller';
+import { ProblemExceptionFilter } from './common/filters/problem.filter';
+import { AuthGuard } from './common/guards/auth.guard';
+import { OriginGuard } from './common/guards/origin.guard';
+import { AllowedNetworksMiddleware } from './common/middleware/allowed-networks.middleware';
+import { DEFAULT_THROTTLER, LOGIN_THROTTLER, skipUnlessLoginRoute } from './auth/login-throttler';
+import { buildLoggerOptions } from './logging';
+
+/**
+ * The application root.
+ *
+ * The global registrations are the security posture, and their order is load
+ * bearing:
+ *
+ * 1. `AllowedNetworksMiddleware` — before anything else, including streaming
+ *    routes that never reach a controller.
+ * 2. `ThrottlerGuard` — rate limiting before the expensive work.
+ * 3. `AuthGuard` — everything is protected unless marked `@Public()`.
+ * 4. `OriginGuard` — after auth, because it needs to know *how* the request
+ *    authenticated: only a cookie session is forgeable cross-site.
+ * 5. `ZodValidationPipe` — one pipe, validating against the contract schemas.
+ * 6. `ActivityInterceptor` — records every mutating request, success or failure.
+ * 7. `ProblemExceptionFilter` — one error envelope for the whole API.
+ *
+ * Modules are split by domain. The infrastructure ones (config, db, crypto,
+ * settings, events, activity, notifications) are `@Global()` because every
+ * feature module needs them and threading imports through each new module is a
+ * step someone will forget.
+ */
+@Module({
+  imports: [
+    AppConfigModule,
+    LoggerModule.forRootAsync({
+      inject: [AppConfigService],
+      useFactory: (config: AppConfigService) => buildLoggerOptions(config),
+    }),
+    DbModule,
+    CryptoModule,
+    SettingsModule,
+    EventsModule,
+    ActivityModule,
+    NotificationsModule,
+    ScheduleModule.forRoot(),
+    ThrottlerModule.forRootAsync({
+      inject: [AppConfigService],
+      useFactory: (config: AppConfigService) => ({
+        throttlers: [
+          // The whole API: generous, to stop a runaway client, not a user.
+          { name: DEFAULT_THROTTLER, ttl: 60_000, limit: 600 },
+          // Login: the brute-force limit, from the environment. `skipIf` is
+          // what confines it to the login route — see login-throttler.ts.
+          {
+            name: LOGIN_THROTTLER,
+            ttl: config.loginRateTtlSec * 1000,
+            limit: config.loginRateLimit,
+            skipIf: skipUnlessLoginRoute,
+          },
+        ],
+      }),
+    }),
+    AuthModule,
+    ProvidersModule,
+    ServersModule,
+    MaintenanceModule,
+  ],
+  controllers: [HealthController],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: OriginGuard },
+    { provide: APP_PIPE, useClass: ZodValidationPipe },
+    { provide: APP_INTERCEPTOR, useClass: ActivityInterceptor },
+    { provide: APP_FILTER, useClass: ProblemExceptionFilter },
+  ],
+})
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(AllowedNetworksMiddleware).forRoutes('*path');
+  }
+}

@@ -228,6 +228,7 @@ interface ActivityEvent { id; at; category; action: string /* e.g. "object.delet
   ip: string | null; result: 'success'|'failure'|'warning'; requestId: string | null; details: object }
 interface Dashboard {
   totals: { usedBytes; capacityBytes; objects; buckets; usedDelta7dBytes; objectsDeltaToday: number | null
+    users: number /* S3 users across servers, from the cache */; accessKeys: number
     servers: { total; healthy; degraded; offline } ; nearQuotaBuckets: number }
   growth: [{ t: string; usedBytes: number }] /* 30 daily points */
   byServer: [{ serverId; name; provider; usedBytes; totalBytes }]
@@ -238,7 +239,7 @@ interface Settings {
   profile: { displayName; email: string | null }
   security: { sessionTtlHours: number; allowedNetworks: string[] }
   appearance: { density: 'comfortable'|'compact' }   // per-browser prefs such as theme stay client-side
-  region: { timezone: string; sizeUnits: 'decimal'|'binary'; calendar: 'auto'|'gregory'|'persian'|'islamic'; digits: 'auto'|'latn'; weekStart: 'auto'|0|1|6 }
+  region: { timezone: string; sizeUnits: 'decimal'|'binary' /* default 'decimal' */; calendar: 'auto'|'gregory'|'persian'|'islamic'; digits: 'auto'|'latn'; weekStart: 'auto'|0|1|6 }
   transfers: { parallel: number; partSizeMb: 8|16|64; bandwidthLimitMbps: number | null; verifyChecksums: boolean; keepIncompleteDays: number }
   notifications: { email: { enabled; host; port; secure; username; password?: string /* write-only */; from; to: string[] }
     webhook: { enabled; url; secret?: string }
@@ -254,7 +255,7 @@ interface Settings {
 |---|---|---|---|
 | POST | `/servers/:sid/buckets/:bucket/objects/import-url` | `{ url, key, overwrite }` (the API fetches the URL server-side, streams it into the bucket, max size from settings) | `ObjectItem` |
 | PUT | `/servers/:sid/buckets/:bucket/objects/storage-class` | `?key` `{ storageClass }` | `ObjectMeta` |
-| POST | `/buckets/bulk` | `{ buckets: [{ serverId, bucket }], action: 'quota'\|'lifecycle-rule'\|'tags'\|'access', payload }` | `{ results: [{ serverId, bucket, ok, message }] }` |
+| POST | `/buckets/bulk` | `{ buckets: [{ serverId, bucket }], action: 'quota'\|'lifecycle-rule'\|'tags'\|'access'\|'delete', payload }` | `{ results: [{ serverId, bucket, ok, message }] }` — `delete` takes `payload: { force: boolean }` (`force` empties each bucket first); a bucket that is not empty comes back as `ok: false` with `BUCKET_NOT_EMPTY` in `message` while the rest are still deleted |
 | POST | `/servers/:id/rotate-credentials` | `{ mode: 'auto' } \| { mode: 'manual', accessKeyId, secretAccessKey }` (auto: create a new admin key through the IAM driver, verify it, swap the stored credentials, then disable/delete the old key) | `{ server: Server, rotatedAt }` |
 | GET | `/servers/:id/nodes/:node/drives` | — | `{ items: [{ path, state, usedBytes, totalBytes, model: string\|null, healing: boolean }] }` |
 | GET | `/servers/:sid/iam/policies/:name/versions` | — | `{ items: [{ id, createdAt, document, note }] }` (the app DB snapshots every PUT made through storage-io) |
@@ -266,3 +267,5 @@ interface Settings {
 | GET | `/servers/:sid/buckets/:bucket/notifications/status` | — | `{ items: [{ targetId, arn, state: 'online'\|'offline'\|'unknown', detail }] }` (MinIO target status via admin API; other providers return `unknown`) |
 
 Contract additions: `Job.parentId: string | null`. Settings gains `notifications.telegram: { enabled, botToken?: string /* write-only */, chatId }` (with rule flags per channel), `activity.syslog: { enabled, host, port, protocol: 'udp'|'tcp'|'tls', format: 'rfc5424'|'json', facility }` and `transfers.importUrlMaxMb`. `POST /settings/notifications/test` accepts `channel: 'email'|'webhook'|'telegram'|'syslog'`. Admin credentials come from env, so there is no password-change endpoint; the Settings page shows them as "Managed by environment".
+
+CSV exports (added): `GET /buckets/export.csv` and `GET /quotas/export.csv` accept the same filters as their list endpoints and return `text/csv`. `POST /settings/export` and `POST /settings/import` are owned by backend wave 2c.

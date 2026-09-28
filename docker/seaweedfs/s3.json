@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "sio-dev-admin",
+      "credentials": [
+        {
+          "accessKey": "sio-dev-seaweed",
+          "secretKey": "sio-dev-seaweed-secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

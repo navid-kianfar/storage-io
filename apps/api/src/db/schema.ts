@@ -1,0 +1,436 @@
+import {
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
+
+/**
+ * The whole application schema. Two rules hold everywhere:
+ *
+ * - **Timestamps are ISO-8601 TEXT.** The contract hands ISO strings to clients,
+ *   and ISO strings sort lexicographically in SQLite, so ordering and range
+ *   filters work without a conversion layer.
+ * - **Structured values are JSON TEXT** with a `$type` so the compiler knows the
+ *   shape. SQLite has no JSON column type; the alternative is a table per nested
+ *   object, which buys nothing for values only ever read whole.
+ *
+ * A change here is a migration: `pnpm --filter @storage-io/api db:generate`, then
+ * commit the generated SQL. src/db/migrate.ts applies the folder at boot, so the
+ * fresh-create path and the upgrade path are the same code.
+ */
+
+/* ------------------------------------------------------------------ *
+ * Auth
+ * ------------------------------------------------------------------ */
+
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    /** SHA-256 of the opaque token. The token itself is never stored. */
+    tokenHash: text('token_hash').notNull(),
+    userAgent: text('user_agent'),
+    ip: text('ip'),
+    createdAt: text('created_at').notNull(),
+    lastSeenAt: text('last_seen_at'),
+    expiresAt: text('expires_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('sessions_token_hash_uq').on(table.tokenHash),
+    index('sessions_expires_at_idx').on(table.expiresAt),
+  ],
+);
+
+export const apiTokens = sqliteTable(
+  'api_tokens',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /** First characters of the token, shown in the UI to tell tokens apart. */
+    prefix: text('prefix').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    createdAt: text('created_at').notNull(),
+    lastUsedAt: text('last_used_at'),
+    expiresAt: text('expires_at'),
+  },
+  (table) => [uniqueIndex('api_tokens_token_hash_uq').on(table.tokenHash)],
+);
+
+/* ------------------------------------------------------------------ *
+ * Servers
+ * ------------------------------------------------------------------ */
+
+/** `Record<Capability, CapabilityState>` as stored. */
+export type StoredCapabilities = Record<string, string>;
+
+export const servers = sqliteTable(
+  'servers',
+  {
+    id: text('id').primaryKey(),
+    /** Slug; doubles as the URL segment in `/servers/:id`. */
+    name: text('name').notNull(),
+    provider: text('provider').notNull(),
+    endpoint: text('endpoint').notNull(),
+    region: text('region').notNull(),
+
+    accessKeyId: text('access_key_id').notNull(),
+    /** AES-256-GCM, key derived from APP_SECRET by HKDF. See CryptoService. */
+    secretEncrypted: text('secret_encrypted').notNull(),
+    /** Garage's admin bearer token, same encryption. */
+    adminTokenEncrypted: text('admin_token_encrypted'),
+
+    pathStyle: integer('path_style', { mode: 'boolean' }).notNull().default(true),
+    tlsVerify: integer('tls_verify', { mode: 'boolean' }).notNull().default(true),
+    caPem: text('ca_pem'),
+    adminEndpoint: text('admin_endpoint'),
+    iamEndpoint: text('iam_endpoint'),
+    healthIntervalSec: integer('health_interval_sec').notNull().default(30),
+
+    maintenance: integer('maintenance', { mode: 'boolean' }).notNull().default(false),
+    status: text('status').notNull().default('unknown'),
+    statusDetail: text('status_detail'),
+    latencyMs: integer('latency_ms'),
+    lastCheckedAt: text('last_checked_at'),
+    lastSeenAt: text('last_seen_at'),
+    version: text('version'),
+    capabilities: text('capabilities', { mode: 'json' })
+      .$type<StoredCapabilities>()
+      .notNull()
+      .default({}),
+
+    capacityUsedBytes: integer('capacity_used_bytes'),
+    capacityTotalBytes: integer('capacity_total_bytes'),
+    /** True when `capacityTotalBytes` is an operator budget, not real capacity. */
+    capacityBudget: integer('capacity_budget', { mode: 'boolean' }).notNull().default(false),
+
+    bucketCount: integer('bucket_count').notNull().default(0),
+    userCount: integer('user_count'),
+    objectCount: integer('object_count'),
+
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('servers_name_uq').on(table.name),
+    index('servers_status_idx').on(table.status),
+    index('servers_provider_idx').on(table.provider),
+  ],
+);
+
+/** The most recent connection-test result set, one row per check. */
+export const serverChecks = sqliteTable(
+  'server_checks',
+  {
+    id: text('id').primaryKey(),
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    checkId: text('check_id').notNull(),
+    label: text('label').notNull(),
+    status: text('status').notNull(),
+    detail: text('detail'),
+    durationMs: integer('duration_ms').notNull(),
+    at: text('at').notNull(),
+  },
+  (table) => [index('server_checks_server_at_idx').on(table.serverId, table.at)],
+);
+
+/** Status transitions and latency warnings, for `GET /servers/:id/events`. */
+export const healthEvents = sqliteTable(
+  'health_events',
+  {
+    id: text('id').primaryKey(),
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    detail: text('detail'),
+    at: text('at').notNull(),
+  },
+  (table) => [index('health_events_server_at_idx').on(table.serverId, table.at)],
+);
+
+/** Hourly capacity snapshots, behind the capacity chart. */
+export const metricsCapacity = sqliteTable(
+  'metrics_capacity',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    at: text('at').notNull(),
+    usedBytes: integer('used_bytes').notNull(),
+    totalBytes: integer('total_bytes'),
+  },
+  (table) => [index('metrics_capacity_server_at_idx').on(table.serverId, table.at)],
+);
+
+/** One row per health check: the latency series and the uptime ratio. */
+export const metricsLatency = sqliteTable(
+  'metrics_latency',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    at: text('at').notNull(),
+    ms: integer('ms').notNull(),
+    /** False for a failed check — this is what uptime is computed from. */
+    reachable: integer('reachable', { mode: 'boolean' }).notNull(),
+  },
+  (table) => [index('metrics_latency_server_at_idx').on(table.serverId, table.at)],
+);
+
+/* ------------------------------------------------------------------ *
+ * Inventory cache and app-level quotas
+ * ------------------------------------------------------------------ */
+
+/**
+ * The last known bucket list per server, so aggregated lists are one local query
+ * and an offline server still shows what it had.
+ */
+export const bucketCache = sqliteTable(
+  'bucket_cache',
+  {
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    region: text('region'),
+    createdAt: text('created_at'),
+    objects: integer('objects'),
+    sizeBytes: integer('size_bytes'),
+    statsAt: text('stats_at'),
+    versioning: text('versioning').notNull().default('off'),
+    objectLock: integer('object_lock', { mode: 'boolean' }).notNull().default(false),
+    access: text('access').notNull().default('private'),
+    owner: text('owner'),
+    tags: text('tags', { mode: 'json' }).$type<Record<string, string>>().notNull().default({}),
+    defaultStorageClass: text('default_storage_class'),
+    noncurrentVersions: integer('noncurrent_versions'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.serverId, table.name] }),
+    index('bucket_cache_size_idx').on(table.sizeBytes),
+  ],
+);
+
+/**
+ * Quotas storage-io tracks itself. `native` says whether the provider also
+ * enforces it; when it does not, the quota is alert-only.
+ */
+export const quotas = sqliteTable(
+  'quotas',
+  {
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    bucket: text('bucket').notNull(),
+    limitBytes: integer('limit_bytes').notNull(),
+    mode: text('mode').notNull(),
+    threshold: integer('threshold_permille').notNull().default(800),
+    native: integer('native', { mode: 'boolean' }).notNull().default(false),
+    /** Set when the threshold alert last fired, so it does not repeat hourly. */
+    alertedAt: text('alerted_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.serverId, table.bucket] })],
+);
+
+/**
+ * What storage-io knows about an access key beyond what the provider reports:
+ * an expiry on providers without one, and an in-flight rotation's grace period.
+ */
+export const keyMeta = sqliteTable(
+  'key_meta',
+  {
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    accessKeyId: text('access_key_id').notNull(),
+    userName: text('user_name').notNull(),
+    name: text('name'),
+    createdAt: text('created_at'),
+    expiresAt: text('expires_at'),
+    lastUsedAt: text('last_used_at'),
+    /** `active` | `disabled` | `expired`, as storage-io last set or observed it. */
+    status: text('status').notNull().default('active'),
+    restricted: integer('restricted', { mode: 'boolean' }).notNull().default(false),
+    rotationReplacedBy: text('rotation_replaced_by'),
+    rotationDisableAt: text('rotation_disable_at'),
+    /** Set once the expiring-soon notification has been raised. */
+    expiryNotifiedAt: text('expiry_notified_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.serverId, table.accessKeyId] }),
+    index('key_meta_expires_at_idx').on(table.expiresAt),
+    index('key_meta_rotation_idx').on(table.rotationDisableAt),
+  ],
+);
+
+/**
+ * A snapshot of a canned policy before each `PUT` made through storage-io, so a
+ * bad edit is reversible even where the provider keeps no history.
+ */
+export const policyVersions = sqliteTable(
+  'policy_versions',
+  {
+    id: text('id').primaryKey(),
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    policyName: text('policy_name').notNull(),
+    document: text('document', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    note: text('note'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('policy_versions_lookup_idx').on(table.serverId, table.policyName, table.createdAt),
+  ],
+);
+
+/* ------------------------------------------------------------------ *
+ * Jobs
+ * ------------------------------------------------------------------ */
+
+export const jobs = sqliteTable(
+  'jobs',
+  {
+    id: text('id').primaryKey(),
+    /** Set on each run of a recurring job; null on the schedule itself. */
+    parentId: text('parent_id'),
+    name: text('name').notNull(),
+    type: text('type').notNull(),
+    status: text('status').notNull(),
+
+    sourceServerId: text('source_server_id').notNull(),
+    sourceBucket: text('source_bucket').notNull(),
+    filters: text('filters', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+
+    targetServerId: text('target_server_id'),
+    targetBucket: text('target_bucket'),
+    targetPrefix: text('target_prefix'),
+
+    params: text('params', { mode: 'json' }).$type<Record<string, unknown>>().notNull().default({}),
+    options: text('options', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    schedule: text('schedule', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    progress: text('progress', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+
+    /** Continuation token, so a job resumes where it stopped after a restart. */
+    checkpoint: text('checkpoint'),
+    nextRunAt: text('next_run_at'),
+    waitingFor: text('waiting_for'),
+
+    createdAt: text('created_at').notNull(),
+    startedAt: text('started_at'),
+    finishedAt: text('finished_at'),
+  },
+  (table) => [
+    index('jobs_status_idx').on(table.status),
+    index('jobs_parent_idx').on(table.parentId),
+    index('jobs_next_run_idx').on(table.nextRunAt),
+    index('jobs_created_idx').on(table.createdAt),
+  ],
+);
+
+export const jobLogs = sqliteTable(
+  'job_logs',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    jobId: text('job_id')
+      .notNull()
+      .references(() => jobs.id, { onDelete: 'cascade' }),
+    at: text('at').notNull(),
+    level: text('level').notNull(),
+    message: text('message').notNull(),
+    key: text('key'),
+  },
+  (table) => [index('job_logs_job_idx').on(table.jobId, table.id)],
+);
+
+/* ------------------------------------------------------------------ *
+ * Activity, notifications, settings
+ * ------------------------------------------------------------------ */
+
+export const activity = sqliteTable(
+  'activity',
+  {
+    id: text('id').primaryKey(),
+    at: text('at').notNull(),
+    category: text('category').notNull(),
+    action: text('action').notNull(),
+    title: text('title').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorName: text('actor_name').notNull(),
+    target: text('target'),
+    serverId: text('server_id'),
+    serverName: text('server_name'),
+    ip: text('ip'),
+    result: text('result').notNull(),
+    requestId: text('request_id'),
+    details: text('details', { mode: 'json' })
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+  },
+  (table) => [
+    index('activity_at_idx').on(table.at),
+    index('activity_category_idx').on(table.category),
+    index('activity_server_idx').on(table.serverId),
+    index('activity_result_idx').on(table.result),
+  ],
+);
+
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: text('id').primaryKey(),
+    at: text('at').notNull(),
+    level: text('level').notNull(),
+    title: text('title').notNull(),
+    detail: text('detail').notNull(),
+    href: text('href'),
+    read: integer('read', { mode: 'boolean' }).notNull().default(false),
+    /** Which `Settings.notifications.rules` key raised it, for channel routing. */
+    ruleKey: text('rule_key'),
+  },
+  (table) => [index('notifications_read_at_idx').on(table.read, table.at)],
+);
+
+/**
+ * One row per top-level `Settings` section, so PATCHing one section is a single
+ * upsert and an unknown future section cannot be lost by a whole-document write.
+ */
+export const settings = sqliteTable('settings', {
+  section: text('section').primaryKey(),
+  value: text('value', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+/* ------------------------------------------------------------------ *
+ * Inferred row types
+ * ------------------------------------------------------------------ */
+
+export type SessionRow = typeof sessions.$inferSelect;
+export type ApiTokenRow = typeof apiTokens.$inferSelect;
+export type ServerRow = typeof servers.$inferSelect;
+export type NewServerRow = typeof servers.$inferInsert;
+export type ServerCheckRow = typeof serverChecks.$inferSelect;
+export type HealthEventRow = typeof healthEvents.$inferSelect;
+export type MetricsCapacityRow = typeof metricsCapacity.$inferSelect;
+export type MetricsLatencyRow = typeof metricsLatency.$inferSelect;
+export type BucketCacheRow = typeof bucketCache.$inferSelect;
+export type QuotaRowRecord = typeof quotas.$inferSelect;
+export type KeyMetaRow = typeof keyMeta.$inferSelect;
+export type PolicyVersionRow = typeof policyVersions.$inferSelect;
+export type JobRow = typeof jobs.$inferSelect;
+export type JobLogRow = typeof jobLogs.$inferSelect;
+export type ActivityRow = typeof activity.$inferSelect;
+export type NewActivityRow = typeof activity.$inferInsert;
+export type NotificationRow = typeof notifications.$inferSelect;
+export type SettingsRow = typeof settings.$inferSelect;

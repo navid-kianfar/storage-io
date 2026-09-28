@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "dev": "pnpm --filter @storage-io/contracts build && pnpm -r --parallel --filter ./apps/* dev",
     "build": "pnpm --filter @storage-io/contracts build && pnpm -r --filter='!@storage-io/contracts' build",
     "test": "pnpm -r test",
     "lint": "eslint .",
