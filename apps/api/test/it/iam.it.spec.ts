@@ -1268,7 +1268,13 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
         .expect(200);
       expect(single.body.items.map((user: { name: string }) => user.name)).toContain(SEAWEED_USER);
 
-      const all = await harness.http().get('/api/v1/iam/users').set('Cookie', cookie).expect(200);
+      // One page big enough for every user the suite created on both servers:
+      // the default page (50) can end before the SeaweedFS rows begin.
+      const all = await harness
+        .http()
+        .get('/api/v1/iam/users?pageSize=500')
+        .set('Cookie', cookie)
+        .expect(200);
       const servers = new Set(
         all.body.items.map((user: { serverName: string }) => user.serverName),
       );
