@@ -78,6 +78,25 @@ async function readBody(response: Response): Promise<unknown> {
 }
 
 /**
+ * A body that is already bytes and must be sent through untouched.
+ *
+ * A raw `string` belongs here: JSON-encoding one turns a text file the operator
+ * is editing into a quoted JSON literal with `\n` escapes for its newlines, which
+ * is exactly what `PUT …/objects/content` used to store in place of the file.
+ * Anything else — an object, an array — is a DTO and is encoded as JSON.
+ */
+function isRawBody(body: unknown): boolean {
+  return (
+    typeof body === 'string' ||
+    body instanceof FormData ||
+    body instanceof Blob ||
+    body instanceof URLSearchParams ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body)
+  );
+}
+
+/**
  * The single way the app talks to the API.
  *
  * - `credentials: 'include'` so the httpOnly session cookie travels.
@@ -92,9 +111,14 @@ export async function request<TResult>(
 ): Promise<TResult> {
   const { method = 'GET', query, body, signal, accept = 'application/json', headers } = options;
 
-  const hasJsonBody = body !== undefined && !(body instanceof FormData);
+  const sendsJson = body !== undefined && !isRawBody(body);
   const requestHeaders: Record<string, string> = { Accept: accept, ...headers };
-  if (hasJsonBody) requestHeaders['Content-Type'] = 'application/json';
+  // Only when this call actually encodes JSON, and never over a type the caller
+  // set: the in-place object editor sends `text/plain`, and overriding it made
+  // the API store a text file as `application/json`.
+  if (sendsJson && requestHeaders['Content-Type'] === undefined) {
+    requestHeaders['Content-Type'] = 'application/json';
+  }
 
   let response: Response;
   try {
@@ -103,7 +127,7 @@ export async function request<TResult>(
       credentials: 'include',
       headers: requestHeaders,
       signal,
-      body: hasJsonBody ? JSON.stringify(body) : body,
+      body: sendsJson ? JSON.stringify(body) : (body as BodyInit | undefined),
     });
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;

@@ -368,6 +368,13 @@ export class ObjectsService {
     const context = this.storage.forServer(sid);
     const existing = await this.headOrNull(context, bucket, key);
 
+    // A PUT replaces the object's tag set as well as its bytes, so the tags have
+    // to be read and written back or editing a file silently strips them — and
+    // tags drive lifecycle rules and bucket policies, so losing them changes how
+    // the object is treated. The cross-server copy below carries them the same
+    // way. A first save from the editor has no existing object to read.
+    const existingTags = existing === null ? {} : await this.readTags(context, bucket, key, undefined);
+
     const item = await this.streams.upload(context.client, {
       bucket,
       key,
@@ -376,7 +383,7 @@ export class ObjectsService {
       // `.json` file does not turn it into `text/plain`.
       contentType: existing?.ContentType ?? 'text/plain; charset=utf-8',
       metadata: { ...(existing?.Metadata ?? {}) },
-      tags: {},
+      tags: existingTags,
       storageClass: existing?.StorageClass ?? null,
       contentLength: null,
     });

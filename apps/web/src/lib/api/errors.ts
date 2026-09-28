@@ -63,6 +63,23 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
+const HTTP_NOT_FOUND = 404;
+
+/**
+ * True when this error is the API saying the thing is not there.
+ *
+ * A page that resolves an opaque id from the URL needs exactly this question,
+ * and needs it to be reliable: answering "no" to a real 404 leaves the page
+ * rendering an empty shell over an entity that does not exist, which reads to
+ * an operator as "my data is gone". The status is checked alongside the problem
+ * code because a 404 raised before the handler runs — an unroutable path — has
+ * no `code` of its own.
+ */
+export function isNotFoundError(error: unknown): boolean {
+  if (!isApiError(error)) return false;
+  return error.is('NOT_FOUND') || error.status === HTTP_NOT_FOUND;
+}
+
 const UNKNOWN_STATUS = 0;
 
 export function networkProblem(detail: string): Problem {

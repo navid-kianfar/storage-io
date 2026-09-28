@@ -68,7 +68,15 @@ export function OptionRow({
         className,
       )}
     >
-      <div className="min-w-0 flex-1">
+      {/*
+       * `basis-48` is what makes `flex-wrap` above do anything. With a bare
+       * `flex-1` the label column shrinks to its longest word instead, so a wide
+       * control — a byte-size input and its unit select, not just a switch —
+       * squeezed the hint into a one-word-per-line ribbon at 375px. Given a
+       * basis, the row wraps the control onto its own line instead, and a narrow
+       * control still sits inline at every width.
+       */}
+      <div className="min-w-0 flex-1 basis-48">
         <div className="text-sm font-medium">{label}</div>
         {hint ? <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">{hint}</p> : null}
       </div>

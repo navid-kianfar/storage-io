@@ -7,6 +7,7 @@ import {
   ArchiveIcon,
   ChevronDownIcon,
   CopyPlusIcon,
+  DatabaseIcon,
   DownloadIcon,
   EllipsisIcon,
   FilePlusIcon,
@@ -55,6 +56,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/app/DropdownMenu';
 import { EmptyState } from '@/components/app/EmptyState';
+import { PageHeader } from '@/components/app/PageHeader';
 import { Bytes, Num } from '@/components/app/Format';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/app/InputGroup';
 import { Kbd } from '@/components/app/Kbd';
@@ -66,6 +68,7 @@ import { BucketHeader } from '@/features/buckets/components/BucketHeader';
 import { useBucketDetail } from '@/features/buckets/api';
 import { useServerList } from '@/features/shell/api';
 import { enqueueDownload, enqueueUploads, recordCompletedDownload } from '@/features/transfers/engine';
+import { isNotFoundError } from '@/lib/api/errors';
 import { toastProblem } from '@/lib/api/problems';
 import { downloadBlob } from '@/lib/csv';
 import { routeState } from '@/lib/dialogs/route';
@@ -261,7 +264,10 @@ export function ObjectBrowserPage() {
     return () => window.clearTimeout(timer);
   }, [searchText, filterText, setSearch]);
 
-  const listing = useObjectListing(scope, { prefix, showVersions });
+  // Gated on `scopeReady` for the same reason as `useBucketDetail` above: until
+  // the bucket id resolves to (serverId, name) the scope is EMPTY_SCOPE, and
+  // firing the listing with it requests `/servers//buckets//objects`, which 404s.
+  const listing = useObjectListing(scope, { prefix, showVersions }, scopeReady);
   const allEntries = useMemo(
     () => flattenPages(listing.data?.pages ?? [], prefix),
     [listing.data, prefix],
@@ -636,6 +642,34 @@ export function ObjectBrowserPage() {
         onMenu={(at) => setMenu({ entry: activeEntry, ...at })}
       />
     );
+
+  /**
+   * A bucket id that resolves to nothing — a bookmark to a bucket since deleted,
+   * a hand-edited URL — must say so. Without this the listing simply never runs
+   * and the browser shows its "this folder is empty" state over a bucket that
+   * does not exist, which reads as "your objects are gone". Same treatment as
+   * the bucket settings page, which already answers a 404 this way.
+   */
+  const bucketNotFound = isNotFoundError(resolved.error) || isNotFoundError(bucket.error);
+  if (bucketNotFound) {
+    return (
+      <>
+        <PageHeader title={t('browse.title')} />
+        <Card>
+          <EmptyState
+            icon={DatabaseIcon}
+            title={t('bucket.notFound.title')}
+            description={t('bucket.notFound.description')}
+            action={
+              <Button variant="outline" onClick={() => void navigate({ to: '/buckets' })}>
+                {t('buckets.title')}
+              </Button>
+            }
+          />
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>

@@ -117,7 +117,11 @@ export function useObjectListing(scope: ObjectScope, filters: ObjectListFilters,
         signal,
       ),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    enabled,
+    // The scope's own parts are guarded here, not only by the caller, for the
+    // same reason `useObjectMeta` guards its key below: the browser reaches a
+    // bucket by opaque id and holds an empty scope until that id resolves, and
+    // an unresolved scope builds `/servers//buckets//objects`, which 404s.
+    enabled: enabled && scope.serverId !== '' && scope.bucket !== '',
   });
 }
 

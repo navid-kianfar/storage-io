@@ -573,6 +573,17 @@ describe.skipIf(!IT_ENABLED)('storage against live containers', () => {
         { headers: { Cookie: cookie } },
       );
       expect(await download.text()).toBe('edited body');
+
+      // A PUT replaces the tag set along with the bytes, so the edit has to read
+      // the tags and write them back. It did not, and editing a file in the
+      // console silently stripped tags that lifecycle rules and policies match on.
+      // The preceding test left this object tagged `stage: curated`.
+      const tags = await harness
+        .http()
+        .get(`${objectsPath(MINIO.name, minioBucket)}/tags?key=a%2F1.txt`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(tags.body.tags).toEqual({ stage: 'curated' });
     });
 
     it('changes the storage class', async () => {

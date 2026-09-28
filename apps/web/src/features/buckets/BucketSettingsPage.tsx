@@ -24,7 +24,7 @@ import { OptionRow } from '@/components/app/FormRow';
 import { PageHeader } from '@/components/app/PageHeader';
 import { Separator } from '@/components/app/Separator';
 import { useServerList } from '@/features/shell/api';
-import { isApiError } from '@/lib/api/errors';
+import { isNotFoundError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils';
 import { s3Uri, useBucketDetail, type BucketRefParams } from './api';
 import { useBucketScope } from '@/lib/entities/resolve';
@@ -124,9 +124,7 @@ export function BucketSettingsPage() {
     element?.scrollIntoView({ block: 'start' });
   }, [loading]);
 
-  const notFound =
-    (isApiError(detail.error) && detail.error.is('NOT_FOUND')) ||
-    (isApiError(resolved.error) && resolved.error.status === 404);
+  const notFound = isNotFoundError(detail.error) || isNotFoundError(resolved.error);
   if (notFound) {
     return (
       <>
