@@ -26,17 +26,21 @@ export interface ApiErrorHandler {
 }
 
 export function useApiError(): ApiErrorHandler {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const message = useCallback(
     (error: unknown): string => {
       if (!isApiError(error)) return t('error.unexpected');
       if (error.isNetworkError) return t('error.network');
       if (error.detail !== null && error.detail.length > 0) return error.detail;
-      const byCode = t(`error.${error.code}`, { defaultValue: '' });
-      return byCode.length > 0 ? byCode : t('error.unexpected');
+      // `exists`, not `defaultValue: ''`: with `returnEmptyString: false` i18next
+      // ignores an empty default and hands back the key, so an error code we have
+      // no message for used to reach the operator as the literal text
+      // "error.HTTP_502". Seen in the browser when the API restarted mid-request.
+      const key = `error.${error.code}`;
+      return i18n.exists(key) ? t(key) : t('error.unexpected');
     },
-    [t],
+    [i18n, t],
   );
 
   const toastError = useCallback(

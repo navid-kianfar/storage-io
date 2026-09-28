@@ -124,6 +124,10 @@ export function fileKind(key: string, contentType?: string | null): FileKind {
   const type = (contentType ?? guessContentType(key) ?? '').toLowerCase();
   const base = type.split(';')[0] ?? '';
 
+  // SVG is markup with scripts and external references, not a picture: the API
+  // serves it as an attachment for that reason, so it is previewed as source in
+  // the read-only code view rather than rendered.
+  if (base === 'image/svg+xml') return 'text';
   if (base.startsWith('image/')) return 'image';
   if (base.startsWith('video/')) return 'video';
   if (base.startsWith('audio/')) return 'audio';

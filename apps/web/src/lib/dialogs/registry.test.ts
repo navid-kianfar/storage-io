@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DIALOG_KEYS,
   DIALOG_OWNERS,
@@ -7,6 +7,7 @@ import {
   getDialog,
   isDialogKey,
   registerDialog,
+  subscribeDialogs,
 } from './registry';
 
 afterEach(() => {
@@ -38,6 +39,27 @@ describe('dialog registry', () => {
   it('rejects a key that is not in the list', () => {
     expect(isDialogKey('not-a-dialog')).toBe(false);
     expect(getDialog('not-a-dialog')).toBeUndefined();
+  });
+
+  it('tells subscribers when a dialog registers', () => {
+    // The owning module belongs to a lazily loaded route, so it registers *after*
+    // the URL already names the dialog. Without this notification the host
+    // concluded the key was unwired and stripped `?dialog=` — every command
+    // palette action did nothing. Found in the browser.
+    const listener = vi.fn();
+    const unsubscribe = subscribeDialogs(listener);
+    const Example = () => null;
+
+    registerDialog('new-job', Example);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // Registering the same component again is not a change.
+    registerDialog('new-job', Example);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    registerDialog('create-policy', Example);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('reserves the d_ prefix so a page filter cannot collide with a dialog param', () => {

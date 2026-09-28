@@ -192,11 +192,7 @@ export function OverviewPage() {
       </div>
 
       <div className="mt-(--gap) grid gap-(--gap) xl:grid-cols-3">
-        <StorageByServerCard
-          byServer={data?.byServer ?? []}
-          totalBytes={data?.totals.usedBytes ?? 0}
-          loading={dashboard.isLoading}
-        />
+        <StorageByServerCard byServer={data?.byServer ?? []} loading={dashboard.isLoading} />
         <QuickActionsCard />
         <ExpiringKeysCard keys={data?.expiringKeys ?? []} loading={dashboard.isLoading} />
       </div>

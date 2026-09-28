@@ -95,8 +95,25 @@ export const DIALOG_OWNERS: Readonly<Record<DialogKey, string>> = {
 
 const registry = new Map<DialogKey, DialogComponent>();
 
+/**
+ * The registry is filled at module scope, and the module that fills it belongs to a
+ * **lazily loaded** route. So opening a dialog from elsewhere is always a race:
+ * the URL changes first, the chunk arrives a moment later, and until it does
+ * `getDialog` has nothing to return. The host has to be told when that changes
+ * rather than deciding on the first render that the key is a wiring mistake —
+ * which is what used to drop `?dialog=` on every palette action.
+ */
+const listeners = new Set<() => void>();
+
+export function subscribeDialogs(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 export function registerDialog(key: DialogKey, component: DialogComponent): void {
+  if (registry.get(key) === component) return;
   registry.set(key, component);
+  for (const listener of listeners) listener();
 }
 
 export function getDialog(key: string): DialogComponent | undefined {
@@ -110,4 +127,5 @@ export function isDialogKey(value: string): value is DialogKey {
 /** Test-only: drop registrations so one test's dialog does not leak into the next. */
 export function clearDialogRegistry(): void {
   registry.clear();
+  for (const listener of listeners) listener();
 }

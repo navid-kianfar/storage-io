@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { SETTINGS_SECTION_IDS } from '@/features/settings/sections';
 import { cn } from '@/lib/utils';
 
 /** The unread count is a badge, not a number to read aloud; over 9 it becomes "9+". */
@@ -25,17 +26,38 @@ const LEVEL_COLORS: Readonly<Record<NotificationLevel, string>> = {
   error: 'text-destructive',
 };
 
+/**
+ * The API deep-links a notification at `/settings/security`, but Settings is one
+ * page with anchored sections — that path is a 404, which is the worst thing a
+ * notification can be. Known section names are rewritten to the anchor they mean;
+ * anything else is left alone so a new link the API adds still works.
+ *
+ * Reported to the API: the canonical link is `/settings#security`.
+ */
+const SETTINGS_PREFIX = '/settings/';
+
+export function notificationHref(href: string): string {
+  if (!href.startsWith(SETTINGS_PREFIX)) return href;
+  const section = href.slice(SETTINGS_PREFIX.length);
+  return (SETTINGS_SECTION_IDS as readonly string[]).includes(section)
+    ? `/settings#${section}`
+    : href;
+}
+
 export function NotificationsPopover({
   notifications,
   unread,
   loading,
   onMarkAllRead,
+  onMarkRead,
   markingAllRead,
 }: {
   readonly notifications: readonly Notification[];
   readonly unread: number;
   readonly loading: boolean;
   readonly onMarkAllRead: () => void;
+  /** Marks one notification read — on click, and from its own button. */
+  readonly onMarkRead: (id: string) => void;
   readonly markingAllRead: boolean;
 }) {
   const { t } = useTranslation('nav');
@@ -115,12 +137,29 @@ export function NotificationsPopover({
                   </>
                 );
                 return (
-                  <li key={notification.id} className="border-t first:border-t-0">
+                  <li
+                    key={notification.id}
+                    className={cn(
+                      'relative border-t first:border-t-0',
+                      notification.read ? undefined : 'bg-primary/4',
+                    )}
+                  >
                     {notification.href === null ? (
-                      <div className="flex items-start gap-3 px-4 py-3">{body}</div>
+                      // Not a link, so the whole row is the "mark read" control.
+                      // A notification with nowhere to go still has to be
+                      // dismissable, or the badge never clears.
+                      <button
+                        type="button"
+                        onClick={() => onMarkRead(notification.id)}
+                        disabled={notification.read}
+                        className="flex w-full items-start gap-3 px-4 py-3 text-start hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
+                      >
+                        {body}
+                      </button>
                     ) : (
                       <Link
-                        to={notification.href}
+                        to={notificationHref(notification.href)}
+                        onClick={() => onMarkRead(notification.id)}
                         className="flex items-start gap-3 px-4 py-3 hover:bg-accent"
                       >
                         {body}

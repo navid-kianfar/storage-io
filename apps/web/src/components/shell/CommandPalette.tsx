@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/command';
 import { Kbd } from '@/components/ui/kbd';
 import { Spinner } from '@/components/ui/spinner';
-import { useGlobalSearch } from '@/features/shell/api';
+import { useGlobalSearch, useServerList } from '@/features/shell/api';
 import type { DialogKey } from '@/lib/dialogs/registry';
 import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { LANGUAGES, THEMES, usePreferences, type Theme } from '@/stores/preferences';
@@ -130,6 +130,17 @@ function byTypeThenLabel(left: SearchResult, right: SearchResult): number {
   return byType !== 0 ? byType : left.label.localeCompare(right.label);
 }
 
+/**
+ * A bucket, user, key or policy result is identified by `"<serverId>/<name>"`.
+ * The name can itself contain a slash for a bucket path, so only the first
+ * separator is a separator.
+ */
+function splitScopedId(id: string): { readonly serverId: string; readonly name: string } {
+  const separator = id.indexOf('/');
+  if (separator < 0) return { serverId: '', name: id };
+  return { serverId: id.slice(0, separator), name: id.slice(separator + 1) };
+}
+
 export function CommandPalette({
   open,
   onOpenChange,
@@ -154,11 +165,56 @@ function CommandPaletteBody({ onOpenChange }: { readonly onOpenChange: (open: bo
   const [term, setTerm] = useState('');
 
   const search = useGlobalSearch(term);
+  const servers = useServerList();
   const results = [...(search.data?.items ?? [])].sort(byTypeThenLabel);
 
   const run = (action: () => void) => {
     onOpenChange(false);
     action();
+  };
+
+  /**
+   * Where a result goes. `SearchResult.href` is not used: the API builds it from
+   * a route plan this app does not have (`/access/users?…`, `/access/keys?…`,
+   * `/access/policies/:server/:name`, `/jobs/:id`, and `/browse/:server/:bucket`
+   * without the prefix splat), so following it 404s for four of the six types.
+   * Reported to the lead. Every target below is derived from `type` and `id`,
+   * which are stable, and typed against the real route tree.
+   *
+   * `/servers/$server` and `/browse/$server/…` both accept an id or a name; the
+   * name is used when the switcher's already-loaded list has it, because that is
+   * what the operator sees in the address bar and in the breadcrumb.
+   */
+  const openResult = (result: SearchResult): void => {
+    const { serverId, name } = splitScopedId(result.id);
+    const found = (servers.data?.items ?? []).find((item) => item.id === serverId);
+    const serverSegment = found?.name ?? serverId;
+
+    switch (result.type) {
+      case 'server':
+        void navigate({ to: '/servers/$server', params: { server: result.label } });
+        return;
+      case 'bucket':
+        void navigate({
+          to: '/browse/$server/$bucket/$',
+          params: { server: serverSegment, bucket: name, _splat: '' },
+        });
+        return;
+      case 'user':
+        void navigate({ to: '/users', search: { serverId, q: name } });
+        return;
+      case 'key':
+        void navigate({ to: '/keys', search: { serverId, q: name } });
+        return;
+      case 'policy':
+        void navigate({ to: '/policies', search: { policyServer: serverId, policy: name } });
+        return;
+      case 'job':
+        // There is no per-job route or URL-addressable job sheet yet, so this is
+        // as precise as the palette can be. Reported to the lead.
+        void navigate({ to: '/jobs' });
+        return;
+    }
   };
 
   return (
@@ -230,7 +286,7 @@ function CommandPaletteBody({ onOpenChange }: { readonly onOpenChange: (open: bo
                     // whose label does not literally contain what was typed — while
                     // still narrowing Navigation and Actions locally.
                     keywords={[result.label, result.sublabel, term]}
-                    onSelect={() => run(() => void navigate({ to: result.href }))}
+                    onSelect={() => run(() => openResult(result))}
                   >
                     <Icon />
                     <span className="ltr-isolate truncate font-mono">{result.label}</span>

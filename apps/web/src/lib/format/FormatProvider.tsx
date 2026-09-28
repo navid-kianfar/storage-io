@@ -9,6 +9,7 @@ import {
   formatMilliseconds,
   formatNumber,
   formatPercent,
+  formatPerSecond,
   formatRelativeSeconds,
   formatRelativeTo,
   intlLocale,
@@ -32,6 +33,7 @@ export interface FormatApi {
   readonly region: RegionSettings;
   bytes: (value: number) => string;
   bytesPerSecond: (value: number) => string;
+  perSecond: (value: number) => string;
   number: (value: number, options?: Intl.NumberFormatOptions) => string;
   compact: (value: number) => string;
   percent: (ratio: number, fractionDigits?: number) => string;
@@ -65,6 +67,7 @@ export function FormatProvider({
       region: resolvedRegion,
       bytes: (input) => formatBytes(input, options),
       bytesPerSecond: (input) => formatBytesPerSecond(input, options),
+      perSecond: (input) => formatPerSecond(input, options),
       number: (input, numberOptions) => formatNumber(input, options, numberOptions),
       compact: (input) => formatCompact(input, options),
       percent: (ratio, fractionDigits) => formatPercent(ratio, options, fractionDigits),

@@ -1,25 +1,32 @@
 import type { ServerMetrics } from '@storage-io/contracts';
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/app';
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/app';
+import {
+  SERIES_LINES,
+  SERIES_UNITS,
+  rowsFor,
+  type MetricRow,
+  type MetricSeries,
+} from '@/features/servers/metricSeries';
 import { useFormat } from '@/lib/format/FormatProvider';
 
 /**
- * The server's own metric chart. Loaded lazily by `ServerMetricsCard` so Recharts
- * stays out of the initial bundle.
+ * The server's metric chart. Loaded lazily by `ServerMetricsCard` so Recharts
+ * stays out of the initial bundle; the series definitions live in
+ * `../metricSeries` so the card can read them without loading this.
  *
- * Two series, one at a time, because they have different units: response time in
- * milliseconds and used capacity in bytes. The y-axis formatter goes through
- * `useFormat`, so the axis obeys the installation's size units and digit settings
- * exactly like every other number on the page.
+ * One series at a time, because the four have four different units. Every value
+ * goes through `useFormat`, so the axis and the tooltip obey the installation's
+ * size units and digit settings like every other number on the page.
  */
-export type MetricSeries = 'latency' | 'capacity';
-
-interface Point {
-  readonly t: string;
-  readonly value: number;
-}
-
 export default function ServerMetricsChart({
   metrics,
   series,
@@ -30,24 +37,49 @@ export default function ServerMetricsChart({
   const { t } = useTranslation('pages');
   const format = useFormat();
 
-  const data: readonly Point[] =
-    series === 'latency'
-      ? metrics.latency.map((point) => ({ t: point.t, value: point.ms }))
-      : metrics.capacity.map((point) => ({ t: point.t, value: point.usedBytes }));
+  const rows = rowsFor(metrics, series);
+  const lines = SERIES_LINES[series];
+  const unit = SERIES_UNITS[series];
 
-  const label = t(`server.metrics.series.${series}`);
-  const config: ChartConfig = { value: { label, color: 'var(--chart-1)' } };
-  const formatValue = (value: number) =>
-    series === 'latency' ? format.milliseconds(value) : format.bytes(value);
+  const formatValue = (value: number): string => {
+    switch (unit) {
+      case 'perSecond':
+        return format.perSecond(value);
+      case 'bytesPerSecond':
+        return format.bytesPerSecond(value);
+      case 'milliseconds':
+        return format.milliseconds(value);
+      case 'bytes':
+        return format.bytes(value);
+    }
+  };
+
+  const config: ChartConfig = Object.fromEntries(
+    lines.map((line) => [
+      line.key,
+      { label: t(`server.metrics.line.${line.key}`), color: line.color },
+    ]),
+  );
 
   return (
     <ChartContainer config={config} className="h-56 w-full">
-      <AreaChart data={[...data]} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+      <ComposedChart data={[...rows]} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
-          <linearGradient id="sio-server-metric" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="var(--chart-1)" stopOpacity={0.26} />
-            <stop offset="1" stopColor="var(--chart-1)" stopOpacity={0} />
-          </linearGradient>
+          {lines
+            .filter((line) => line.filled)
+            .map((line) => (
+              <linearGradient
+                key={line.key}
+                id={`sio-metric-${line.key}`}
+                x1="0"
+                x2="0"
+                y1="0"
+                y2="1"
+              >
+                <stop offset="0" stopColor={line.color} stopOpacity={0.26} />
+                <stop offset="1" stopColor={line.color} stopOpacity={0} />
+              </linearGradient>
+            ))}
         </defs>
         <CartesianGrid vertical={false} stroke="var(--border)" />
         <XAxis
@@ -60,7 +92,7 @@ export default function ServerMetricsChart({
           tickFormatter={(value: string) => format.dateTime(value, 'time')}
         />
         <YAxis
-          width={56}
+          width={64}
           tickLine={false}
           axisLine={false}
           tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
@@ -70,22 +102,46 @@ export default function ServerMetricsChart({
           content={
             <ChartTooltipContent
               labelFormatter={(_label, payload) => {
-                const first = payload.at(0)?.payload as Point | undefined;
-                return first === undefined ? '' : format.dateTime(first.t, 'datetime');
+                const first = payload.at(0)?.payload as MetricRow | undefined;
+                const at = first?.t;
+                return typeof at === 'string' ? format.dateTime(at, 'datetime') : '';
               }}
-              formatter={(value) => formatValue(Number(value))}
+              formatter={(value, name) => (
+                <span className="flex w-full items-center justify-between gap-3">
+                  <span className="text-muted-foreground">
+                    {t(`server.metrics.line.${String(name)}`)}
+                  </span>
+                  <span className="num font-medium">{formatValue(Number(value))}</span>
+                </span>
+              )}
             />
           }
         />
-        <Area
-          dataKey="value"
-          name={label}
-          type="monotone"
-          stroke="var(--chart-1)"
-          strokeWidth={2}
-          fill="url(#sio-server-metric)"
-        />
-      </AreaChart>
+        {lines.length > 1 ? <ChartLegend content={<ChartLegendContent />} /> : null}
+        {lines.map((line) =>
+          line.filled ? (
+            <Area
+              key={line.key}
+              dataKey={line.key}
+              name={line.key}
+              type="monotone"
+              stroke={line.color}
+              strokeWidth={2}
+              fill={`url(#sio-metric-${line.key})`}
+            />
+          ) : (
+            <Line
+              key={line.key}
+              dataKey={line.key}
+              name={line.key}
+              type="monotone"
+              stroke={line.color}
+              strokeWidth={2}
+              dot={false}
+            />
+          ),
+        )}
+      </ComposedChart>
     </ChartContainer>
   );
 }

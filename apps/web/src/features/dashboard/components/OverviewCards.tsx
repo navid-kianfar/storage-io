@@ -163,14 +163,22 @@ const SLICE_COLORS = [
 
 export function StorageByServerCard({
   byServer,
-  totalBytes,
   loading,
 }: {
   readonly byServer: Dashboard['byServer'];
-  readonly totalBytes: number;
   readonly loading: boolean;
 }) {
   const { t } = useTranslation('pages');
+
+  // The denominator is the sum of what the servers report, not
+  // `Dashboard.totals.usedBytes`. The two measure different things — the totals
+  // are the bucket cache, `byServer.usedBytes` is the server's own used capacity
+  // — and dividing one by the other produced a 177,746,144% share against the
+  // real API.
+  const totalBytes = useMemo(
+    () => byServer.reduce((sum, entry) => sum + entry.usedBytes, 0),
+    [byServer],
+  );
 
   const slices = useMemo<readonly DonutSlice[]>(() => {
     const sorted = [...byServer].sort((left, right) => right.usedBytes - left.usedBytes);
@@ -204,7 +212,9 @@ export function StorageByServerCard({
             <Skeleton className="h-3 w-2/3" />
           </div>
         </div>
-      ) : slices.length === 0 ? (
+      ) : slices.length === 0 || totalBytes === 0 ? (
+        // Every server reporting zero draws as a blank ring with "0 B" in it,
+        // which reads as a broken chart rather than as a fresh install.
         <EmptyState icon={DatabaseIcon} title={t('overview.breakdown.emptyTitle')} className="py-6" />
       ) : (
         <div className="flex flex-wrap items-center gap-6">

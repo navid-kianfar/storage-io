@@ -202,3 +202,17 @@ export function formatDateTime(
 export function formatBytesPerSecond(value: number, options: FormatOptions): string {
   return `${formatBytes(value, options)}/s`;
 }
+
+/** Below this, a rate rounded to whole units reads as a flat zero. */
+const RATE_FRACTION_THRESHOLD = 10;
+
+/**
+ * A plain per-second rate: "1,840/s", "0.03/s". Traffic rates span four orders of
+ * magnitude between an idle server and a busy one, so the fraction digits follow
+ * the value rather than being fixed.
+ */
+export function formatPerSecond(value: number, options: FormatOptions): string {
+  const digits = value > 0 && value < RATE_FRACTION_THRESHOLD ? 2 : 0;
+  const number = formatNumber(value, options, { maximumFractionDigits: digits });
+  return `${number}/s`;
+}

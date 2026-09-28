@@ -395,6 +395,8 @@
       "seriesLabel": "Metric",
       "rangeLabel": "Range",
       "series": {
+        "traffic": "Traffic",
+        "throughput": "Throughput",
         "latency": "Response time",
         "capacity": "Used capacity"
       },
@@ -404,7 +406,17 @@
         "30d": "30d"
       },
       "emptyTitle": "Not enough samples yet",
-      "emptyDescription": "The chart appears once the health checker has recorded two or more samples in this range."
+      "emptyDescription": "The chart appears once the health checker has recorded two or more samples in this range.",
+      "line": {
+        "requests": "Requests",
+        "errors": "Errors",
+        "rx": "Received",
+        "tx": "Sent",
+        "latency": "Response time",
+        "capacity": "Used capacity"
+      },
+      "trafficUnavailableTitle": "Traffic is not available for this provider",
+      "trafficUnavailableDescription": "This server exposes no metrics endpoint, so requests and throughput are never sampled. Response time and used capacity are measured by storage-io itself and are on the other two tabs."
     },
     "buckets": {
       "title": "Buckets on this server",
@@ -1701,7 +1713,8 @@
       "description": "A user is created on one storage server through its admin API."
     },
     "export": {
-      "nothing": "There is nothing to export."
+      "nothing": "There is nothing to export.",
+      "failed": "The export could not be produced"
     },
     "bulk": {
       "applied_one": "{{count}} user",
@@ -2049,7 +2062,8 @@
       "description": "A key belongs to an S3 user and is created on the storage server."
     },
     "export": {
-      "nothing": "There is nothing to export."
+      "nothing": "There is nothing to export.",
+      "failed": "The export could not be produced"
     },
     "toast": {
       "disabled": "Key disabled",
