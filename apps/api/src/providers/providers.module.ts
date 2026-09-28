@@ -2,6 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConnectionTesterService } from './connection-tester.service';
 import { ProviderRegistryService } from './provider-registry.service';
 import { MinioAdminClient } from './minio/minio-admin.client';
+import { MinioMetricsClient } from './minio/minio-metrics.client';
+import { AdminHttpClient } from './iam/admin-http.client';
+import { AwsIamDriver } from './iam/aws-iam.driver';
+import { CephIamDriver } from './iam/ceph-iam.driver';
+import { GarageIamDriver } from './iam/garage-iam.driver';
 import { S3ClientFactory } from './s3/s3-client.factory';
 import { S3ProbeService } from './s3/s3-probe.service';
 
@@ -18,6 +23,11 @@ import { S3ProbeService } from './s3/s3-probe.service';
     S3ClientFactory,
     S3ProbeService,
     MinioAdminClient,
+    MinioMetricsClient,
+    AdminHttpClient,
+    AwsIamDriver,
+    CephIamDriver,
+    GarageIamDriver,
     ProviderRegistryService,
     ConnectionTesterService,
   ],
@@ -25,6 +35,8 @@ import { S3ProbeService } from './s3/s3-probe.service';
     S3ClientFactory,
     S3ProbeService,
     MinioAdminClient,
+    MinioMetricsClient,
+    AdminHttpClient,
     ProviderRegistryService,
     ConnectionTesterService,
   ],

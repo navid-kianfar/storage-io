@@ -11,6 +11,7 @@ import { API_PREFIX } from '@storage-io/contracts';
 import { AppModule } from './app.module';
 import { AppConfigService } from './config/app-config.service';
 import { requestIdMiddleware } from './common/request-id';
+import { isRawObjectBodyRequest } from './modules/objects/raw-upload';
 import { APP_VERSION } from './version';
 
 const SWAGGER_PATH = 'api/docs';
@@ -65,7 +66,20 @@ export async function createApp(): Promise<NestExpressApplication> {
   // client forge it by adding its own X-Forwarded-For entry.
   app.set('trust proxy', 1);
 
-  app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
+  // Both parsers match on Content-Type, and the object upload routes carry the
+  // object itself as the body — so an upload declaring `application/json` or
+  // `application/x-www-form-urlencoded` would be read into memory, parsed, and
+  // reach the handler as an empty stream. `type` excludes those two routes
+  // whatever type they declare. See modules/objects/raw-upload.ts.
+  app.useBodyParser('json', {
+    limit: JSON_BODY_LIMIT,
+    type: (request) => !isRawObjectBodyRequest(request) && isJsonContentType(request),
+  });
+  app.useBodyParser('urlencoded', {
+    extended: true,
+    limit: JSON_BODY_LIMIT,
+    type: (request) => !isRawObjectBodyRequest(request) && isUrlEncodedContentType(request),
+  });
 
   // Flushes the SQLite WAL, closes provider clients and completes the event bus.
   app.enableShutdownHooks();
@@ -92,6 +106,26 @@ function setUpSwagger(app: INestApplication): void {
   // nestjs-zod leaves internal `$ref`s behind that Swagger UI cannot resolve.
   SwaggerModule.setup(SWAGGER_PATH, app, cleanupOpenApiDoc(document));
   new Logger('Swagger').log(`API documentation at /${SWAGGER_PATH}`);
+}
+
+/**
+ * What each parser's default `type` matches, restated because supplying a `type`
+ * function replaces that default rather than adding to it.
+ */
+function mimeOf(request: { headers: Record<string, unknown> }): string | null {
+  const header = request.headers['content-type'];
+  if (typeof header !== 'string') return null;
+  return (header.split(';')[0] ?? '').trim().toLowerCase();
+}
+
+function isJsonContentType(request: { headers: Record<string, unknown> }): boolean {
+  const mime = mimeOf(request);
+  if (mime === null) return false;
+  return mime === 'application/json' || mime.endsWith('+json');
+}
+
+function isUrlEncodedContentType(request: { headers: Record<string, unknown> }): boolean {
+  return mimeOf(request) === 'application/x-www-form-urlencoded';
 }
 
 export { SWAGGER_PATH };

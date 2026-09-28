@@ -4,6 +4,7 @@ import { ActivityService } from '../activity/activity.service';
 import { SessionService } from '../auth/session.service';
 import { SettingsService } from '../settings/settings.service';
 import { ServerRepository } from '../servers/server.repository';
+import { InventoryRepository } from '../modules/inventory/inventory.repository';
 
 /**
  * The housekeeping the architecture asks for: prune the activity log and the
@@ -25,6 +26,7 @@ export class RetentionService {
     private readonly activity: ActivityService,
     private readonly servers: ServerRepository,
     private readonly sessions: SessionService,
+    private readonly inventory: InventoryRepository,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR, { name: 'retention' })
@@ -33,7 +35,11 @@ export class RetentionService {
 
     try {
       const activityRows = this.activity.deleteOlderThan(retention.activityDays);
-      const metricRows = this.servers.deleteMetricsOlderThan(retention.metricsDays);
+      const metricRows =
+        this.servers.deleteMetricsOlderThan(retention.metricsDays) +
+        // Daily bucket sizes are a metric series like the others, and the quota
+        // trend only ever reads the last week of them.
+        this.inventory.deleteSamplesOlderThan(retention.metricsDays);
       const sessions = this.sessions.deleteExpired();
 
       if (activityRows + metricRows + sessions > 0) {

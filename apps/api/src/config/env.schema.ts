@@ -51,6 +51,29 @@ export const envSchema = z
 
     /** Turn the background health checker off — tests and one-shot runs. */
     HEALTH_CHECKER_ENABLED: z.stringbool().default(true),
+
+    /** Turn the background bucket-inventory refresher off — same reasons. */
+    INVENTORY_REFRESHER_ENABLED: z.stringbool().default(true),
+
+    /**
+     * Turn the IAM background work off — the access-key expiry/rotation sweep and
+     * the cached user and key counts. Same reasons: tests and one-shot runs.
+     */
+    IAM_SCHEDULER_ENABLED: z.stringbool().default(true),
+
+    /**
+     * Turn the bulk-job engine and its scheduler off. Same reasons again: the e2e
+     * suite drives the engine directly so a run is deterministic, and a one-shot
+     * run must not pick up a queued job it will be killed in the middle of.
+     */
+    JOB_ENGINE_ENABLED: z.stringbool().default(true),
+
+    /**
+     * Where the built web app lives. Set, the API serves it with an SPA fallback
+     * for every non-`/api` path; unset (the default in development, where Vite
+     * serves it) the API is JSON only.
+     */
+    WEB_DIST: z.string().min(1).optional(),
   })
   .refine((env) => env.ADMIN_PASSWORD !== undefined || env.ADMIN_PASSWORD_HASH !== undefined, {
     message: 'either ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is required',

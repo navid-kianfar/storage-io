@@ -14,6 +14,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SettingsService } from '../settings/settings.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { ServerRepository } from './server.repository';
+import { TrafficSamplerService } from './traffic-sampler.service';
 import type { ServerRow } from '../db/schema';
 
 /** How often the scheduler wakes to see which servers are due. */
@@ -53,6 +54,7 @@ export class HealthCheckerService implements OnApplicationBootstrap, OnApplicati
     private readonly notifications: NotificationsService,
     private readonly bus: EventBusService,
     private readonly config: AppConfigService,
+    private readonly traffic: TrafficSamplerService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -191,6 +193,9 @@ export class HealthCheckerService implements OnApplicationBootstrap, OnApplicati
       bucketCount,
     });
 
+    // Both ride the successful check: the connection is already decrypted and the
+    // server has just proved it answers. Neither can fail the check.
+    await this.traffic.sample(row, connection);
     await this.snapshotCapacity(row, connection);
   }
 
@@ -254,6 +259,9 @@ export class HealthCheckerService implements OnApplicationBootstrap, OnApplicati
         detail: result.detail ?? 'The server stopped responding.',
         href: `/servers/${row.name}`,
         ruleKey: 'server.offline',
+        // A flapping server transitions into offline repeatedly; one alert per
+        // server per dedup window is what an operator can act on.
+        fingerprint: `server.offline:${row.id}`,
       });
     }
 

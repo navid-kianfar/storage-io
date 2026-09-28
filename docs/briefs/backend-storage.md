@@ -10,3 +10,5 @@ Scope (`apps/api/src/modules/{buckets,objects,quotas,inventory}`):
 - Tests: unit tests for mappers (lifecycle/CORS/policy presets), e2e tests against MinIO and SeaweedFS containers (S3_IT=1) covering create bucket with versioning/lock/quota, upload (small + multipart), list with prefixes/cursor, download with range, zip, copy/move across the two servers, rename, versions/restore, presign GET works via fetch, delete with versions, lifecycle/CORS/policy round trips, quota enforcement on MinIO.
 
 Report: short; what you ran and results; any contract changes.
+
+Also: `GET /buckets/export.csv` and `GET /quotas/export.csv` (see API.md). Note: an API instance may already be running on :3000 (admin/dev-password-123, apps/api/.env) with MinIO + SeaweedFS containers up; restart it after rebuilding when you need your changes live. Another backend agent (IAM) works in parallel under src/providers/iam and src/modules/{iam-*,access-keys}; keep app.module/registry edits small and additive.

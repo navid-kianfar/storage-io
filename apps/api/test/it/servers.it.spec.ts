@@ -258,7 +258,7 @@ describe.skipIf(!IT_ENABLED)('servers against live containers', () => {
       expect(response.body.version).toBeNull();
     });
 
-    it('passes the S3 checks and honestly skips the admin one', async () => {
+    it('passes the S3 checks and reaches the IAM API', async () => {
       const response = await harness
         .http()
         .post(`/api/v1/servers/${SEAWEEDFS.name}/test`)
@@ -273,10 +273,13 @@ describe.skipIf(!IT_ENABLED)('servers against live containers', () => {
       );
       expect(byId.get('auth')).toMatchObject({ status: 'ok' });
       expect(byId.get('listBuckets')).toMatchObject({ status: 'ok' });
-      expect(byId.get('admin')).toMatchObject({ status: 'skipped' });
+      // Backend wave 2b added the aws-iam driver, and the dev container runs with
+      // `-iam` on :8111, so the admin row is now a real reachability check rather
+      // than the skip it was when no driver existed.
+      expect(byId.get('admin')).toMatchObject({ status: 'ok', label: 'SeaweedFS IAM API' });
     });
 
-    it('reports the admin-only capabilities as not_configured, not supported', async () => {
+    it('reports what SeaweedFS can and cannot do, once the IAM API answers', async () => {
       const response = await harness
         .http()
         .get(`/api/v1/servers/${SEAWEEDFS.name}`)
@@ -285,9 +288,14 @@ describe.skipIf(!IT_ENABLED)('servers against live containers', () => {
 
       const { capabilities } = response.body;
       expect(capabilities.objects).toBe('supported');
-      // SeaweedFS can do IAM through its own API; storage-io has no driver for it
-      // yet, which is "not configured", not "not supported".
-      expect(capabilities.iamUsers).toBe('not_configured');
+      // The IAM endpoint is configured and answers, so users and keys are real.
+      expect(capabilities.iamUsers).toBe('supported');
+      expect(capabilities.accessKeys).toBe('supported');
+      // And these stay a permanent no: verified against chrislusf/seaweedfs:3.97,
+      // every group call and ListPolicies answer HTTP 501, and a key cannot be
+      // deactivated — a reachable endpoint does not change any of that.
+      expect(capabilities.iamGroups).toBe('not_supported');
+      expect(capabilities.iamPolicies).toBe('not_supported');
       expect(capabilities.nodes).toBe('not_supported');
     });
 

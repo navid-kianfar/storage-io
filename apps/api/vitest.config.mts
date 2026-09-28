@@ -30,6 +30,12 @@ export default defineConfig({
           name: 'unit',
           include: ['test/unit/**/*.spec.ts'],
           environment: 'node',
+          // Most of these are microseconds, but a few hash a password with
+          // argon2id at 64 MiB — deliberately expensive — and one madmin case does
+          // it per chunk boundary. They take seconds on their own and more with the
+          // rest of the suite in the same fork, so the default 5 s fails them for
+          // being slow rather than wrong.
+          testTimeout: 30_000,
         },
       },
       {

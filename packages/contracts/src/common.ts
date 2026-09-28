@@ -151,6 +151,10 @@ export const CAPABILITIES = [
   'bucketQuota',
   'usageStats',
   'nodes',
+  // Prometheus-style request/traffic rates behind the server "Traffic" chart.
+  // `not_configured` means the provider has such an endpoint but this server has
+  // not been given what it needs to reach it.
+  'traffic',
 ] as const;
 export const capabilitySchema = z.enum(CAPABILITIES);
 export type Capability = z.infer<typeof capabilitySchema>;

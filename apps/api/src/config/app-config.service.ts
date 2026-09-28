@@ -68,6 +68,23 @@ export class AppConfigService {
     return this.config.HEALTH_CHECKER_ENABLED;
   }
 
+  get inventoryRefresherEnabled(): boolean {
+    return this.config.INVENTORY_REFRESHER_ENABLED;
+  }
+
+  get iamSchedulerEnabled(): boolean {
+    return this.config.IAM_SCHEDULER_ENABLED;
+  }
+
+  get jobEngineEnabled(): boolean {
+    return this.config.JOB_ENGINE_ENABLED;
+  }
+
+  /** `null` when the API is not serving the built web app. */
+  get webDist(): string | null {
+    return this.config.WEB_DIST ?? null;
+  }
+
   get loginRateLimit(): number {
     return this.config.LOGIN_RATE_LIMIT;
   }

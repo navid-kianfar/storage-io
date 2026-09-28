@@ -151,10 +151,27 @@ export type CapacityPoint = z.infer<typeof capacityPointSchema>;
 export const latencyPointSchema = z.object({ t: isoDateTime, ms: z.number().min(0) });
 export type LatencyPoint = z.infer<typeof latencyPointSchema>;
 
+/**
+ * One traffic sample, behind the server overview's "requests per second" chart.
+ * The rates are per-second averages over the interval since the previous sample,
+ * derived from the provider's cumulative counters — so a restart or a counter
+ * reset drops the sample rather than reporting a spike.
+ */
+export const trafficPointSchema = z.object({
+  t: isoDateTime,
+  requestsPerSec: z.number().min(0),
+  errorsPerSec: z.number().min(0),
+  rxBytesPerSec: z.number().min(0),
+  txBytesPerSec: z.number().min(0),
+});
+export type TrafficPoint = z.infer<typeof trafficPointSchema>;
+
 export const serverMetricsSchema = z.object({
   capacity: z.array(capacityPointSchema),
   latency: z.array(latencyPointSchema),
   uptime: z.number().min(0).max(1),
+  /** `null` when the provider has no metrics endpoint — see the `traffic` capability. */
+  traffic: z.array(trafficPointSchema).nullable(),
 });
 export type ServerMetrics = z.infer<typeof serverMetricsSchema>;
 

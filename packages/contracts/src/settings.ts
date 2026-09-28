@@ -49,6 +49,8 @@ export const transferSettingsSchema = z.object({
   bandwidthLimitMbps: z.number().int().min(1).nullable(),
   verifyChecksums: z.boolean(),
   keepIncompleteDays: z.number().int().min(0).max(365),
+  /** Attempts per part before a transfer gives up; 0 means "try once". */
+  retries: z.number().int().min(0).max(10),
   /** Ceiling for `POST …/objects/import-url`, in megabytes. */
   importUrlMaxMb: z
     .number()
@@ -202,6 +204,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     bandwidthLimitMbps: null,
     verifyChecksums: true,
     keepIncompleteDays: 7,
+    retries: 4,
     importUrlMaxMb: 2048,
   },
   notifications: {

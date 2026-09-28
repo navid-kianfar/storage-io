@@ -178,6 +178,17 @@ export function mapProviderError(error: unknown): MappedProviderError | null {
     return { code: 'CONFLICT', status: 409, detail: detail || 'The resource already exists.' };
   }
 
+  // MinIO's own name for "this write would exceed the bucket quota". It is the
+  // caller's request that cannot be satisfied, not a provider fault, so it is a
+  // 409 rather than the 502 the generic HTTP-status branch below would give it.
+  if (codes.includes('XMinioAdminBucketQuotaExceeded')) {
+    return {
+      code: 'CONFLICT',
+      status: 409,
+      detail: 'The bucket has reached its quota; the write was refused.',
+    };
+  }
+
   if (codes.includes('BucketNotEmpty')) {
     return {
       code: 'BUCKET_NOT_EMPTY',

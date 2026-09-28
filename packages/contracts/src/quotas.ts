@@ -37,3 +37,19 @@ export const quotaListSchema = listOf(quotaRowSchema).extend({
 export type QuotaList = z.infer<typeof quotaListSchema>;
 
 export const QUOTA_TREND_DAYS = 7;
+
+/** Column order for `GET /quotas/export.csv`; the API writes cells in this order. */
+export const QUOTA_CSV_COLUMNS = [
+  'server',
+  'provider',
+  'bucket',
+  'limitBytes',
+  'mode',
+  'threshold',
+  'native',
+  'supported',
+  'sizeBytes',
+  'objects',
+  'usageRatio',
+  'statsAt',
+] as const;

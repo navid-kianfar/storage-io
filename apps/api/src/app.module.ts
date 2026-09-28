@@ -16,6 +16,18 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuthModule } from './auth/auth.module';
 import { ProvidersModule } from './providers/providers.module';
 import { ServersModule } from './servers/servers.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { JobsModule } from './modules/jobs/jobs.module';
+import { QuotasModule } from './modules/quotas/quotas.module';
+import { ObjectsModule } from './modules/objects/objects.module';
+import { BucketsModule } from './modules/buckets/buckets.module';
+import { IamCoreModule } from './modules/iam-core/iam-core.module';
+import { AccessKeysModule } from './modules/access-keys/access-keys.module';
+import { IamUsersModule } from './modules/iam-users/iam-users.module';
+import { IamGroupsModule } from './modules/iam-groups/iam-groups.module';
+import { IamPoliciesModule } from './modules/iam-policies/iam-policies.module';
+import { ServerCredentialsModule } from './modules/server-credentials/server-credentials.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { HealthController } from './health/health.controller';
 import { ProblemExceptionFilter } from './common/filters/problem.filter';
@@ -80,6 +92,23 @@ import { buildLoggerOptions } from './logging';
     AuthModule,
     ProvidersModule,
     ServersModule,
+    // Wave 2a, in dependency order: storage context, the inventory cache, the
+    // jobs seam, then the three feature modules built on them.
+    StorageModule,
+    InventoryModule,
+    JobsModule,
+    QuotasModule,
+    ObjectsModule,
+    BucketsModule,
+    // Wave 2b: the IAM modules. `IamCoreModule` carries what they share (server
+    // resolution, key_meta, policy_versions, the expiry sweep, the count cache);
+    // each of the four is otherwise independent.
+    IamCoreModule,
+    AccessKeysModule,
+    IamUsersModule,
+    IamGroupsModule,
+    IamPoliciesModule,
+    ServerCredentialsModule,
     MaintenanceModule,
   ],
   controllers: [HealthController],

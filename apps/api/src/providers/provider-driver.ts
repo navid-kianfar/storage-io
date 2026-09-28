@@ -9,6 +9,7 @@ import type {
   ServerNode,
   ServerOptions,
 } from '@storage-io/contracts';
+import type { IamOperationGroups } from './iam/iam-driver';
 
 /**
  * The provider abstraction. A driver answers three questions about one storage
@@ -68,11 +69,15 @@ export interface ProviderUsage {
 }
 
 /**
- * IAM operations. Declared in full so the later IAM task implements against a
- * settled shape; only `minio-admin`'s server-info half is implemented today, and
- * the rest of this interface is what that task fills in per driver.
+ * IAM operations: the reachability probe plus the four resource groups defined in
+ * `iam/iam-driver.ts`. Each group is optional, and a missing one is how a driver
+ * says "this provider cannot" — `ProviderRegistryService` turns that into one
+ * consistent `NOT_SUPPORTED` rather than every caller checking.
+ *
+ * `listUsers`/`countUsers` stay as the cheap paths the server list and dashboard
+ * use; the `users` group is the full surface behind `/iam/users`.
  */
-export interface IamSubDriver {
+export interface IamSubDriver extends IamOperationGroups {
   readonly kind: IamDriver;
 
   /** Reachability probe for the connection test — cheap, read-only. */
@@ -102,6 +107,25 @@ export interface QuotaSubDriver {
 /** Native usage statistics, avoiding an inventory scan. */
 export interface UsageSubDriver {
   getUsage(connection: ServerConnection): Promise<ProviderUsage>;
+}
+
+/**
+ * Cumulative request and byte counters, as a provider's metrics endpoint reports
+ * them. Counters, not rates: the rate depends on the interval between two
+ * samples, which is the sampler's business, and a driver that computed one would
+ * have to hold state per server.
+ */
+export interface TrafficCounters {
+  readonly requests: number;
+  readonly errors: number;
+  readonly rxBytes: number;
+  readonly txBytes: number;
+}
+
+/** Prometheus-style traffic metrics, where the provider exposes them. */
+export interface TrafficSubDriver {
+  /** `null` when the endpoint answered but carried none of the counters. */
+  sample(connection: ServerConnection): Promise<TrafficCounters | null>;
 }
 
 /** Nodes and drives, for the server overview. */
@@ -142,6 +166,7 @@ export interface ProviderDriver {
   readonly quota?: QuotaSubDriver;
   readonly usage?: UsageSubDriver;
   readonly nodes?: NodesSubDriver;
+  readonly traffic?: TrafficSubDriver;
 }
 
 /**
@@ -185,4 +210,5 @@ const CAPABILITY_NAMES: readonly Capability[] = [
   'bucketQuota',
   'usageStats',
   'nodes',
+  'traffic',
 ];

@@ -1,10 +1,14 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Database as SqliteDatabase } from 'better-sqlite3';
 import { applyMigrations, createDatabase } from '../../src/db/migrate';
 import { servers, settings } from '../../src/db/schema';
+
+/** The same folder `applyMigrations` reads, resolved from this file's location. */
+const MIGRATIONS_DIRECTORY = resolve(__dirname, '../../drizzle');
 
 /**
  * The migration path against a real file database, not a fixture.
@@ -18,9 +22,11 @@ import { servers, settings } from '../../src/db/schema';
  * schema that differs depending on how the database got there is the bug that
  * only shows up on someone else's machine.
  *
- * Note for the next agent: there is one migration today, so "upgrading" means
- * re-running the same folder. When you add a migration, add a case here that
- * seeds a database at the previous version and asserts the data survives.
+ * Note for the next agent: `upgrades a database left behind by an earlier release`
+ * stages a database at the *first* migration only and then applies the whole
+ * folder, so it keeps working as migrations are added. If you add one that needs
+ * data shaped a particular way to be interesting — a backfill, a column split —
+ * seed that shape there too.
  */
 
 interface SchemaRow {
@@ -29,17 +35,81 @@ interface SchemaRow {
   readonly sql: string | null;
 }
 
+/**
+ * The application schema. `__drizzle_migrations` is excluded: it is the migrator's
+ * own bookkeeping, not part of what the app defines, and its DDL text differs
+ * depending on which drizzle version created it.
+ */
 const dumpSchema = (client: SqliteDatabase): readonly SchemaRow[] =>
   client
     .prepare(
       `SELECT type, name, sql FROM sqlite_master
         WHERE name NOT LIKE 'sqlite_%'
+          AND name <> '__drizzle_migrations'
         ORDER BY type, name`,
     )
     .all() as SchemaRow[];
 
 const appliedMigrations = (client: SqliteDatabase): readonly { hash: string }[] =>
   client.prepare('SELECT hash FROM __drizzle_migrations ORDER BY id').all() as { hash: string }[];
+
+/**
+ * How many migrations the folder holds. Asserting against this rather than a
+ * literal means a new migration does not have to be counted in by hand here — and
+ * a migration that the journal failed to record is still caught.
+ */
+const migrationFileCount = (): number => migrationFiles().length;
+
+const migrationFiles = (): readonly string[] =>
+  readdirSync(MIGRATIONS_DIRECTORY)
+    .filter((entry) => entry.endsWith('.sql'))
+    .sort();
+
+/** drizzle records the SHA-256 of the file's bytes; verified against a live journal. */
+const migrationHash = (file: string): string =>
+  createHash('sha256')
+    .update(readFileSync(join(MIGRATIONS_DIRECTORY, file)))
+    .digest('hex');
+
+interface JournalEntry {
+  readonly tag: string;
+  readonly when: number;
+}
+
+/**
+ * `meta/_journal.json`, which is what decides whether a migration runs.
+ *
+ * **Worth knowing:** drizzle's migrator does not compare hashes to find the
+ * migrations it still has to apply — it applies every entry whose `when` is newer
+ * than the newest `created_at` in `__drizzle_migrations`. A row in that table with
+ * a timestamp ahead of a migration's `when` therefore makes that migration be
+ * skipped silently, which is why this test stages the journal's own `when` rather
+ * than the current clock.
+ */
+const journalEntries = (): readonly JournalEntry[] => {
+  const raw: unknown = JSON.parse(
+    readFileSync(join(MIGRATIONS_DIRECTORY, 'meta', '_journal.json'), 'utf8'),
+  );
+  const { entries } = raw as { entries?: readonly JournalEntry[] };
+  return entries ?? [];
+};
+
+const journalWhenOf = (file: string): number => {
+  const tag = file.replace(/\.sql$/, '');
+  const entry = journalEntries().find((candidate) => candidate.tag === tag);
+  if (entry === undefined) throw new Error(`No journal entry for ${file}.`);
+  return entry.when;
+};
+
+/**
+ * The journal table drizzle creates, spelled exactly as its better-sqlite3
+ * migrator does — taken from a database the migrator itself created.
+ */
+const DRIZZLE_JOURNAL_DDL = `CREATE TABLE IF NOT EXISTS \`__drizzle_migrations\` (
+  id SERIAL PRIMARY KEY,
+  hash text NOT NULL,
+  created_at numeric
+)`;
 
 describe('migrations against a real file database', () => {
   let directory: string;
@@ -87,6 +157,7 @@ describe('migrations against a real file database', () => {
   });
 
   it('re-running the migrations on an existing database keeps the data', () => {
+    let appliedAfterFirstRun = 0;
     const path = join(directory, 'existing.sqlite');
     const now = new Date().toISOString();
 
@@ -111,6 +182,7 @@ describe('migrations against a real file database', () => {
         .insert(settings)
         .values({ section: 'health', value: { latencyWarnMs: 777 }, updatedAt: now })
         .run();
+      appliedAfterFirstRun = appliedMigrations(first.client).length;
     } finally {
       first.client.close();
     }
@@ -127,10 +199,92 @@ describe('migrations against a real file database', () => {
       const stored = second.db.select().from(settings).all();
       expect(stored[0]?.value).toEqual({ latencyWarnMs: 777 });
 
-      // Applied once, not twice: the journal is what stops a re-run.
-      expect(appliedMigrations(second.client)).toHaveLength(1);
+      // Applied once each, not twice: the journal is what stops a re-run. The
+      // expected count is what the first run recorded rather than a literal, so
+      // adding a migration does not make this test wrong.
+      expect(appliedMigrations(second.client)).toHaveLength(appliedAfterFirstRun);
+      expect(appliedAfterFirstRun).toBe(migrationFileCount());
     } finally {
       second.client.close();
+    }
+  });
+
+  /**
+   * The upgrade path, which is the one a fixture cannot exercise: a database as an
+   * earlier release left it, then the current folder applied on top.
+   *
+   * It is staged by running the first migration's SQL directly and writing the
+   * journal row drizzle would have written, because that is what an older release
+   * actually left on disk — not a schema built from the current `schema.ts`.
+   */
+  it('upgrades a database left behind by an earlier release', () => {
+    const files = migrationFiles();
+    const [first] = files;
+    if (first === undefined) throw new Error('There are no migrations to test.');
+
+    const path = join(directory, 'staged.sqlite');
+    const now = new Date().toISOString();
+
+    const earlier = createDatabase(path);
+    try {
+      earlier.client.exec(DRIZZLE_JOURNAL_DDL);
+      for (const statement of readFileSync(join(MIGRATIONS_DIRECTORY, first), 'utf8').split(
+        '--> statement-breakpoint',
+      )) {
+        const trimmed = statement.trim();
+        if (trimmed.length > 0) earlier.client.exec(trimmed);
+      }
+      earlier.client
+        .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+        // The journal's own timestamp, not the clock: see `journalEntries`.
+        .run(migrationHash(first), journalWhenOf(first));
+
+      // Data an operator already had before the upgrade.
+      earlier.db
+        .insert(servers)
+        .values({
+          id: 'server-upgrade',
+          name: 'pre-upgrade',
+          provider: 'minio',
+          endpoint: 'http://127.0.0.1:9000',
+          region: 'us-east-1',
+          accessKeyId: 'AKIA',
+          secretEncrypted: 'v1.aaa.bbb.ccc',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+    } finally {
+      earlier.client.close();
+    }
+
+    const upgraded = createDatabase(path);
+    let upgradedSchema: readonly SchemaRow[];
+    try {
+      applyMigrations(upgraded.db);
+
+      // Every migration is now recorded, and the earlier one was not re-applied.
+      expect(appliedMigrations(upgraded.client).map((row) => row.hash)).toEqual(
+        files.map(migrationHash),
+      );
+
+      const rows = upgraded.db.select().from(servers).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.name).toBe('pre-upgrade');
+
+      upgradedSchema = dumpSchema(upgraded.client);
+    } finally {
+      upgraded.client.close();
+    }
+
+    // And the upgraded schema is the same one a fresh install gets.
+    const freshPath = join(directory, 'fresh-for-upgrade.sqlite');
+    const fresh = createDatabase(freshPath);
+    try {
+      applyMigrations(fresh.db);
+      expect(upgradedSchema).toEqual(dumpSchema(fresh.client));
+    } finally {
+      fresh.client.close();
     }
   });
 

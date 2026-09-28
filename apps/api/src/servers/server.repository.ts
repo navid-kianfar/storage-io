@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gte, like, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, like, lt, or, sql, type SQL } from 'drizzle-orm';
 import {
   emptyCapabilityMap,
   type CapabilityMap,
@@ -10,6 +10,7 @@ import {
   type ServerHealthEvent,
   type ServerOptions,
   type ServerStatus,
+  type TrafficPoint,
 } from '@storage-io/contracts';
 import { DB } from '../db/db.module';
 import type { AppDatabase } from '../db/migrate';
@@ -17,8 +18,10 @@ import {
   healthEvents,
   metricsCapacity,
   metricsLatency,
+  metricsTraffic,
   serverChecks,
   servers,
+  type MetricsTrafficRow,
   type ServerRow,
 } from '../db/schema';
 import { CryptoService } from '../crypto/crypto.service';
@@ -26,6 +29,18 @@ import type { ServerConnection } from '../providers/provider-driver';
 import { escapeLike } from '../activity/activity.service';
 
 const UPTIME_WINDOW_HOURS = 24;
+
+/** What `recordTraffic` stores: the provider's counters plus the derived rates. */
+export interface TrafficSample {
+  readonly requests: number;
+  readonly errors: number;
+  readonly rxBytes: number;
+  readonly txBytes: number;
+  readonly requestsPerSec: number | null;
+  readonly errorsPerSec: number | null;
+  readonly rxBytesPerSec: number | null;
+  readonly txBytesPerSec: number | null;
+}
 
 /**
  * All SQL for servers and their metrics. The service above it holds the
@@ -234,13 +249,93 @@ export class ServerRepository {
     return (row.up ?? 0) / row.total;
   }
 
-  /** Retention sweep for both metric tables. */
+  /* ------------------------------ traffic ------------------------- */
+
+  /**
+   * One traffic sample. The counters are what the provider reported; the rates
+   * are `null` on the first sample of a series and whenever the counters went
+   * backwards, which is how a provider restart is recorded rather than drawn as
+   * a spike.
+   */
+  recordTraffic(serverId: string, sample: TrafficSample): void {
+    this.db
+      .insert(metricsTraffic)
+      .values({
+        serverId,
+        at: new Date().toISOString(),
+        requests: sample.requests,
+        errors: sample.errors,
+        rxBytes: sample.rxBytes,
+        txBytes: sample.txBytes,
+        requestsPerSec: sample.requestsPerSec,
+        errorsPerSec: sample.errorsPerSec,
+        rxBytesPerSec: sample.rxBytesPerSec,
+        txBytesPerSec: sample.txBytesPerSec,
+      })
+      .run();
+  }
+
+  /** The previous sample, which the next one's rates are derived from. */
+  lastTrafficSample(serverId: string): MetricsTrafficRow | null {
+    const [row] = this.db
+      .select()
+      .from(metricsTraffic)
+      .where(eq(metricsTraffic.serverId, serverId))
+      .orderBy(desc(metricsTraffic.at), desc(metricsTraffic.id))
+      .limit(1)
+      .all();
+    return row ?? null;
+  }
+
+  /** The chart series. A sample with no rate yet is not a point to draw. */
+  trafficSince(serverId: string, since: string): readonly TrafficPoint[] {
+    const rows = this.db
+      .select({
+        at: metricsTraffic.at,
+        requestsPerSec: metricsTraffic.requestsPerSec,
+        errorsPerSec: metricsTraffic.errorsPerSec,
+        rxBytesPerSec: metricsTraffic.rxBytesPerSec,
+        txBytesPerSec: metricsTraffic.txBytesPerSec,
+      })
+      .from(metricsTraffic)
+      .where(
+        and(
+          eq(metricsTraffic.serverId, serverId),
+          gte(metricsTraffic.at, since),
+          isNotNull(metricsTraffic.requestsPerSec),
+        ),
+      )
+      .orderBy(metricsTraffic.at)
+      .all();
+
+    return rows.map((row) => ({
+      t: row.at,
+      requestsPerSec: row.requestsPerSec ?? 0,
+      errorsPerSec: row.errorsPerSec ?? 0,
+      rxBytesPerSec: row.rxBytesPerSec ?? 0,
+      txBytesPerSec: row.txBytesPerSec ?? 0,
+    }));
+  }
+
+  /** True when this server has ever reported traffic — `traffic: null` otherwise. */
+  hasTrafficSamples(serverId: string): boolean {
+    const [row] = this.db
+      .select({ id: metricsTraffic.id })
+      .from(metricsTraffic)
+      .where(eq(metricsTraffic.serverId, serverId))
+      .limit(1)
+      .all();
+    return row !== undefined;
+  }
+
+  /** Retention sweep for every metric table. */
   deleteMetricsOlderThan(days: number): number {
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
     let removed = 0;
     this.db.transaction((tx) => {
       removed += tx.delete(metricsCapacity).where(lt(metricsCapacity.at, cutoff)).run().changes;
       removed += tx.delete(metricsLatency).where(lt(metricsLatency.at, cutoff)).run().changes;
+      removed += tx.delete(metricsTraffic).where(lt(metricsTraffic.at, cutoff)).run().changes;
       removed += tx.delete(healthEvents).where(lt(healthEvents.at, cutoff)).run().changes;
     });
     return removed;

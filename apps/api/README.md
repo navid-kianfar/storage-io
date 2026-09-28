@@ -127,6 +127,17 @@ src/
   maintenance/           the hourly retention sweep
   health/                GET /health (public)
 
+  modules/               wave 2 feature modules, imported by app.module in this order
+    storage/             StorageContextService: ":sid" -> row + connection + S3 client
+                         + capability map. Every storage operation starts here.
+    inventory/           the bucket cache and the sweep that fills it. No controllers;
+                         buckets and quotas read it, and it emits inventory.updated.
+    jobs/                jobs.port.ts (JOBS_PORT) + an enqueue-only implementation.
+                         Wave 2c adds the engine behind the same token.
+    quotas/              GET /quotas (+ export.csv), the quota table, threshold watcher
+    objects/             the object browser's endpoints, streaming throughout
+    buckets/             /buckets, /buckets/bulk and every per-bucket setting
+
   common/
     actor.ts             who made the request, and @CurrentActor()
     csv.ts               RFC 4180 writing, with the spreadsheet-formula guard
@@ -261,11 +272,67 @@ Take buckets as the worked example.
    `MINIO_ROOT_PASSWORD` — the driver maps only the fields it needs, and an
    integration test asserts none of it leaks.
 
-### Still to write
+### The storage modules (wave 2a)
 
-`aws-iam`, `ceph-admin` and `garage-admin` (and SeaweedFS's IAM-compatible API).
-Those providers currently run on `S3GenericDriver`, which is why their profiles
-report the admin-only capabilities as `not_configured`.
+- **The bucket list is served from a cache, never live.** `GET /buckets` spans every
+  server; asking each one per page load would let the slowest server set the
+  latency and would drop an offline server's buckets from the list entirely.
+  `InventoryRefresherService` sweeps on an interval (`INVENTORY_REFRESHER_ENABLED`),
+  and anything the API itself writes is written to the cache in the same request so
+  the list never lags the operator's own action.
+- **Sizes come from a native usage API where there is one** (MinIO's
+  `datausageinfo`, one call for every bucket), otherwise from a listing scan with a
+  per-server page budget and a round-robin cursor. A bucket larger than the budget
+  keeps `sizeBytes: null` — the contract's "unknown" — rather than a number that is
+  wrong.
+- **Nothing buffers a body.** Uploads go through `@aws-sdk/lib-storage`'s `Upload`
+  with the operator's part size and concurrency; downloads pass `Range` through and
+  pipe the provider's own stream; ZIPs are appended as their `GetObject` bodies
+  arrive. `bootstrap.ts` excludes `…/objects/upload` and `…/objects/content` from
+  **both** body parsers (see `modules/objects/raw-upload.ts`) — either one would
+  otherwise read an upload into memory and hand the handler an empty stream.
+- **Work that cannot finish in a request becomes a job**, through `JOBS_PORT`. Only
+  `enqueue` exists today: the row is written in `queued` and wave 2c's engine picks
+  it up. Explicit object keys travel in the stored `params` JSON under `_keys`,
+  outside the contract shape.
+- **A browser that has to survive a dropped connection drives the multipart upload
+  itself** (`modules/objects/multipart.service.ts`). Nothing about the session is
+  stored here — S3 is the record, through `ListParts` — so a resume works after an
+  API restart as well as after a lost connection. `…/objects/upload` remains the
+  right call when an upload either finishes or is retried from the start.
+- **The archive preview never downloads the object.** A ZIP has an index, so
+  `archive-reader.service.ts` finds its end-of-central-directory record in a ranged
+  read of the tail and then reads the directory itself: a 40 GB ZIP costs a few
+  hundred kilobytes. A tar has no index, so it is scanned from the start under a byte
+  budget and reports `truncated`.
+- **Provider quirks are recorded where they bite**, with the version they were
+  verified against: MinIO drops `AbortIncompleteMultipartUpload` from a lifecycle
+  rule it accepted; MinIO has no per-bucket CORS; SeaweedFS's `ListObjectsV2`
+  doubles the first path segment on a versioned bucket (worked around in
+  `ObjectsService`); SeaweedFS deletes a non-empty bucket without complaint, and
+  accepts an object-lock retention it does not enforce.
+
+### The IAM drivers
+
+All four exist (backend wave 2b), in `src/providers/iam/`:
+
+| Driver         | Providers              | Users                  | Groups          | Policies                 | Keys                                             | Verified against               |
+| -------------- | ---------------------- | ---------------------- | --------------- | ------------------------ | ------------------------------------------------ | ------------------------------ |
+| `minio-admin`  | MinIO                  | yes                    | yes             | canned                   | service accounts, native expiry + session policy | the dev container              |
+| `aws-iam`      | AWS, Wasabi, SeaweedFS | yes                    | AWS/Wasabi only | managed, AWS/Wasabi only | yes, expiry app-tracked                          | SeaweedFS in the dev container |
+| `ceph-admin`   | Ceph RGW               | yes                    | no              | no                       | yes, no status                                   | fixture test only              |
+| `garage-admin` | Garage                 | keys **are** the users | no              | no                       | yes, no status                                   | fixture test only              |
+
+`IamCapableS3Driver` is what carries them: S3 core plus one IAM sub-driver, and one
+`ping` that decides whether the IAM capabilities are `supported` or
+`not_configured` on this server. It never promotes a `not_supported` from the
+capability profile — a reachable endpoint does not give SeaweedFS groups.
+
+Ceph and Garage have no container in `docker/docker-compose.dev.yml`, so their
+coverage is `test/unit/{ceph,garage}-iam.spec.ts`: a real `node:http` fixture that
+asserts the request line, the SigV4 or bearer header and the response mapping. The
+paths themselves are **unverified against a live cluster** and each driver's header
+comment says which API version they came from.
 
 ### MinIO's Admin API
 

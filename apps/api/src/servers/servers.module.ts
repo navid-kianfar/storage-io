@@ -4,6 +4,7 @@ import { HealthCheckerService } from './health-checker.service';
 import { ServerRepository } from './server.repository';
 import { ServersController } from './servers.controller';
 import { ServersService } from './servers.service';
+import { TrafficSamplerService } from './traffic-sampler.service';
 
 /**
  * `ServerRepository` is exported because the buckets, objects and IAM modules a
@@ -13,7 +14,7 @@ import { ServersService } from './servers.service';
 @Module({
   imports: [ProvidersModule],
   controllers: [ServersController],
-  providers: [ServersService, ServerRepository, HealthCheckerService],
+  providers: [ServersService, ServerRepository, HealthCheckerService, TrafficSamplerService],
   exports: [ServersService, ServerRepository, HealthCheckerService],
 })
 export class ServersModule {}

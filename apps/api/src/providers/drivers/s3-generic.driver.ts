@@ -62,12 +62,16 @@ export class S3GenericDriver implements ProviderDriver {
 /**
  * A probe may only ever *confirm* or *deny*, never weaken a known yes to a
  * maybe: `not_configured` from an inconclusive probe must not overwrite a
- * profile's `supported`.
+ * profile's `supported`. A profile's `not_supported` is a verified, permanent
+ * no (e.g. SeaweedFS accepts object-lock calls but does not enforce them), so
+ * no probe may promote it — claiming protection that does not exist is worse
+ * than hiding a feature.
  */
 function keepBetter(
   profile: CapabilityMap[keyof CapabilityMap],
   probed: CapabilityMap[keyof CapabilityMap],
 ): CapabilityMap[keyof CapabilityMap] {
+  if (profile === 'not_supported') return 'not_supported';
   if (probed === 'supported') return 'supported';
   if (probed === 'not_supported') return 'not_supported';
   return profile;

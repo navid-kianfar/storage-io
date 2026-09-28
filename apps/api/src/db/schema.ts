@@ -2,6 +2,7 @@ import {
   index,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -184,6 +185,37 @@ export const metricsLatency = sqliteTable(
   (table) => [index('metrics_latency_server_at_idx').on(table.serverId, table.at)],
 );
 
+/**
+ * Request and byte traffic, sampled with the health check from the provider's
+ * metrics endpoint (MinIO's Prometheus cluster endpoint today).
+ *
+ * Both the **cumulative counters** and the **per-second rates** are stored. The
+ * counters are what the provider reports; the rates are what the chart draws, and
+ * they are derived from the previous row rather than from a value held in memory
+ * — so a restart loses one sample instead of the whole series, and a counter that
+ * went backwards (the server restarted) is recognisable and skipped.
+ */
+export const metricsTraffic = sqliteTable(
+  'metrics_traffic',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    at: text('at').notNull(),
+    requests: integer('requests').notNull(),
+    errors: integer('errors').notNull(),
+    rxBytes: integer('rx_bytes').notNull(),
+    txBytes: integer('tx_bytes').notNull(),
+    /** Null on the first sample after a restart or a counter reset. */
+    requestsPerSec: real('requests_per_sec'),
+    errorsPerSec: real('errors_per_sec'),
+    rxBytesPerSec: real('rx_bytes_per_sec'),
+    txBytesPerSec: real('tx_bytes_per_sec'),
+  },
+  (table) => [index('metrics_traffic_server_at_idx').on(table.serverId, table.at)],
+);
+
 /* ------------------------------------------------------------------ *
  * Inventory cache and app-level quotas
  * ------------------------------------------------------------------ */
@@ -211,11 +243,40 @@ export const bucketCache = sqliteTable(
     tags: text('tags', { mode: 'json' }).$type<Record<string, string>>().notNull().default({}),
     defaultStorageClass: text('default_storage_class'),
     noncurrentVersions: integer('noncurrent_versions'),
+    /** Newest `LastModified` the inventory saw — what `sort=written` orders by. */
+    lastWriteAt: text('last_write_at'),
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.serverId, table.name] }),
     index('bucket_cache_size_idx').on(table.sizeBytes),
+  ],
+);
+
+/**
+ * One size sample per bucket per day, written by the inventory refresher and read
+ * by the quota trend sparkline and the dashboard growth chart.
+ *
+ * Deliberately one row per day rather than per refresh: a trend needs seven
+ * points, not seven hundred, and a `(serverId, bucket, day)` primary key makes
+ * the write an idempotent upsert no matter how often the refresher runs.
+ */
+export const bucketSizeDaily = sqliteTable(
+  'bucket_size_daily',
+  {
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    bucket: text('bucket').notNull(),
+    /** `YYYY-MM-DD`, UTC — sorts lexicographically, like every other timestamp. */
+    day: text('day').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    objects: integer('objects'),
+    at: text('at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.serverId, table.bucket, table.day] }),
+    index('bucket_size_daily_day_idx').on(table.day),
   ],
 );
 
@@ -403,6 +464,22 @@ export const notifications = sqliteTable(
 );
 
 /**
+ * One row per repeating alert, so the same problem does not mail an operator
+ * every minute while it persists.
+ *
+ * `fingerprint` is the caller's own identity for the alert — rule key plus the
+ * thing it is about, e.g. `server.offline:minio-lab` — and the window is a
+ * property of the alert, not of the table, so a caller decides how often its own
+ * kind of news is worth repeating. `suppressed` is what the next notification
+ * that does get through reports, so nothing is silently dropped.
+ */
+export const notificationDedup = sqliteTable('notification_dedup', {
+  fingerprint: text('fingerprint').primaryKey(),
+  lastRaisedAt: text('last_raised_at').notNull(),
+  suppressed: integer('suppressed').notNull().default(0),
+});
+
+/**
  * One row per top-level `Settings` section, so PATCHing one section is a single
  * upsert and an unknown future section cannot be lost by a whole-document write.
  */
@@ -424,7 +501,10 @@ export type ServerCheckRow = typeof serverChecks.$inferSelect;
 export type HealthEventRow = typeof healthEvents.$inferSelect;
 export type MetricsCapacityRow = typeof metricsCapacity.$inferSelect;
 export type MetricsLatencyRow = typeof metricsLatency.$inferSelect;
+export type MetricsTrafficRow = typeof metricsTraffic.$inferSelect;
 export type BucketCacheRow = typeof bucketCache.$inferSelect;
+export type NewBucketCacheRow = typeof bucketCache.$inferInsert;
+export type BucketSizeDailyRow = typeof bucketSizeDaily.$inferSelect;
 export type QuotaRowRecord = typeof quotas.$inferSelect;
 export type KeyMetaRow = typeof keyMeta.$inferSelect;
 export type PolicyVersionRow = typeof policyVersions.$inferSelect;
@@ -433,4 +513,5 @@ export type JobLogRow = typeof jobLogs.$inferSelect;
 export type ActivityRow = typeof activity.$inferSelect;
 export type NewActivityRow = typeof activity.$inferInsert;
 export type NotificationRow = typeof notifications.$inferSelect;
+export type NotificationDedupRow = typeof notificationDedup.$inferSelect;
 export type SettingsRow = typeof settings.$inferSelect;

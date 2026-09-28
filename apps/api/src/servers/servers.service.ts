@@ -212,7 +212,25 @@ export class ServersService {
       .latencySince(row.id, since)
       .map((point) => ({ t: point.at, ms: point.ms }));
 
-    return { capacity, latency, uptime: this.repository.uptimeRatio(row.id, hours) ?? 0 };
+    return {
+      capacity,
+      latency,
+      uptime: this.repository.uptimeRatio(row.id, hours) ?? 0,
+      traffic: this.trafficSeries(row, since),
+    };
+  }
+
+  /**
+   * `null` means "this server has no traffic data", which the chart shows
+   * differently from an empty series. A provider whose driver has no metrics
+   * endpoint is `null` forever; one that has never been sampled yet is `null`
+   * until the first pair of samples, rather than an empty chart that looks like
+   * zero traffic.
+   */
+  private trafficSeries(row: ServerRow, since: string): ServerMetrics['traffic'] {
+    if (row.capabilities['traffic'] === 'not_supported') return null;
+    if (!this.repository.hasTrafficSamples(row.id)) return null;
+    return [...this.repository.trafficSince(row.id, since)];
   }
 
   async nodes(idOrName: string): Promise<readonly ServerNode[]> {

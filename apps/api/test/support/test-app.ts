@@ -52,6 +52,13 @@ export async function createTestApp(
     SWAGGER_ENABLED: 'false',
     // The scheduler would probe unreachable endpoints during every test.
     HEALTH_CHECKER_ENABLED: 'false',
+    // Likewise the inventory sweep, which would also make the bucket cache change
+    // under a test that just asserted its contents.
+    INVENTORY_REFRESHER_ENABLED: 'false',
+    // And the IAM sweeps: the expiry pass would disable keys a test just created,
+    // and the count cache would fan out to every unreachable endpoint. Tests that
+    // want a sweep call `KeyExpiryService.run()` directly, which is deterministic.
+    IAM_SCHEDULER_ENABLED: 'false',
     ...overrides,
   });
   // Assigning `undefined` leaves the key present with the string "undefined".

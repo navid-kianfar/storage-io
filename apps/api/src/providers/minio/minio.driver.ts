@@ -17,11 +17,14 @@ import type {
   NodesSubDriver,
   ProviderServerInfo,
   ProviderUsage,
-  RawIamUser,
+  QuotaSubDriver,
   ServerConnection,
+  TrafficSubDriver,
   UsageSubDriver,
 } from '../provider-driver';
 import { MinioAdminClient } from './minio-admin.client';
+import { MinioMetricsClient } from './minio-metrics.client';
+import { MinioIamDriver } from '../iam/minio-iam.driver';
 
 /* --------------------- Admin API response shapes ------------------ *
  * Only the fields storage-io uses. `GET /minio/admin/v3/info` also returns
@@ -56,10 +59,10 @@ interface AdminInfo {
   readonly servers?: readonly AdminServer[];
 }
 
-interface AdminUser {
-  readonly status?: string;
-  readonly policyName?: string;
-  readonly memberOf?: readonly string[];
+/** `GET /get-bucket-quota`. `quota: 0` (or an absent field) means no quota. */
+interface AdminBucketQuota {
+  readonly quota?: number;
+  readonly quotatype?: string;
 }
 
 interface AdminDataUsage {
@@ -85,22 +88,20 @@ export class MinioDriver extends S3GenericDriver {
   readonly iam: IamSubDriver;
   readonly usage: UsageSubDriver;
   readonly nodes: NodesSubDriver;
+  readonly quota: QuotaSubDriver;
+  readonly traffic: TrafficSubDriver;
 
   constructor(
     clients: S3ClientFactory,
     probes: S3ProbeService,
     private readonly admin: MinioAdminClient,
+    metrics: MinioMetricsClient,
   ) {
     super('minio', clients, probes);
 
-    this.iam = {
-      kind: 'minio-admin',
-      ping: async (connection) => {
-        await this.admin.json<AdminInfo>(connection, '/info');
-      },
-      listUsers: async (connection) => this.listUsers(connection),
-      countUsers: async (connection) => (await this.listUsers(connection)).length,
-    };
+    // The whole IAM surface — users, groups, canned policies, service accounts —
+    // lives in its own class so the admin-API quirks stay in one file.
+    this.iam = new MinioIamDriver(admin);
 
     this.usage = { getUsage: async (connection) => this.getUsage(connection) };
 
@@ -108,6 +109,16 @@ export class MinioDriver extends S3GenericDriver {
       listNodes: async (connection) => (await this.serverInfo(connection)).nodes,
       listDrives: async (connection, node) => this.listDrives(connection, node),
     };
+
+    this.quota = {
+      getBucketQuota: async (connection, bucket) => this.getBucketQuota(connection, bucket),
+      setBucketQuota: async (connection, bucket, limitBytes) =>
+        this.setBucketQuota(connection, bucket, limitBytes),
+    };
+
+    // The Prometheus endpoint is authenticated differently from the admin API
+    // (a JWT, not SigV4), so it has its own client rather than a method here.
+    this.traffic = { sample: async (connection) => metrics.sample(connection) };
   }
 
   /**
@@ -134,6 +145,11 @@ export class MinioDriver extends S3GenericDriver {
         bucketQuota: 'supported',
         usageStats: 'supported',
         nodes: hasNodes ? 'supported' : 'not_configured',
+        // Reachable admin surface means the metrics endpoint is on the same port
+        // and the same credentials mint its token. Whether it is behind
+        // MINIO_PROMETHEUS_AUTH_TYPE is settled by the first sample, not here: a
+        // probe per capability on every health tick is the cost this avoids.
+        traffic: 'supported',
       };
     } catch (error) {
       // A reachable S3 endpoint with an unreachable admin API is a normal
@@ -153,6 +169,7 @@ export class MinioDriver extends S3GenericDriver {
         bucketQuota: 'not_configured',
         usageStats: 'not_configured',
         nodes: 'not_configured',
+        traffic: 'not_configured',
       };
     }
   }
@@ -246,16 +263,42 @@ export class MinioDriver extends S3GenericDriver {
     }));
   }
 
-  private async listUsers(connection: ServerConnection): Promise<readonly RawIamUser[]> {
-    // The response is a madmin envelope; the client decrypts it transparently.
-    const users = await this.admin.json<Record<string, AdminUser>>(connection, '/list-users');
-    return Object.entries(users).map(([name, user]): RawIamUser => ({
-      name,
-      status:
-        user.status === 'enabled' ? 'enabled' : user.status === 'disabled' ? 'disabled' : 'unknown',
-      policies: splitPolicies(user.policyName),
-      memberOf: user.memberOf ?? [],
-    }));
+  /**
+   * MinIO's only quota type is `hard`: the write is refused once the limit is
+   * hit. `quota: 0` is how it reports "no quota", so zero maps to null rather
+   * than to a limit of nothing.
+   *
+   * Reconstructed by the IAM task after it removed these two methods by
+   * accident while moving the IAM code out; verified against the dev container
+   * (`GET /get-bucket-quota` answers `{"quota":0,…}` with no quota and
+   * `{"quota":10485760,"quotatype":"hard"}` once one is set).
+   */
+  private async getBucketQuota(
+    connection: ServerConnection,
+    bucket: string,
+  ): Promise<number | null> {
+    const quota = await this.admin.json<AdminBucketQuota>(connection, '/get-bucket-quota', {
+      query: { bucket },
+    });
+    const limit = quota.quota ?? 0;
+    return limit > 0 ? limit : null;
+  }
+
+  /** `null` clears the quota, which MinIO expresses as a quota of zero. */
+  private async setBucketQuota(
+    connection: ServerConnection,
+    bucket: string,
+    limitBytes: number | null,
+  ): Promise<void> {
+    const body = JSON.stringify({
+      quota: limitBytes ?? 0,
+      quotatype: MINIO_QUOTA_TYPE_HARD,
+    });
+    await this.admin.request(connection, '/set-bucket-quota', {
+      method: 'PUT',
+      query: { bucket },
+      body: Buffer.from(body, 'utf8'),
+    });
   }
 
   private async getUsage(connection: ServerConnection): Promise<ProviderUsage> {
@@ -276,6 +319,9 @@ export class MinioDriver extends S3GenericDriver {
 }
 
 /* ------------------------------ helpers --------------------------- */
+
+/** The only quota type MinIO has: the write is refused once the limit is hit. */
+const MINIO_QUOTA_TYPE_HARD = 'hard';
 
 /** MinIO reports the version per node, not at the top level. */
 function versionOf(info: AdminInfo): string | null {
@@ -320,15 +366,6 @@ function sumOf<T>(items: readonly T[], pick: (item: T) => number | undefined): n
     sawOne = true;
   }
   return sawOne ? total : null;
-}
-
-/** MinIO joins several attached policies with commas in one field. */
-function splitPolicies(policyName: string | undefined): readonly string[] {
-  if (policyName === undefined || policyName.length === 0) return [];
-  return policyName
-    .split(',')
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0);
 }
 
 const errorMessage = (error: unknown): string =>

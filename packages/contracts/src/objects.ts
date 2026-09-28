@@ -217,3 +217,157 @@ export const setObjectStorageClassRequestSchema = z.object({
   storageClass: z.string().min(1).max(64),
 });
 export type SetObjectStorageClassRequest = z.infer<typeof setObjectStorageClassRequestSchema>;
+
+/* ------------------------- batch over a selection ----------------- */
+
+/**
+ * One metadata-only action applied to an explicit selection, in the request.
+ *
+ * Bounded at 1000 keys because that is where "the operator is waiting for this"
+ * stops being true; a larger set is a job. The actions are deliberately the cheap
+ * ones — nothing here moves object bytes.
+ */
+export const OBJECT_BATCH_MAX_KEYS = 1000;
+
+export const OBJECT_BATCH_ACTIONS = ['tags', 'storage-class', 'retention', 'legal-hold'] as const;
+export const objectBatchActionSchema = z.enum(OBJECT_BATCH_ACTIONS);
+export type ObjectBatchAction = z.infer<typeof objectBatchActionSchema>;
+
+export const objectRetentionRuleSchema = z.object({
+  mode: objectLockModeSchema,
+  until: isoDateTime,
+});
+export type ObjectRetentionRule = z.infer<typeof objectRetentionRuleSchema>;
+
+export const objectLegalHoldSchema = z.object({ legalHold: z.boolean() });
+export type ObjectLegalHold = z.infer<typeof objectLegalHoldSchema>;
+
+const batchKeys = {
+  keys: z.array(objectKeySchema).min(1).max(OBJECT_BATCH_MAX_KEYS),
+};
+
+/** `payload` is discriminated by `action`, so a tag set cannot reach the lock path. */
+export const objectBatchRequestSchema = z.discriminatedUnion('action', [
+  z.object({ ...batchKeys, action: z.literal('tags'), payload: objectTagsBodySchema }),
+  z.object({
+    ...batchKeys,
+    action: z.literal('storage-class'),
+    payload: setObjectStorageClassRequestSchema,
+  }),
+  z.object({ ...batchKeys, action: z.literal('retention'), payload: objectRetentionRuleSchema }),
+  z.object({ ...batchKeys, action: z.literal('legal-hold'), payload: objectLegalHoldSchema }),
+]);
+export type ObjectBatchRequest = z.infer<typeof objectBatchRequestSchema>;
+
+export const objectBatchResponseSchema = z.object({
+  updated: z.number().int().min(0),
+  errors: z.array(objectErrorSchema),
+});
+export type ObjectBatchResponse = z.infer<typeof objectBatchResponseSchema>;
+
+/* ---------------------- resumable multipart upload ---------------- */
+
+/**
+ * The browser's resumable upload: it drives the multipart upload itself, one part
+ * per request, so a dropped connection resumes from the parts already stored
+ * instead of starting the object again.
+ *
+ * S3's own limits, restated because a client has to respect them: every part but
+ * the last is at least 5 MiB, and there are at most 10 000 of them.
+ */
+export const MULTIPART_MIN_PART_SIZE = 5 * 1024 * 1024;
+export const MULTIPART_MAX_PARTS = 10_000;
+
+export const createMultipartUploadRequestSchema = z.object({
+  key: objectKeySchema,
+  contentType: z.string().max(255).nullable(),
+  metadata: z.record(z.string(), z.string()),
+  tags: z.record(z.string(), z.string()),
+  storageClass: z.string().min(1).max(64).nullable(),
+});
+export type CreateMultipartUploadRequest = z.infer<typeof createMultipartUploadRequestSchema>;
+
+export const createMultipartUploadResponseSchema = z.object({
+  uploadId: z.string(),
+  key: z.string(),
+  /** The part size the client should use, from `Settings.transfers.partSizeMb`. */
+  partSizeBytes: z.number().int().min(MULTIPART_MIN_PART_SIZE),
+});
+export type CreateMultipartUploadResponse = z.infer<typeof createMultipartUploadResponseSchema>;
+
+/** The key travels in the query on every part route, as everywhere else. */
+export const multipartKeyQuerySchema = z.object({ key: objectKeySchema });
+export type MultipartKeyQuery = z.infer<typeof multipartKeyQuerySchema>;
+
+export const uploadPartResponseSchema = z.object({
+  partNumber: z.number().int().min(1).max(MULTIPART_MAX_PARTS),
+  etag: z.string(),
+  size: z.number().min(0),
+});
+export type UploadPartResponse = z.infer<typeof uploadPartResponseSchema>;
+
+export const multipartPartSchema = z.object({
+  partNumber: z.number().int().min(1).max(MULTIPART_MAX_PARTS),
+  etag: z.string(),
+  size: z.number().min(0),
+});
+export type MultipartPart = z.infer<typeof multipartPartSchema>;
+
+/** What a resuming client reads: the parts the server already holds. */
+export const multipartPartListSchema = z.object({ parts: z.array(multipartPartSchema) });
+export type MultipartPartList = z.infer<typeof multipartPartListSchema>;
+
+export const completedPartSchema = z.object({
+  partNumber: z.number().int().min(1).max(MULTIPART_MAX_PARTS),
+  etag: z.string().min(1),
+});
+export type CompletedPart = z.infer<typeof completedPartSchema>;
+
+export const completeMultipartUploadRequestSchema = z.object({
+  parts: z.array(completedPartSchema).min(1).max(MULTIPART_MAX_PARTS),
+});
+export type CompleteMultipartUploadRequest = z.infer<typeof completeMultipartUploadRequestSchema>;
+
+/* --------------------------- archive preview ---------------------- */
+
+/**
+ * A listing of what is inside an archive object, for the preview pane.
+ *
+ * `unsupported` is a real answer rather than an error: the pane asks about any
+ * object the operator opens, and "this is not an archive I can read" is what it
+ * needs back.
+ */
+export const ARCHIVE_FORMATS = ['zip', 'tar', 'unsupported'] as const;
+export const archiveFormatSchema = z.enum(ARCHIVE_FORMATS);
+export type ArchiveFormat = z.infer<typeof archiveFormatSchema>;
+
+export const ARCHIVE_ENTRY_LIMIT_DEFAULT = 500;
+export const ARCHIVE_ENTRY_LIMIT_MAX = 5000;
+
+export const archiveEntriesQuerySchema = objectKeyQuerySchema.extend({
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(ARCHIVE_ENTRY_LIMIT_MAX)
+    .default(ARCHIVE_ENTRY_LIMIT_DEFAULT),
+});
+export type ArchiveEntriesQuery = z.infer<typeof archiveEntriesQuerySchema>;
+
+export const archiveEntrySchema = z.object({
+  path: z.string(),
+  size: z.number().min(0),
+  /** `null` for a format that does not record it, such as tar. */
+  compressedSize: z.number().min(0).nullable(),
+  modified: isoDateTime.nullable(),
+  dir: z.boolean(),
+});
+export type ArchiveEntry = z.infer<typeof archiveEntrySchema>;
+
+export const archiveEntriesResponseSchema = z.object({
+  format: archiveFormatSchema,
+  entries: z.array(archiveEntrySchema),
+  /** True when the limit or the scan budget stopped the listing early. */
+  truncated: z.boolean(),
+});
+export type ArchiveEntriesResponse = z.infer<typeof archiveEntriesResponseSchema>;

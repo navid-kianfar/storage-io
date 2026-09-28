@@ -65,11 +65,19 @@ services:
     container_name: sio-dev-seaweedfs
     # `server` runs master + volume + filer in one process; -s3 and -iam add the
     # S3 gateway and the IAM-compatible API the aws-iam driver talks to.
+    #
+    # `-volume.max=64` rather than 8: SeaweedFS allocates a volume per bucket
+    # collection and does not release it when the bucket is deleted, so a few
+    # integration runs exhausted the old cap and every further PutObject answered
+    # HTTP 500 ("No writable volumes"). If it fills again, recreate the service
+    # with its data volume dropped:
+    #   docker compose -f docker/docker-compose.dev.yml down -v seaweedfs
+    #   docker compose -f docker/docker-compose.dev.yml up -d seaweedfs
     command: >
       server
       -dir=/data
       -master.volumeSizeLimitMB=256
-      -volume.max=8
+      -volume.max=64
       -filer
       -s3
       -s3.port=8333
