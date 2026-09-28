@@ -36,6 +36,7 @@ import type { EnqueueJobInput, JobsPort } from './jobs.port';
 import {
   JobsRepository,
   STORED_KEYS_FIELD,
+  STORED_PREFIXES_FIELD,
   STORED_SOURCE_NAME_FIELD,
   STORED_TARGET_NAME_FIELD,
 } from './jobs.repository';
@@ -116,7 +117,11 @@ export class JobsService implements JobsPort {
     const source = this.requireServer(input.source.serverId);
     const target = input.target === undefined ? null : this.requireServer(input.target.serverId);
 
-    const filters: JobFilters = { ...JOB_FILTER_DEFAULTS, prefix: input.source.prefix ?? '' };
+    // A selection's prefixes live in `_prefixes`, not in `filters.prefix`: the
+    // filter has room for one and the engine needs all of them. `filters` stays
+    // at its defaults here, which is what "no filter, work the selection" means.
+    const prefixes = (input.source.prefixes ?? []).filter((prefix) => prefix.length > 0);
+    const filters: JobFilters = { ...JOB_FILTER_DEFAULTS };
     const options: JobOptions = { ...DEFAULT_JOB_OPTIONS, ...input.options };
     const params: JobParams = input.params ?? {};
 
@@ -127,6 +132,7 @@ export class JobsService implements JobsPort {
       ...(input.keys === undefined || input.keys.length === 0
         ? {}
         : { [STORED_KEYS_FIELD]: [...input.keys] }),
+      ...(prefixes.length === 0 ? {} : { [STORED_PREFIXES_FIELD]: [...prefixes] }),
     };
 
     const row = this.repository.insert({
@@ -200,10 +206,20 @@ export class JobsService implements JobsPort {
       concurrency: clampConcurrency(request.options.concurrency),
     };
 
+    // An explicit selection from the object browser travels in the same two
+    // stored fields `JOBS_PORT.enqueue` writes, so the engine has one way to read
+    // a selection whichever endpoint created the job. Empty entries are dropped
+    // rather than stored: a `""` prefix is every object in the bucket, which is
+    // not what ticking nothing means.
+    const keys = (request.source.keys ?? []).filter((key) => key.length > 0);
+    const prefixes = (request.source.prefixes ?? []).filter((prefix) => prefix.length > 0);
+
     const storedParams: Record<string, unknown> = {
       ...request.params,
       [STORED_SOURCE_NAME_FIELD]: source.name,
       ...(target === null ? {} : { [STORED_TARGET_NAME_FIELD]: target.row.name }),
+      ...(keys.length === 0 ? {} : { [STORED_KEYS_FIELD]: [...keys] }),
+      ...(prefixes.length === 0 ? {} : { [STORED_PREFIXES_FIELD]: [...prefixes] }),
     };
 
     const row = this.repository.insert({

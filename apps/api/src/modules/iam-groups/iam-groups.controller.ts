@@ -35,6 +35,12 @@ export class IamGroupsController {
     return this.groups.list(query);
   }
 
+  @Get('iam/groups/:groupId')
+  @ApiOperation({ summary: 'One S3 group by its opaque id' })
+  async findById(@Param('groupId') groupId: string): Promise<S3Group> {
+    return this.groups.findById(groupId);
+  }
+
   @Post('servers/:sid/iam/groups')
   @HttpCode(HttpStatus.CREATED)
   @LogActivity({

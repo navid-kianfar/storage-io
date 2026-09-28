@@ -61,6 +61,17 @@ export class IamPoliciesController {
     return this.policies.simulate(body);
   }
 
+  /**
+   * Below the two literal POSTs above, and above nothing that could shadow it:
+   * `validate` and `simulate` are POSTs, so only declaration order documents the
+   * intent here.
+   */
+  @Get('iam/policies/:policyId')
+  @ApiOperation({ summary: 'One policy by its opaque id' })
+  async findById(@Param('policyId') policyId: string): Promise<PolicyDetail> {
+    return this.policies.findById(policyId);
+  }
+
   @Get('servers/:sid/iam/policies/:name/versions')
   @ApiOperation({ summary: "storage-io's snapshots of this policy, newest first" })
   listVersions(@Param('sid') sid: string, @Param('name') name: string): PolicyVersionList {

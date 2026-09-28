@@ -26,7 +26,7 @@ export class EventsController {
   @ApiOperation({
     summary: 'Live event stream (SSE)',
     description:
-      'Emits server.health, job.progress, job.status, notification and inventory.updated events. `data` is JSON matching the payload schema for that event name.',
+      'Emits server.health, server.created, server.deleted, job.progress, job.status, notification, inventory.updated and activity.created events. `data` is JSON matching the payload schema for that event name.',
   })
   stream(): Observable<SseFrame> {
     this.bus.trackSubscriber(1);

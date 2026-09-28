@@ -136,7 +136,7 @@ export class AuthController {
     const current = actor?.sessionId;
     if (current === null || current === undefined) {
       // An API token has no session of its own, so "others" means all of them.
-      this.sessions.list(null).forEach((session) => this.sessions.revoke(session.id));
+      this.sessions.revokeAll();
       return;
     }
     this.sessions.revokeOthers(current);

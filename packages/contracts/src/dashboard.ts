@@ -12,11 +12,21 @@ export const DASHBOARD_LARGEST_BUCKET_COUNT = 5;
 export const DASHBOARD_EXPIRING_KEY_DAYS = 30;
 
 export const dashboardTotalsSchema = z.object({
-  usedBytes: z.number().min(0),
+  /**
+   * The sum of every **bucket's** size, from the inventory cache.
+   *
+   * Deliberately not called `usedBytes`, because `byServer[].usedBytes` is a
+   * different measurement and the two do not have to agree: that one is what the
+   * storage server reports as its own used capacity, which includes replication,
+   * erasure-coding overhead, versions and anything on the server that storage-io
+   * did not put there. This one is what the operator's data adds up to.
+   */
+  bucketsBytes: z.number().min(0),
   capacityBytes: z.number().min(0).nullable(),
   objects: z.number().int().min(0),
   buckets: z.number().int().min(0),
-  usedDelta7dBytes: z.number(),
+  /** The change in `bucketsBytes` over the last seven daily samples. */
+  bucketsDelta7dBytes: z.number(),
   objectsDeltaToday: z.number().int().nullable(),
   /** S3 users across every server whose driver reports them, from the cache. */
   users: z.number().int().min(0),
@@ -33,12 +43,14 @@ export type DashboardTotals = z.infer<typeof dashboardTotalsSchema>;
 
 export const dashboardSchema = z.object({
   totals: dashboardTotalsSchema,
-  growth: z.array(z.object({ t: isoDateTime, usedBytes: z.number().min(0) })),
+  /** Daily totals of `bucketsBytes`, from the same samples. */
+  growth: z.array(z.object({ t: isoDateTime, bucketsBytes: z.number().min(0) })),
   byServer: z.array(
     z.object({
       serverId: z.string(),
       name: z.string(),
       provider: providerSchema,
+      /** What the server reports as used capacity — see `totals.bucketsBytes`. */
       usedBytes: z.number().min(0),
       totalBytes: z.number().min(0).nullable(),
     }),

@@ -4,6 +4,7 @@ import { ServersModule } from '../../servers/servers.module';
 import { IamTargetService } from './iam-target.service';
 import { IamStatsService } from './iam-stats.service';
 import { KeyExpiryService } from './key-expiry.service';
+import { IamEntityRepository } from './iam-entity.repository';
 import { KeyMetaRepository } from './key-meta.repository';
 import { PolicyVersionRepository } from './policy-version.repository';
 
@@ -17,12 +18,15 @@ import { PolicyVersionRepository } from './policy-version.repository';
  * cache per request.
  *
  * `IamStatsService` is exported for wave 2c's dashboard (`totals.users`,
- * `totals.accessKeys`) as well as for the modules here.
+ * `totals.accessKeys`) as well as for the modules here. `IamEntityRepository` —
+ * the opaque id of a user, group, policy or key — is exported for the same
+ * reason: every IAM list stamps one, and the resolve endpoints read them back.
  */
 @Module({
   imports: [ProvidersModule, ServersModule],
   providers: [
     IamTargetService,
+    IamEntityRepository,
     KeyMetaRepository,
     PolicyVersionRepository,
     KeyExpiryService,
@@ -30,6 +34,7 @@ import { PolicyVersionRepository } from './policy-version.repository';
   ],
   exports: [
     IamTargetService,
+    IamEntityRepository,
     KeyMetaRepository,
     PolicyVersionRepository,
     KeyExpiryService,

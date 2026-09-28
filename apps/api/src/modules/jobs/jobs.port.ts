@@ -23,8 +23,12 @@ export interface EnqueueJobInput {
   readonly source: {
     readonly serverId: string;
     readonly bucket: string;
-    /** Narrows what the job touches. `JOB_FILTER_DEFAULTS` means "everything". */
-    readonly prefix?: string;
+    /**
+     * Every prefix the operator selected, not just the first. The engine walks
+     * each one and unions the results with `keys`; an empty or omitted list means
+     * the job is defined by its filters alone.
+     */
+    readonly prefixes?: readonly string[];
   };
   readonly target?: {
     readonly serverId: string;

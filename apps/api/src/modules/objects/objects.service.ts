@@ -411,7 +411,10 @@ export class ObjectsService {
     if (request.prefixes.length > 0) {
       const job = this.jobs.enqueue({
         type: 'delete',
-        source: { serverId: context.row.id, bucket, prefix: request.prefixes[0] },
+        // Every prefix, not the first: an operator who ticked three folders and
+        // two loose objects expects all five gone, and keeping only `prefixes[0]`
+        // left the other folders in place with the job reporting success.
+        source: { serverId: context.row.id, bucket, prefixes: request.prefixes },
         params: { includeVersions: request.allVersions },
         keys: request.objects.map((ref) => ref.key),
       });
@@ -458,11 +461,7 @@ export class ObjectsService {
     if (request.prefixes.length > 0 || request.keys.length > INLINE_COPY_MAX) {
       const job = this.jobs.enqueue({
         type: request.move ? 'move' : 'copy',
-        source: {
-          serverId: source.row.id,
-          bucket,
-          ...(request.prefixes.length > 0 ? { prefix: request.prefixes[0] } : {}),
-        },
+        source: { serverId: source.row.id, bucket, prefixes: request.prefixes },
         target: {
           serverId: destination.row.id,
           bucket: request.destBucket,
@@ -483,8 +482,13 @@ export class ObjectsService {
         if (destKey === null) continue; // conflict: skip
 
         await this.copyOne(source, bucket, key, destination, request.destBucket, destKey);
-        if (request.move) {
-          await this.deleter.deleteRefs(source.client, bucket, [{ key }]);
+
+        const moveFailure = request.move
+          ? await this.removeMovedOriginal(source, bucket, key)
+          : null;
+        if (moveFailure !== null) {
+          errors.push(moveFailure);
+          continue;
         }
         copied += 1;
       } catch (error) {
@@ -509,6 +513,33 @@ export class ObjectsService {
     return { copied, errors, job: null };
   }
 
+  /**
+   * The delete half of a move, reported rather than assumed.
+   *
+   * A move whose delete was refused — a retention lock, a legal hold, a
+   * credential without `s3:DeleteObject` — is not a move. Counting it would tell
+   * the operator their data had been relocated while the original is still there
+   * and still billed. `null` means the original is gone and the move is real.
+   */
+  private async removeMovedOriginal(
+    source: StorageContext,
+    bucket: string,
+    key: string,
+  ): Promise<ObjectError | null> {
+    const removal = await this.deleter.deleteRefs(source.client, bucket, [{ key }]);
+    const failure = removal.errors[0];
+    if (failure === undefined) return null;
+
+    this.logger.warn(
+      { key, from: `${source.row.name}/${bucket}`, reason: failure.message },
+      'Object move copied but the original could not be deleted',
+    );
+    return {
+      key,
+      message: `The copy was made, but the original could not be removed: ${failure.message}`,
+    };
+  }
+
   /** Rename is copy-then-delete with metadata and tags carried across. */
   async rename(sid: string, bucket: string, request: RenameObjectRequest): Promise<ObjectItem> {
     if (request.key === request.newKey) {
@@ -529,8 +560,24 @@ export class ObjectsService {
         TaggingDirective: 'COPY',
       }),
     );
-    await this.deleter.deleteRefs(context.client, bucket, [{ key: request.key }]);
+    const removal = await this.deleter.deleteRefs(context.client, bucket, [{ key: request.key }]);
     this.noteWrite(context, bucket);
+
+    const failure = removal.errors[0];
+    if (failure !== undefined) {
+      // The copy landed and the original did not go away, so the rename did not
+      // happen — answering 200 with the new object would tell the operator their
+      // file had moved while both keys still exist. The new key is deliberately
+      // left in place: deleting it to "roll back" would need the same permission
+      // that just failed, and would destroy a good copy if it also failed.
+      this.logger.warn(
+        { key: request.key, newKey: request.newKey, reason: failure.message },
+        'Rename copied but the original could not be deleted',
+      );
+      throw new ProviderError(
+        `"${request.newKey}" was written, but "${request.key}" could not be removed, so both now exist: ${failure.message}`,
+      );
+    }
 
     const head = await context.client.send(
       new HeadObjectCommand({ Bucket: bucket, Key: request.newKey }),

@@ -21,11 +21,8 @@ import {
   type ListBucketsQuery,
   type PaginationQuery,
 } from '@storage-io/contracts';
-import {
-  BucketNotEmptyError,
-  DomainException,
-  NotFoundError,
-} from '../../common/errors/domain.exception';
+import { bulkMessageOf } from '../../common/errors/bulk-message';
+import { BucketNotEmptyError, NotFoundError } from '../../common/errors/domain.exception';
 import { mapProviderError } from '../../common/errors/provider-error.mapper';
 import { ServerRepository } from '../../servers/server.repository';
 import { BucketFactsService } from '../inventory/bucket-facts.service';
@@ -156,6 +153,35 @@ export class BucketsService {
   /* ------------------------------- detail -------------------------- */
 
   /**
+   * `GET /buckets/:bucketId` — the resolve endpoint the web app navigates by.
+   *
+   * The id names a cached bucket; the detail is then read live from its server,
+   * because the operator is about to edit these values. When the server cannot be
+   * reached the cached row is returned instead of a 502: the page is still worth
+   * showing, and `Bucket.unavailable` is how it says the numbers are the cache's.
+   * A bucket the server no longer has is a 404, not a cached ghost.
+   */
+  async findById(bucketId: string): Promise<BucketDetail> {
+    const located = this.inventory.locate(bucketId);
+    if (located === null) throw new NotFoundError('No such bucket.');
+
+    try {
+      return await this.detail(located.serverId, located.name);
+    } catch (error) {
+      if (error instanceof NotFoundError) throw error;
+
+      const cached = this.inventory.cachedDetail(located.serverId, located.name);
+      if (cached === null) throw error;
+
+      this.logger.warn(
+        { bucket: located.name, err: error instanceof Error ? error.message : String(error) },
+        'Serving a bucket from the cache; its server could not be reached',
+      );
+      return cached;
+    }
+  }
+
+  /**
    * The settings page's own view, read live rather than from the cache: the
    * operator is about to edit these values and a five-minute-old versioning state
    * is the wrong thing to show them. Sizes still come from the cache, because
@@ -233,11 +259,15 @@ export class BucketsService {
     const results: BucketBulkResult[] = [];
 
     for (const ref of request.buckets) {
+      // Read before the action, so a `delete` row still carries the id the caller
+      // navigated by — the cache row is gone by the time the result is built.
+      const id = this.inventory.idOf(ref.serverId, ref.bucket);
       try {
         await this.applyBulkAction(request, ref.serverId, ref.bucket);
-        results.push({ serverId: ref.serverId, bucket: ref.bucket, ok: true, message: null });
+        results.push({ id, serverId: ref.serverId, bucket: ref.bucket, ok: true, message: null });
       } catch (error) {
         results.push({
+          id,
           serverId: ref.serverId,
           bucket: ref.bucket,
           ok: false,
@@ -434,18 +464,4 @@ export class BucketsService {
       sort: query.sort,
     };
   }
-}
-
-/* ------------------------------ helpers --------------------------- */
-
-/**
- * The per-bucket message in a bulk response. A `DomainException` already carries a
- * caller-safe sentence; anything else is mapped the way the global filter would
- * map it, so a bulk row never leaks what a single-bucket error would not.
- */
-export function bulkMessageOf(error: unknown): string {
-  if (error instanceof DomainException) return `${error.code}: ${error.message}`;
-  const mapped = mapProviderError(error);
-  if (mapped !== null) return `${mapped.code}: ${mapped.detail}`;
-  return 'INTERNAL: the action failed.';
 }

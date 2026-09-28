@@ -227,6 +227,14 @@ export const metricsTraffic = sqliteTable(
 export const bucketCache = sqliteTable(
   'bucket_cache',
   {
+    /**
+     * The opaque id a URL carries. It is not the primary key — `(serverId, name)`
+     * is, because that is what the refresher upserts on — but it is unique, and
+     * it is assigned once, when the bucket is first seen, and never rewritten. A
+     * bucket that disappears and comes back gets a new one, which is the honest
+     * answer: it is not the same bucket.
+     */
+    id: text('id').notNull(),
     serverId: text('server_id')
       .notNull()
       .references(() => servers.id, { onDelete: 'cascade' }),
@@ -249,7 +257,43 @@ export const bucketCache = sqliteTable(
   },
   (table) => [
     primaryKey({ columns: [table.serverId, table.name] }),
+    uniqueIndex('bucket_cache_id_uq').on(table.id),
     index('bucket_cache_size_idx').on(table.sizeBytes),
+  ],
+);
+
+/**
+ * The opaque ids of IAM entities — S3 users, groups, policies and access keys.
+ *
+ * None of them exists in a table of ours: the drivers read them live from each
+ * storage server, and a name is unique only within one server and is not a safe
+ * URL segment. So this table is a **registry, not a mirror**: it holds an id per
+ * `(server, kind, name)` and nothing else about the entity. A row is written the
+ * first time storage-io sees the entity and is never rewritten, so the id an
+ * operator bookmarked keeps resolving.
+ *
+ * `lastSeenAt` is bookkeeping for a future sweep of rows whose entity is long
+ * gone; nothing reads it today. A deleted entity's row stays, so recreating a
+ * user with the same name reuses its id — except where the server itself was
+ * deleted, which cascades.
+ */
+export const iamEntities = sqliteTable(
+  'iam_entities',
+  {
+    id: text('id').primaryKey(),
+    serverId: text('server_id')
+      .notNull()
+      .references(() => servers.id, { onDelete: 'cascade' }),
+    /** `user` | `group` | `policy` | `key`. */
+    kind: text('kind').notNull(),
+    /** The provider's own name for it; for a key, its access key id. */
+    name: text('name').notNull(),
+    firstSeenAt: text('first_seen_at').notNull(),
+    lastSeenAt: text('last_seen_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('iam_entities_lookup_uq').on(table.serverId, table.kind, table.name),
+    index('iam_entities_kind_idx').on(table.kind),
   ],
 );
 
@@ -505,6 +549,7 @@ export type MetricsTrafficRow = typeof metricsTraffic.$inferSelect;
 export type BucketCacheRow = typeof bucketCache.$inferSelect;
 export type NewBucketCacheRow = typeof bucketCache.$inferInsert;
 export type BucketSizeDailyRow = typeof bucketSizeDaily.$inferSelect;
+export type IamEntityRow = typeof iamEntities.$inferSelect;
 export type QuotaRowRecord = typeof quotas.$inferSelect;
 export type KeyMetaRow = typeof keyMeta.$inferSelect;
 export type PolicyVersionRow = typeof policyVersions.$inferSelect;

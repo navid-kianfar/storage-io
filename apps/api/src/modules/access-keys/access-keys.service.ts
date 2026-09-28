@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   ACCESS_KEY_CSV_COLUMNS,
   type AccessKey,
+  type AccessKeyBulkRequest,
+  type AccessKeyBulkResponse,
+  type AccessKeyBulkResult,
   type AccessKeyList,
   type CreateAccessKeyRequest,
   type CreatedKey,
@@ -10,13 +13,20 @@ import {
   type UpdateAccessKeyRequest,
 } from '@storage-io/contracts';
 import { CSV_BOM, csvRow } from '../../common/csv';
+import { bulkMessageOf } from '../../common/errors/bulk-message';
 import {
   ConflictError,
   NotFoundError,
   NotSupportedError,
   ValidationError,
 } from '../../common/errors/domain.exception';
-import { countKeys, isExpiringSoon, toAccessKey } from '../iam-core/access-key.mapper';
+import {
+  countKeys,
+  isExpiringSoon,
+  toAccessKey,
+  type KeyIdentity,
+} from '../iam-core/access-key.mapper';
+import { IamEntityRepository, requireId } from '../iam-core/iam-entity.repository';
 import { matchesQuery, paginate } from '../iam-core/iam-page';
 import { IamTargetService, type IamTarget } from '../iam-core/iam-target.service';
 import { KeyMetaRepository } from '../iam-core/key-meta.repository';
@@ -46,6 +56,7 @@ export class AccessKeysService {
   constructor(
     private readonly targets: IamTargetService,
     private readonly keyMeta: KeyMetaRepository,
+    private readonly entities: IamEntityRepository,
   ) {}
 
   /* ------------------------------ reading ------------------------- */
@@ -121,7 +132,29 @@ export class AccessKeysService {
       }
     }
 
-    return raw.map((key) => toAccessKey(stamp, key, meta.get(key.accessKeyId), now));
+    const ids = this.entities.idsFor(
+      target.row.id,
+      'key',
+      raw.map((key) => key.accessKeyId),
+    );
+
+    return raw.map((key) => {
+      const id = requireId(ids, key.accessKeyId);
+      const identity = { ...stamp, id };
+      return toAccessKey(identity, key, meta.get(key.accessKeyId), now);
+    });
+  }
+
+  /**
+   * `GET /iam/access-keys/:keyId` — the resolve endpoint the web app navigates
+   * by. The registry stores a key under its access key id, so the id names a
+   * server and a key exactly as the name-based route takes them.
+   */
+  async findById(keyId: string): Promise<AccessKey> {
+    const ref = this.entities.find(keyId);
+    if (ref === null || ref.kind !== 'key') throw new NotFoundError('No such access key.');
+    const target = this.targets.targetFor(ref.serverId, 'accessKeys');
+    return this.requireKey(target, ref.name);
   }
 
   /* ------------------------------ writing ------------------------- */
@@ -299,6 +332,79 @@ export class AccessKeysService {
     );
   }
 
+  /* -------------------------------- bulk -------------------------- */
+
+  /**
+   * One action over many keys. Every row is attempted and reported on its own,
+   * and sequentially: each one is a call to a storage server's admin API.
+   *
+   * `enable` and `disable` go through `update`, so a provider that cannot
+   * deactivate a key answers `NOT_SUPPORTED` per row rather than half-applying
+   * the set.
+   */
+  async bulk(request: AccessKeyBulkRequest): Promise<AccessKeyBulkResponse> {
+    const targets = this.resolveBulkTargets(request);
+    const results: AccessKeyBulkResult[] = [];
+
+    for (const target of targets) {
+      if (target.serverId === null || target.accessKeyId === null) {
+        results.push({ ...target, ok: false, message: 'NOT_FOUND: no such access key.' });
+        continue;
+      }
+
+      try {
+        await this.applyBulkAction(request.action, target.serverId, target.accessKeyId);
+        results.push({ ...target, ok: true, message: null });
+      } catch (error) {
+        results.push({ ...target, ok: false, message: bulkMessageOf(error) });
+      }
+    }
+
+    return { results };
+  }
+
+  private resolveBulkTargets(
+    request: AccessKeyBulkRequest,
+  ): readonly { id: string | null; serverId: string | null; accessKeyId: string | null }[] {
+    const ids = request.ids ?? [];
+    const refs = request.keys ?? [];
+
+    const resolved = this.entities.findMany(ids);
+    const byId = ids.map((id) => {
+      const entity = resolved.get(id);
+      if (entity === undefined || entity.kind !== 'key') {
+        return { id, serverId: null, accessKeyId: null };
+      }
+      return { id, serverId: entity.serverId, accessKeyId: entity.name };
+    });
+
+    const byRef = refs.map((ref) => ({
+      id: null,
+      serverId: ref.serverId,
+      accessKeyId: ref.accessKeyId,
+    }));
+
+    return [...byId, ...byRef];
+  }
+
+  private async applyBulkAction(
+    action: AccessKeyBulkRequest['action'],
+    serverId: string,
+    accessKeyId: string,
+  ): Promise<void> {
+    switch (action) {
+      case 'enable':
+        await this.update(serverId, accessKeyId, { status: 'active' });
+        return;
+      case 'disable':
+        await this.update(serverId, accessKeyId, { status: 'disabled' });
+        return;
+      case 'delete':
+        await this.delete(serverId, accessKeyId);
+        return;
+    }
+  }
+
   /** Every key of one user, for the user-delete path. */
   async deleteKeysOfUser(target: IamTarget, userName: string): Promise<void> {
     const keys = this.targets.providers.iamKeysFor(target.connection);
@@ -318,7 +424,15 @@ export class AccessKeysService {
       throw new NotFoundError(`No access key "${accessKeyId}" on ${target.row.name}.`);
     }
     const meta = this.keyMeta.find(target.row.id, accessKeyId) ?? undefined;
-    return toAccessKey(this.targets.stamp(target.row), raw, meta);
+    const identity = this.identityOf(target, accessKeyId);
+    return toAccessKey(identity, raw, meta);
+  }
+
+  /** The server stamp plus this key's opaque id, assigning one if it is new. */
+  private identityOf(target: IamTarget, accessKeyId: string): KeyIdentity {
+    const stamp = this.targets.stamp(target.row);
+    const id = this.entities.idFor(target.row.id, 'key', accessKeyId);
+    return { ...stamp, id };
   }
 
   private async createdKeyOf(
@@ -350,6 +464,7 @@ export class AccessKeysService {
       return await this.requireKey(target, accessKeyId);
     } catch {
       const meta = this.keyMeta.find(target.row.id, accessKeyId) ?? undefined;
+      const identity = this.identityOf(target, accessKeyId);
       const raw: RawAccessKey = {
         accessKeyId,
         userName,
@@ -360,7 +475,7 @@ export class AccessKeysService {
         expiresAt: meta?.expiresAt ?? null,
         lastUsedAt: null,
       };
-      return toAccessKey(this.targets.stamp(target.row), raw, meta);
+      return toAccessKey(identity, raw, meta);
     }
   }
 }

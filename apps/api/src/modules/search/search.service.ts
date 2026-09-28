@@ -10,6 +10,7 @@ import { ServerRepository } from '../../servers/server.repository';
 import { InventoryRepository } from '../inventory/inventory.repository';
 import { JobsRepository } from '../jobs/jobs.repository';
 import { IamUsersService } from '../iam-users/iam-users.service';
+import { IamGroupsService } from '../iam-groups/iam-groups.service';
 import { AccessKeysService } from '../access-keys/access-keys.service';
 import { IamPoliciesService } from '../iam-policies/iam-policies.service';
 
@@ -35,10 +36,16 @@ import { IamPoliciesService } from '../iam-policies/iam-policies.service';
  * ## Ordering
  *
  * Results come back grouped by type in a fixed order — servers, buckets, users,
- * keys, policies, jobs — rather than interleaved by relevance. A palette is read
+ * groups, keys, policies, jobs — rather than interleaved by relevance. A palette is read
  * by shape: an operator looking for a bucket scans the bucket block, and a
  * relevance score that moved a bucket above a server on one keystroke and below it
  * on the next would make that impossible.
+ *
+ * ## Ids, never names
+ *
+ * `id` is the entity's own opaque id and `href` is a route from docs/ROUTES.md
+ * built from that id alone. A name in a URL is wrong twice over: it is unique only
+ * within one server, and it may contain characters no path segment survives.
  */
 
 /** What the live half of the search is allowed to take. */
@@ -55,6 +62,7 @@ export class SearchService {
     private readonly inventory: InventoryRepository,
     private readonly jobs: JobsRepository,
     private readonly users: IamUsersService,
+    private readonly groups: IamGroupsService,
     private readonly keys: AccessKeysService,
     private readonly policies: IamPoliciesService,
   ) {}
@@ -81,7 +89,9 @@ export class SearchService {
         id: row.id,
         label: row.name,
         sublabel: `${PROVIDER_LABELS[row.provider as Provider]} · ${row.status}`,
-        href: `/servers/${row.name}`,
+        href: `/servers/${row.id}`,
+        // A server's status is not a job status; the sublabel carries it.
+        status: null,
       }));
   }
 
@@ -92,10 +102,11 @@ export class SearchService {
     );
     return buckets.map((bucket) => ({
       type: 'bucket' as const,
-      id: `${bucket.serverId}/${bucket.name}`,
+      id: bucket.id,
       label: bucket.name,
       sublabel: `Bucket on ${bucket.serverName}`,
-      href: `/browse/${bucket.serverName}/${bucket.name}`,
+      href: `/buckets/${bucket.id}`,
+      status: null,
     }));
   }
 
@@ -108,6 +119,9 @@ export class SearchService {
         label: job.name,
         sublabel: `${job.type} · ${job.status}`,
         href: `/jobs/${job.id}`,
+        // The one type that carries a status, so the palette can badge a
+        // running job without a second request.
+        status: job.status,
       };
     });
   }
@@ -115,33 +129,48 @@ export class SearchService {
   /* -------------------------------- live ---------------------------- */
 
   /**
-   * The three IAM searches, raced against one shared deadline. `Promise.all` over
-   * three already-deadlined promises rather than `Promise.race`: each one has to
-   * either produce its own results or give up on its own, and a race would discard
-   * two answers because a third was slow.
+   * The four IAM searches, raced against one shared deadline. `Promise.all` over
+   * already-deadlined promises rather than `Promise.race`: each one has to either
+   * produce its own results or give up on its own, and a race would discard three
+   * answers because a fourth was slow.
    */
   private async matchIam(needle: string): Promise<readonly SearchResult[]> {
     const deadline = Date.now() + IAM_BUDGET_MS;
 
-    const [users, keys, policies] = await Promise.all([
+    const [users, groups, keys, policies] = await Promise.all([
       this.withBudget(deadline, 'users', async () => {
         const page = await this.users.list({ q: needle, page: 1, pageSize: PER_TYPE_LIMIT });
         return page.items.map((user): SearchResult => ({
           type: 'user',
-          id: `${user.serverId}/${user.name}`,
+          id: user.id,
           label: user.name,
           sublabel: `S3 user on ${user.serverName}`,
-          href: `/access/users?server=${user.serverName}&user=${encodeURIComponent(user.name)}`,
+          href: `/users/${user.id}`,
+          status: null,
+        }));
+      }),
+      this.withBudget(deadline, 'groups', async () => {
+        // `listIamGroupsQuerySchema` has no paging, like the policy list.
+        const page = await this.groups.list({ q: needle });
+        return page.items.slice(0, PER_TYPE_LIMIT).map((group): SearchResult => ({
+          type: 'group',
+          id: group.id,
+          label: group.name,
+          sublabel: `Group on ${group.serverName}`,
+          href: `/users/groups/${group.id}`,
+          status: null,
         }));
       }),
       this.withBudget(deadline, 'keys', async () => {
         const page = await this.keys.list({ q: needle, page: 1, pageSize: PER_TYPE_LIMIT });
         return page.items.map((key): SearchResult => ({
           type: 'key',
-          id: `${key.serverId}/${key.accessKeyId}`,
+          id: key.id,
           label: key.name ?? key.accessKeyId,
           sublabel: `Access key for ${key.userName} on ${key.serverName}`,
-          href: `/access/keys?server=${key.serverName}&key=${encodeURIComponent(key.accessKeyId)}`,
+          // There is no key detail route; editing it is what the palette opens.
+          href: `/keys/${key.id}/edit`,
+          status: null,
         }));
       }),
       this.withBudget(deadline, 'policies', async () => {
@@ -150,15 +179,16 @@ export class SearchService {
         const page = await this.policies.list({ q: needle });
         return page.items.slice(0, PER_TYPE_LIMIT).map((policy): SearchResult => ({
           type: 'policy',
-          id: `${policy.serverId}/${policy.name}`,
+          id: policy.id,
           label: policy.name,
           sublabel: `Policy on ${policy.serverName}`,
-          href: `/access/policies/${policy.serverName}/${encodeURIComponent(policy.name)}`,
+          href: `/policies/${policy.id}`,
+          status: null,
         }));
       }),
     ]);
 
-    return [...users, ...keys, ...policies];
+    return [...users, ...groups, ...keys, ...policies];
   }
 
   /**

@@ -436,9 +436,12 @@ describe.skipIf(!IT_ENABLED)('storage against live containers', () => {
       );
 
       expect(response.status).toBe(200);
-      expect(response.headers.get('content-type')).toBe('text/plain');
+      // The charset is forced rather than left to the provider: a text response
+      // with no charset can be sniffed into one the writer did not intend.
+      expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
       expect(response.headers.get('accept-ranges')).toBe('bytes');
       expect(response.headers.get('content-disposition')).toContain('attachment');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
       expect(await response.text()).toBe('hello world');
     });
 
@@ -1062,7 +1065,9 @@ describe.skipIf(!IT_ENABLED)('storage against live containers', () => {
 
       const versions = await harness
         .http()
-        .get(`${objectsPath(SEAWEEDFS.name, seaweedBucket)}/versions?key=${encodeURIComponent(key)}`)
+        .get(
+          `${objectsPath(SEAWEEDFS.name, seaweedBucket)}/versions?key=${encodeURIComponent(key)}`,
+        )
         .set('Cookie', cookie)
         .expect(200);
       const items = versions.body.items as { versionId: string }[];

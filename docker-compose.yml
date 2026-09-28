@@ -12,6 +12,10 @@ services:
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
       APP_SECRET: ${APP_SECRET:?set APP_SECRET (>= 32 chars)}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Off unless a reverse proxy really sits in front of this container. See
+      # apps/api/.env.example: a trusted hop that is not there lets any client
+      # forge its own IP address. `1` for one proxy, or a list of proxy CIDRs.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
       TZ: ${TZ:-UTC}
     volumes:
       - storage-io-data:/data

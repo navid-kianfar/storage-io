@@ -136,6 +136,7 @@ describe('migrations against a real file database', () => {
         'api_tokens',
         'bucket_cache',
         'health_events',
+        'iam_entities',
         'job_logs',
         'jobs',
         'key_meta',
@@ -254,6 +255,17 @@ describe('migrations against a real file database', () => {
           updatedAt: now,
         })
         .run();
+
+      // Cached buckets from before `bucket_cache.id` existed. 0003 backfills an
+      // id per row, so the upgrade has to be run against rows that need one —
+      // an empty table would exercise the ALTER and prove nothing about the
+      // backfill or the unique index it then creates.
+      earlier.client
+        .prepare('INSERT INTO bucket_cache (server_id, name, updated_at) VALUES (?, ?, ?)')
+        .run('server-upgrade', 'kept-bucket', now);
+      earlier.client
+        .prepare('INSERT INTO bucket_cache (server_id, name, updated_at) VALUES (?, ?, ?)')
+        .run('server-upgrade', 'other-bucket', now);
     } finally {
       earlier.client.close();
     }
@@ -271,6 +283,18 @@ describe('migrations against a real file database', () => {
       const rows = upgraded.db.select().from(servers).all();
       expect(rows).toHaveLength(1);
       expect(rows[0]?.name).toBe('pre-upgrade');
+
+      // Every pre-existing bucket got an id, and no two rows got the same one.
+      const buckets = upgraded.client
+        .prepare('SELECT name, id FROM bucket_cache ORDER BY name')
+        .all() as { name: string; id: string }[];
+      expect(buckets.map((row) => row.name)).toEqual(['kept-bucket', 'other-bucket']);
+      for (const row of buckets) {
+        expect(row.id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+      }
+      expect(new Set(buckets.map((row) => row.id)).size).toBe(buckets.length);
 
       upgradedSchema = dumpSchema(upgraded.client);
     } finally {

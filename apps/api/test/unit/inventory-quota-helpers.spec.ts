@@ -5,6 +5,7 @@ import { supportOf, usageRatioOf } from '../../src/modules/quotas/quotas.service
 import { formatBytes } from '../../src/modules/quotas/quota-watcher.service';
 
 const bucket = (overrides: Partial<Bucket> = {}): Bucket => ({
+  id: 'bucket-0000-4000-8000-000000000001',
   serverId: 'srv',
   serverName: 'minio',
   provider: 'minio',

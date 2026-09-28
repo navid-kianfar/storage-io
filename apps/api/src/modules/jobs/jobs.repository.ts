@@ -1,19 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  like,
-  lt,
-  lte,
-  or,
-  type SQL,
-} from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, lte, or, type SQL } from 'drizzle-orm';
 import {
   JOB_FILTER_DEFAULTS,
   JOB_PROGRESS_ZERO,
@@ -34,7 +20,7 @@ import {
 import { DB } from '../../db/db.module';
 import type { AppDatabase } from '../../db/migrate';
 import { jobLogs, jobs, type JobRow } from '../../db/schema';
-import { escapeLike } from '../../activity/activity.service';
+import { likeEscaped } from '../../common/sql/like';
 
 /**
  * Every query over the jobs tables, and the row↔contract mapping.
@@ -64,6 +50,11 @@ export const JOB_VIEW_STATUSES: Readonly<Record<JobView, readonly JobStatus[]>> 
  * a column per name and without a join on every list page.
  */
 export const STORED_KEYS_FIELD = '_keys';
+/**
+ * The prefixes an operator selected, alongside `_keys` and for the same reason:
+ * a selection is not a filter, and `filters.prefix` can hold exactly one.
+ */
+export const STORED_PREFIXES_FIELD = '_prefixes';
 export const STORED_SOURCE_NAME_FIELD = '_sourceServerName';
 export const STORED_TARGET_NAME_FIELD = '_targetServerName';
 
@@ -245,11 +236,10 @@ export class JobsRepository {
 
   /** `GET /search`: name, bucket or type. */
   search(query: string, limit: number): readonly JobRow[] {
-    const needle = `%${escapeLike(query)}%`;
     const where = or(
-      like(jobs.name, needle),
-      like(jobs.sourceBucket, needle),
-      like(jobs.type, needle),
+      likeEscaped(jobs.name, query),
+      likeEscaped(jobs.sourceBucket, query),
+      likeEscaped(jobs.type, query),
     );
     return this.db
       .select()
@@ -357,6 +347,7 @@ export class JobsRepository {
         serverName: stringField(row.params, STORED_SOURCE_NAME_FIELD) ?? row.sourceServerId,
         bucket: row.sourceBucket,
         filters: filtersOf(row.filters),
+        prefixes: [...this.storedPrefixes(row)],
         keyCount: this.storedKeys(row)?.length ?? null,
       },
       target:
@@ -386,6 +377,13 @@ export class JobsRepository {
     if (!Array.isArray(raw)) return null;
     const keys = raw.filter((entry): entry is string => typeof entry === 'string');
     return keys.length === 0 ? null : keys;
+  }
+
+  /** Explicit prefixes a mutation endpoint handed over; `[]` for a filter job. */
+  storedPrefixes(row: JobRow): readonly string[] {
+    const raw = row.params[STORED_PREFIXES_FIELD];
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((entry): entry is string => typeof entry === 'string');
   }
 
   private orderFor(view: JobView): readonly SQL[] {

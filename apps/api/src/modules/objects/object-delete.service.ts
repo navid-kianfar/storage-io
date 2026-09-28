@@ -165,7 +165,21 @@ export class ObjectDeleteService {
     }));
 
     if (errors.length > 0) {
-      this.logger.warn({ bucket, failed: errors.length }, 'Some objects could not be deleted');
+      // The provider's own wording, which the response cannot carry: an operator
+      // looking into why a move left the original behind needs "Object is under
+      // legal hold" rather than the sanitised sentence the contract allows.
+      this.logger.warn(
+        {
+          bucket,
+          failed: errors.length,
+          providerErrors: (response.Errors ?? []).map((error) => ({
+            key: error.Key ?? '',
+            code: error.Code ?? null,
+            message: error.Message ?? null,
+          })),
+        },
+        'Some objects could not be deleted',
+      );
     }
 
     return { deleted: batch.length - errors.length, errors };

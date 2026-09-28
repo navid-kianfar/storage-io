@@ -129,6 +129,17 @@ export class SessionService {
     return result.changes;
   }
 
+  /**
+   * Every session, for the caller that has none of its own — an API token
+   * revoking "the others" means all of them. One statement, because listing the
+   * rows only to delete them one by one is a round trip per session and is not
+   * atomic: a session created between the list and its delete would survive.
+   */
+  revokeAll(): number {
+    const result = this.db.delete(sessions).run();
+    return result.changes;
+  }
+
   revokeByToken(token: string): void {
     const hash = this.crypto.hashToken(token);
     this.db.delete(sessions).where(eq(sessions.tokenHash, hash)).run();

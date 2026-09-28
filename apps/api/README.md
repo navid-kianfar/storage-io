@@ -127,7 +127,7 @@ src/
   servers/               /servers endpoints, repository, health checker, traffic sampler
   maintenance/           the hourly retention sweep
   web/                   WebStaticModule: serves the built app from WEB_DIST (prod only)
-  health/                GET /health (public)
+  health/                GET /health and /api/v1/health (public)
 
   modules/               wave 2 feature modules, imported by app.module in this order
     storage/             StorageContextService: ":sid" -> row + connection + S3 client
@@ -290,6 +290,20 @@ Take buckets as the worked example.
   per-server page budget and a round-robin cursor. A bucket larger than the budget
   keeps `sizeBytes: null` — the contract's "unknown" — rather than a number that is
   wrong.
+- **An object's bytes are never served as the provider typed them.** The store
+  holds whatever was uploaded and the console is same-origin, so a `text/html`
+  object returned as `text/html` is stored XSS against the console's own session.
+  `object-stream.service.ts` renders only inert types inline — the six raster
+  image types, `application/pdf`, `video/*`, `audio/*`, and any `text/*` forced to
+  `text/plain; charset=utf-8` — and hands everything else back as
+  `application/octet-stream` with an `attachment` disposition whatever
+  `?inline=true` asked for. `nosniff` and a `default-src 'none'; … sandbox` policy
+  go on every response that carries object bytes, including the ZIP.
+- **ZIP entry names are sanitised, not copied.** An object key is not a path: S3
+  stores `../../etc/x` happily and several extractors still resolve entry names
+  against the destination directory. `zipEntryName` drops `.`/`..` segments and
+  leading slashes and normalises backslashes; a key that leaves nothing behind is
+  skipped and logged rather than renamed.
 - **Nothing buffers a body.** Uploads go through `@aws-sdk/lib-storage`'s `Upload`
   with the operator's part size and concurrency; downloads pass `Range` through and
   pipe the provider's own stream; ZIPs are appended as their `GetObject` bodies
@@ -316,6 +330,28 @@ Take buckets as the worked example.
   doubles the first path segment on a versioned bucket (worked around in
   `ObjectsService`); SeaweedFS deletes a non-empty bucket without complaint, and
   accepts an object-lock retention it does not enforce.
+
+### Opaque ids
+
+`docs/ROUTES.md` is binding: a web route param is an id, never a name. Two
+registries make that possible, and both are lazy — an id is minted the first time
+storage-io sees the entity, by whichever listing sees it first.
+
+- **`bucket_cache.id`** is written on insert and never on update, so the
+  refresher's own upsert cannot change it. `InventoryRepository.locate(id)` is
+  what `GET /buckets/:bucketId` resolves with.
+- **`iam_entities`** is a registry, not a mirror: `(server_id, kind, name)` →
+  `id`, for `user`, `group`, `policy` and `key` (a key's name is its access key
+  id). `IamEntityRepository.idsFor` is one insert plus one select per chunk, so a
+  list of five hundred users costs two statements rather than five hundred. The
+  insert's `onConflictDoUpdate` touches only `last_seen_at` — leaving `id` out of
+  the `set` is what makes the id stable.
+- An entity that is **deleted and created again** keeps its id (the registry row
+  outlives it); a **bucket** does not (its cache row is the id). A deleted
+  _server_ cascades both away. `test/it/opaque-ids.it.spec.ts` pins all three
+  across a real close-and-reopen of the database.
+- Anything that builds a link — `GET /search`, every `notifications.raise` — uses
+  these ids. A name in an `href` is a bug; there is an e2e assertion for it.
 
 ### The IAM drivers
 
@@ -419,12 +455,24 @@ pass no fingerprint.
   cache is process-local).
 - **Compression is disabled for `/events`.** A compressed SSE stream is buffered
   until the window fills, so events arrive in bursts or not at all.
-- **`Settings` secrets are write-only.** `email.password`, `webhook.secret` and
-  `telegram.botToken` are accepted on PATCH and stripped from every response by
-  `stripWriteOnly`. Add a new secret to `WRITE_ONLY_FIELDS` in the same commit.
-- **`trust proxy` is 1.** On-premise installs sit behind one reverse proxy.
-  `request.ip` is therefore the client, and a client cannot forge it by adding
-  its own `X-Forwarded-For` entry.
+- **`Settings` secrets are write-only *and* encrypted at rest.**
+  `email.password`, `webhook.secret` and `telegram.botToken` are accepted on
+  PATCH, stripped from every response by `stripWriteOnly`, and stored as
+  `CryptoService` envelopes — the settings row is as readable as any other table
+  to anyone holding the SQLite file. `getInternal()` decrypts them; a value that
+  will not decrypt is returned as it stands, because a database written before
+  this rule holds plaintext and must keep working until the bootstrap pass
+  rewrites it. That pass (`SettingsService.onApplicationBootstrap`) is idempotent
+  and costs one read on every boot after the first. Add a new secret to
+  `SECRET_FIELDS` — one list drives both rules.
+- **`trust proxy` is off unless `TRUST_PROXY` says otherwise.** `X-Forwarded-For`
+  is a request header, so any client can send one; Express only believes it when
+  the app has been told a proxy is in front. With the setting off — the default —
+  `request.ip` is the socket's peer and a forged header changes nothing, which is
+  what `AllowedNetworksMiddleware`, the login throttler and the activity trail all
+  depend on. Behind a reverse proxy set `TRUST_PROXY=1` (one hop) or a
+  comma-separated list of the proxies' addresses or CIDRs. `true` is rejected by
+  the env schema on purpose: it means "believe anybody".
 - **Activity `details` is sanitized centrally** in `sanitizeDetails`. Add a key to
   `REDACTED_KEYS` rather than filtering at a call site.
 - **The health checker is one interval that asks which servers are due**, not a
@@ -433,11 +481,25 @@ pass no fingerprint.
 
 ### The job engine (wave 2c)
 
-- **A page is the unit of work.** The engine lists a page, runs its objects through
-  a pool, and only then writes the counters and the page's continuation token. A
-  crash or a pause replays at most one page, and every action is idempotent enough
-  to survive that replay. Persisting per object would need a second record of which
-  keys in the page had finished — a checkpoint format nobody needs.
+- **A page is the unit of work, and the checkpoint sits on the page being worked,
+  not the one after it.** `jobs.checkpoint` is
+  `{ segment, token, cursor }`: which stretch of the plan the run is on, the token
+  that stretch's *current* page was listed with, and how many of that page's
+  entries are done. A pause or a shutdown in the middle of a page keeps the page's
+  own token and records the cursor, so the resume re-lists that page and skips
+  exactly what was finished. Storing the page's `nextToken` instead — which is what
+  this did — lost the rest of the page on every early stop. The cursor is a count
+  rather than a key set because `runWithPool` starts items in order and waits for
+  everything it started, so what is complete is always a run from the front. A
+  checkpoint written in the old bare-token format still parses, as segment 0 at
+  the start of that page.
+- **A job works the union of its explicit keys and *every* selected prefix.**
+  `planSegments` turns `_keys` and `_prefixes` into an ordered plan and removes the
+  overlaps up front — a prefix inside another prefix, a key inside a selected
+  prefix — so nothing is done twice and the run needs no set of seen keys to
+  survive a pause. A job with neither is its filter's single listing, which is what
+  `POST /jobs` creates. `JobSource.filters.prefix` and `JobSource.prefixes` are
+  different things and the contract says so.
 - **`onApplicationBootstrap` requeues anything the database still calls `running`.**
   Nothing is running at boot, so every such row is a job the process died inside; it
   goes back to `queued` with its checkpoint intact.

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseCidr } from '../common/net/cidr';
 
 /**
  * Every environment variable the API reads, in one place. Parsing happens once
@@ -10,6 +11,53 @@ export const NODE_ENVS = ['development', 'test', 'production'] as const;
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
 export const APP_SECRET_MIN_LENGTH = 32;
+
+/* ------------------------------ trust proxy ----------------------- */
+
+/** The default: believe nothing, so `request.ip` is the socket's peer. */
+export const TRUST_PROXY_OFF = 'false';
+/** How many reverse proxies a hop count may name. Anything higher is a typo. */
+const TRUST_PROXY_MAX_HOPS = 10;
+/** Distinguishes "this string is not a valid setting" from the value `false`. */
+const INVALID_TRUST_PROXY = Symbol('INVALID_TRUST_PROXY');
+/** Express understands these by name; they are passed through, not parsed. */
+const NAMED_PROXY_RANGES: readonly string[] = ['loopback', 'linklocal', 'uniquelocal'];
+
+/**
+ * What Express's `trust proxy` setting accepts, narrowed to the three forms an
+ * operator has a reason to use.
+ */
+export type TrustProxySetting = false | number | readonly string[];
+
+/**
+ * Parses `TRUST_PROXY` into the value Express is given, or the invalid marker.
+ *
+ * Deliberately **not** accepting `true`: `trust proxy: true` tells Express to
+ * believe the left-most `X-Forwarded-For` entry from anybody, which is the exact
+ * forgery this variable exists to prevent.
+ */
+export function parseTrustProxy(raw: string): TrustProxySetting | typeof INVALID_TRUST_PROXY {
+  const value = raw.trim();
+  if (value.length === 0 || value.toLowerCase() === TRUST_PROXY_OFF) return false;
+
+  if (/^\d+$/.test(value)) {
+    const hops = Number(value);
+    if (hops < 1 || hops > TRUST_PROXY_MAX_HOPS) return INVALID_TRUST_PROXY;
+    return hops;
+  }
+
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (entries.length === 0) return INVALID_TRUST_PROXY;
+
+  for (const entry of entries) {
+    if (NAMED_PROXY_RANGES.includes(entry)) continue;
+    if (parseCidr(entry) === null) return INVALID_TRUST_PROXY;
+  }
+  return entries;
+}
 
 /** argon2id PHC string, as `ADMIN_PASSWORD_HASH` must be. */
 const ARGON2_PHC =
@@ -37,6 +85,22 @@ export const envSchema = z
     COOKIE_SECURE: z.stringbool().default(false),
     /** Extra origins allowed to send cookie-authenticated mutations. */
     ALLOWED_ORIGINS: z.string().default(''),
+
+    /**
+     * Whether `X-Forwarded-For` may be believed, and from whom. Off by default:
+     * a trusted hop that is not really there lets any client forge `request.ip`
+     * and walk past `Settings.security.allowedNetworks` and the login throttler.
+     *
+     * `false` (the default), a hop count (`1` — one reverse proxy in front), or a
+     * comma-separated list of trusted proxy addresses/CIDRs.
+     */
+    TRUST_PROXY: z
+      .string()
+      .default(TRUST_PROXY_OFF)
+      .refine((value) => parseTrustProxy(value) !== INVALID_TRUST_PROXY, {
+        message:
+          'must be "false", a hop count such as "1", or a comma-separated list of proxy addresses or CIDRs',
+      }),
 
     LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
     /** Pretty-print logs. Defaults to on in development, off elsewhere. */
@@ -92,6 +156,8 @@ export interface AppConfig extends Env {
   readonly logPretty: boolean;
   readonly swaggerEnabled: boolean;
   readonly allowedOrigins: readonly string[];
+  /** `TRUST_PROXY` in the form Express's `trust proxy` setting takes. */
+  readonly trustProxy: TrustProxySetting;
 }
 
 export class EnvValidationError extends Error {
@@ -118,6 +184,10 @@ export function validateEnv(source: Record<string, unknown>): AppConfig {
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
 
+  // The schema already refused an unparseable value, so the marker is
+  // unreachable here; the guard is what keeps the type honest.
+  const trustProxy = parseTrustProxy(env.TRUST_PROXY);
+
   return {
     ...env,
     isProduction,
@@ -125,5 +195,6 @@ export function validateEnv(source: Record<string, unknown>): AppConfig {
     logPretty: env.LOG_PRETTY ?? env.NODE_ENV === 'development',
     swaggerEnabled: env.SWAGGER_ENABLED ?? !isProduction,
     allowedOrigins,
+    trustProxy: typeof trustProxy === 'symbol' ? false : trustProxy,
   };
 }

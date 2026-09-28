@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import {
   SETTINGS_DEFAULTS,
@@ -11,8 +11,15 @@ import type { AppDatabase } from '../db/migrate';
 import { settings as settingsTable } from '../db/schema';
 import { CryptoService } from '../crypto/crypto.service';
 
-/** Secrets inside Settings: accepted on PATCH, never returned. */
-const WRITE_ONLY_FIELDS = [
+/**
+ * Secrets inside Settings: accepted on PATCH, never returned, and never stored
+ * in the clear.
+ *
+ * They are the same three paths for both rules on purpose — a value worth hiding
+ * from a response is a value worth encrypting in the file, and keeping two lists
+ * is how one of them ends up a field behind.
+ */
+const SECRET_FIELDS = [
   ['notifications', 'email', 'password'],
   ['notifications', 'webhook', 'secret'],
   ['notifications', 'telegram', 'botToken'],
@@ -32,7 +39,7 @@ const SECTIONS = Object.keys(SETTINGS_DEFAULTS) as readonly SettingsSection[];
  * API is a single process by design.
  */
 @Injectable()
-export class SettingsService {
+export class SettingsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SettingsService.name);
   private cached: Settings | null = null;
 
@@ -40,6 +47,18 @@ export class SettingsService {
     @Inject(DB) private readonly db: AppDatabase,
     private readonly crypto: CryptoService,
   ) {}
+
+  /**
+   * Brings a database written before secrets were encrypted up to date.
+   *
+   * Idempotent by construction: a leaf that already decrypts is left alone, so
+   * the pass costs one read and no write on every boot after the first. It
+   * belongs at bootstrap rather than in a SQL migration because the ciphertext
+   * depends on `APP_SECRET`, which a migration file cannot reach.
+   */
+  onApplicationBootstrap(): void {
+    this.encryptStoredSecrets();
+  }
 
   /** The full document with defaults filled in — secrets included. Internal use. */
   getInternal(): Settings {
@@ -67,7 +86,7 @@ export class SettingsService {
       return this.cached;
     }
 
-    this.cached = parsed.data;
+    this.cached = this.mapSecrets(parsed.data, (value) => this.decryptStoredSecret(value));
     return this.cached;
   }
 
@@ -93,10 +112,11 @@ export class SettingsService {
 
     const updatedAt = new Date().toISOString();
     const touched = Object.keys(patch) as readonly SettingsSection[];
+    const atRest = this.mapSecrets(parsed.data, (value) => this.crypto.encryptSecret(value));
 
     this.db.transaction((tx) => {
       for (const section of touched) {
-        const value = parsed.data[section] as Record<string, unknown>;
+        const value = atRest[section] as Record<string, unknown>;
         tx.insert(settingsTable)
           .values({ section, value, updatedAt })
           .onConflictDoUpdate({ target: settingsTable.section, set: { value, updatedAt } })
@@ -123,9 +143,10 @@ export class SettingsService {
     }
 
     const updatedAt = new Date().toISOString();
+    const atRest = this.mapSecrets(parsed.data, (value) => this.crypto.encryptSecret(value));
     this.db.transaction((tx) => {
       for (const section of SECTIONS) {
-        const value = parsed.data[section] as Record<string, unknown>;
+        const value = atRest[section] as Record<string, unknown>;
         tx.insert(settingsTable)
           .values({ section, value, updatedAt })
           .onConflictDoUpdate({ target: settingsTable.section, set: { value, updatedAt } })
@@ -166,16 +187,97 @@ export class SettingsService {
     this.cached = null;
   }
 
+  /* ---------------------------- secrets at rest -------------------- */
+
   /**
-   * Secrets are stored encrypted, like server credentials: a settings row is as
-   * readable as any other table to anyone with the file.
+   * A copy of the document with every secret leaf run through `transform`.
+   *
+   * One walk serves both directions — encrypting on the way into the database and
+   * decrypting on the way out — because a second copy of the path list is how the
+   * two ends drift apart. An empty leaf is left alone: `''` means the operator
+   * cleared the secret, and encrypting it would turn "no secret" into a blob that
+   * reads back as one.
    */
-  encryptSecretValue(plaintext: string): string {
-    return this.crypto.encryptSecret(plaintext);
+  private mapSecrets(document: Settings, transform: (value: string) => string): Settings {
+    const clone = structuredClone(document) as unknown as Record<string, unknown>;
+    for (const path of SECRET_FIELDS) {
+      const current = readLeaf(clone, path);
+      if (current === null || current.length === 0) continue;
+      writeLeaf(clone, path, transform(current));
+    }
+    return clone as unknown as Settings;
   }
 
-  decryptSecretValue(envelope: string): string {
-    return this.crypto.decryptSecret(envelope);
+  /**
+   * The plaintext behind a stored leaf. A value that will not decrypt is a row
+   * written before this became the rule (or hand-edited), and is returned as it
+   * stands so a notification channel keeps working until the boot pass rewrites
+   * it — the alternative is an operator's SMTP password silently becoming
+   * gibberish on upgrade.
+   */
+  private decryptStoredSecret(stored: string): string {
+    try {
+      return this.crypto.decryptSecret(stored);
+    } catch {
+      return stored;
+    }
+  }
+
+  private isEncrypted(stored: string): boolean {
+    try {
+      this.crypto.decryptSecret(stored);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The upgrade pass; see `onApplicationBootstrap`. */
+  private encryptStoredSecrets(): void {
+    const sections = new Set(SECRET_FIELDS.map((path) => path[0] as SettingsSection));
+    const rewritten: { section: SettingsSection; value: Record<string, unknown> }[] = [];
+
+    for (const section of sections) {
+      const [row] = this.db
+        .select()
+        .from(settingsTable)
+        .where(eq(settingsTable.section, section))
+        .limit(1)
+        .all();
+      if (row === undefined) continue;
+
+      const value = structuredClone(row.value);
+      let changed = false;
+      for (const path of SECRET_FIELDS) {
+        if (path[0] !== section) continue;
+        // The row holds the section's own tree, so the section name is not part
+        // of the path inside it.
+        const leafPath = path.slice(1);
+        const stored = readLeaf(value, leafPath);
+        if (stored === null || stored.length === 0) continue;
+        if (this.isEncrypted(stored)) continue;
+        writeLeaf(value, leafPath, this.crypto.encryptSecret(stored));
+        changed = true;
+      }
+      if (changed) rewritten.push({ section, value });
+    }
+
+    if (rewritten.length === 0) return;
+
+    const updatedAt = new Date().toISOString();
+    this.db.transaction((tx) => {
+      for (const entry of rewritten) {
+        tx.update(settingsTable)
+          .set({ value: entry.value, updatedAt })
+          .where(eq(settingsTable.section, entry.section))
+          .run();
+      }
+    });
+    this.cached = null;
+    this.logger.log(
+      { sections: rewritten.map((entry) => entry.section) },
+      'Encrypted notification secrets that were stored in the clear',
+    );
   }
 
   /** True when the section row exists — used by the first-run wizard. */
@@ -214,15 +316,38 @@ function deepMerge<T>(base: T, patch: unknown): T {
 
 function stripWriteOnly(value: Settings): Settings {
   const clone = structuredClone(value) as unknown as Record<string, unknown>;
-  for (const path of WRITE_ONLY_FIELDS) {
-    let cursor: Record<string, unknown> | undefined = clone;
-    for (const segment of path.slice(0, -1)) {
-      const next: unknown = cursor?.[segment];
-      cursor = isPlainObject(next) ? next : undefined;
-      if (cursor === undefined) break;
-    }
-    const leaf = path[path.length - 1] as string;
-    if (cursor !== undefined) delete cursor[leaf];
+  for (const path of SECRET_FIELDS) {
+    const parent = parentOf(clone, path);
+    if (parent === null) continue;
+    delete parent[path[path.length - 1] as string];
   }
   return clone as unknown as Settings;
+}
+
+/** The object holding the path's last segment, or `null` when the path is absent. */
+function parentOf(
+  root: Record<string, unknown>,
+  path: readonly string[],
+): Record<string, unknown> | null {
+  let cursor: Record<string, unknown> = root;
+  for (const segment of path.slice(0, -1)) {
+    const next: unknown = cursor[segment];
+    if (!isPlainObject(next)) return null;
+    cursor = next;
+  }
+  return cursor;
+}
+
+/** The string at `path`, or `null` when it is absent or not a string. */
+function readLeaf(root: Record<string, unknown>, path: readonly string[]): string | null {
+  const parent = parentOf(root, path);
+  if (parent === null) return null;
+  const value: unknown = parent[path[path.length - 1] as string];
+  return typeof value === 'string' ? value : null;
+}
+
+function writeLeaf(root: Record<string, unknown>, path: readonly string[], value: string): void {
+  const parent = parentOf(root, path);
+  if (parent === null) return;
+  parent[path[path.length - 1] as string] = value;
 }

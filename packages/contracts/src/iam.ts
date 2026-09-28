@@ -22,6 +22,15 @@ export type UnavailableServer = z.infer<typeof unavailableServerSchema>;
 export const aggregatedListOf = <T extends z.ZodType>(item: T) =>
   listOf(item).extend({ unavailable: z.array(unavailableServerSchema) });
 
+/**
+ * storage-io's own opaque id for an IAM entity, stable per
+ * `(serverId, kind, name)` and assigned the first time the entity is seen. It is
+ * what a URL carries: a user, group, policy or key name is unique only within one
+ * server, and none of them is a safe path segment. An entity deleted and created
+ * again under the same name may get a new id.
+ */
+const entityId = z.string();
+
 /* ------------------------------- users ---------------------------- */
 
 export const S3_USER_STATUSES = ['enabled', 'disabled', 'unknown'] as const;
@@ -29,6 +38,7 @@ export const s3UserStatusSchema = z.enum(S3_USER_STATUSES);
 export type S3UserStatus = z.infer<typeof s3UserStatusSchema>;
 
 export const s3UserSchema = z.object({
+  id: entityId,
   serverId: z.string(),
   serverName: z.string(),
   provider: providerSchema,
@@ -80,6 +90,7 @@ export const accessKeyStatusSchema = z.enum(ACCESS_KEY_STATUSES);
 export type AccessKeyStatus = z.infer<typeof accessKeyStatusSchema>;
 
 export const accessKeySchema = z.object({
+  id: entityId,
   serverId: z.string(),
   serverName: z.string(),
   provider: providerSchema,
@@ -181,6 +192,7 @@ export type RotateAccessKeyRequest = z.infer<typeof rotateAccessKeyRequestSchema
 /* ------------------------------ groups ---------------------------- */
 
 export const s3GroupSchema = z.object({
+  id: entityId,
   serverId: z.string(),
   serverName: z.string(),
   name: z.string(),
@@ -210,6 +222,7 @@ export type UpsertS3GroupRequest = z.infer<typeof upsertS3GroupRequestSchema>;
 /* ----------------------------- policies --------------------------- */
 
 export const policySummarySchema = z.object({
+  id: entityId,
   serverId: z.string(),
   serverName: z.string(),
   name: z.string(),
@@ -310,3 +323,116 @@ export const ACCESS_KEY_CSV_COLUMNS = [
   'expiresAt',
   'lastUsedAt',
 ] as const;
+
+/* ---------------------------- bulk actions ------------------------ */
+
+/**
+ * One action over many IAM rows. Both endpoints below take their targets either
+ * as explicit `(serverId, name)` references or as a list of opaque `ids` — the
+ * list screens hold ids, and resolving them client-side would mean a request per
+ * row. Exactly one of the two must be present and non-empty.
+ *
+ * The response is always 200 with a row per target, never a 4xx for a partial
+ * failure: the caller needs to know which rows the action reached.
+ */
+export const IAM_BULK_MAX = 500;
+
+export const s3UserRefSchema = z.object({
+  serverId: z.string().min(1),
+  name: z.string().min(1),
+});
+export type S3UserRef = z.infer<typeof s3UserRefSchema>;
+
+export const accessKeyRefSchema = z.object({
+  serverId: z.string().min(1),
+  accessKeyId: z.string().min(1),
+});
+export type AccessKeyRef = z.infer<typeof accessKeyRefSchema>;
+
+const bulkIds = z.array(z.string().min(1)).max(IAM_BULK_MAX);
+
+/** `users` or `ids`, one of them non-empty. */
+const hasTargets = (body: {
+  readonly ids?: readonly string[];
+  readonly users?: readonly unknown[];
+  readonly keys?: readonly unknown[];
+}): boolean =>
+  (body.ids?.length ?? 0) > 0 || (body.users?.length ?? 0) > 0 || (body.keys?.length ?? 0) > 0;
+
+const TARGETS_REQUIRED = { message: 'either ids or the reference list must be non-empty' };
+
+/* ------------------------------ users ----------------------------- */
+
+export const IAM_USER_BULK_ACTIONS = [
+  'enable',
+  'disable',
+  'delete',
+  'attach-policy',
+  'detach-policy',
+] as const;
+export const iamUserBulkActionSchema = z.enum(IAM_USER_BULK_ACTIONS);
+export type IamUserBulkAction = z.infer<typeof iamUserBulkActionSchema>;
+
+/** What `attach-policy` and `detach-policy` act with. */
+export const iamPolicyRefSchema = z.object({ policy: z.string().min(1).max(128) });
+export type IamPolicyRef = z.infer<typeof iamPolicyRefSchema>;
+
+const userTargets = {
+  users: z.array(s3UserRefSchema).max(IAM_BULK_MAX).optional(),
+  ids: bulkIds.optional(),
+};
+
+/** `payload` is discriminated by `action`, so a policy cannot ride along on `delete`. */
+export const iamUserBulkRequestSchema = z
+  .discriminatedUnion('action', [
+    z.object({ ...userTargets, action: z.literal('enable') }),
+    z.object({ ...userTargets, action: z.literal('disable') }),
+    z.object({ ...userTargets, action: z.literal('delete') }),
+    z.object({ ...userTargets, action: z.literal('attach-policy'), payload: iamPolicyRefSchema }),
+    z.object({ ...userTargets, action: z.literal('detach-policy'), payload: iamPolicyRefSchema }),
+  ])
+  .refine(hasTargets, TARGETS_REQUIRED);
+export type IamUserBulkRequest = z.infer<typeof iamUserBulkRequestSchema>;
+
+export const iamUserBulkResultSchema = z.object({
+  /** The opaque id, resolved before the action ran; `null` when none is known. */
+  id: z.string().nullable(),
+  /** Null only when an `ids` entry named nothing this installation knows. */
+  serverId: z.string().nullable(),
+  name: z.string().nullable(),
+  ok: z.boolean(),
+  message: z.string().nullable(),
+});
+export type IamUserBulkResult = z.infer<typeof iamUserBulkResultSchema>;
+
+export const iamUserBulkResponseSchema = z.object({ results: z.array(iamUserBulkResultSchema) });
+export type IamUserBulkResponse = z.infer<typeof iamUserBulkResponseSchema>;
+
+/* --------------------------- access keys -------------------------- */
+
+export const ACCESS_KEY_BULK_ACTIONS = ['enable', 'disable', 'delete'] as const;
+export const accessKeyBulkActionSchema = z.enum(ACCESS_KEY_BULK_ACTIONS);
+export type AccessKeyBulkAction = z.infer<typeof accessKeyBulkActionSchema>;
+
+export const accessKeyBulkRequestSchema = z
+  .object({
+    keys: z.array(accessKeyRefSchema).max(IAM_BULK_MAX).optional(),
+    ids: bulkIds.optional(),
+    action: accessKeyBulkActionSchema,
+  })
+  .refine(hasTargets, TARGETS_REQUIRED);
+export type AccessKeyBulkRequest = z.infer<typeof accessKeyBulkRequestSchema>;
+
+export const accessKeyBulkResultSchema = z.object({
+  id: z.string().nullable(),
+  serverId: z.string().nullable(),
+  accessKeyId: z.string().nullable(),
+  ok: z.boolean(),
+  message: z.string().nullable(),
+});
+export type AccessKeyBulkResult = z.infer<typeof accessKeyBulkResultSchema>;
+
+export const accessKeyBulkResponseSchema = z.object({
+  results: z.array(accessKeyBulkResultSchema),
+});
+export type AccessKeyBulkResponse = z.infer<typeof accessKeyBulkResponseSchema>;

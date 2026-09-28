@@ -132,7 +132,13 @@ describe('dashboard, search, config backup and syslog (e2e)', () => {
   /* -------------------------------- search --------------------------- */
 
   describe('GET /search', () => {
-    it('finds a server by name', async () => {
+    it('finds a server by name and links to it by id, never by name', async () => {
+      const saved = await harness
+        .http()
+        .get(`/api/v1/servers/${SERVER}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
       const response = await harness
         .http()
         .get(`/api/v1/search?q=${SERVER}`)
@@ -143,7 +149,11 @@ describe('dashboard, search, config backup and syslog (e2e)', () => {
       const server = (response.body.items as { type: string; label: string; href: string }[]).find(
         (item) => item.type === 'server',
       );
-      expect(server).toMatchObject({ label: SERVER, href: `/servers/${SERVER}` });
+      expect(server).toMatchObject({
+        label: SERVER,
+        href: `/servers/${saved.body.id as string}`,
+      });
+      expect(server?.href).not.toContain(SERVER);
     });
 
     it('finds a job by name and links to it', async () => {

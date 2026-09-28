@@ -85,7 +85,7 @@ describe('runWithPool', () => {
     let started = 0;
     let finished = 0;
 
-    await runWithPool(
+    const completed = await runWithPool(
       Array.from({ length: 100 }, (_, index) => index),
       () => 2,
       async () => {
@@ -100,6 +100,21 @@ describe('runWithPool', () => {
     // It stopped early, and nothing was abandoned mid-flight.
     expect(started).toBeLessThan(100);
     expect(finished).toBe(started);
+    // And it reports how far into the page the work is done, which is what the
+    // paused job writes as its within-page cursor.
+    expect(completed).toBe(started);
+  });
+
+  it('reports the whole page when it runs to the end', async () => {
+    const completed = await runWithPool(
+      [1, 2, 3, 4, 5],
+      () => 2,
+      async () => {
+        await Promise.resolve();
+      },
+      () => false,
+    );
+    expect(completed).toBe(5);
   });
 
   it('treats a limit below one as one rather than deadlocking', async () => {
@@ -126,7 +141,7 @@ describe('runWithPool', () => {
         },
         () => false,
       ),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(0);
   });
 });
 

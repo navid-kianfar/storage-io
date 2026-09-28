@@ -17,6 +17,7 @@ import type { IamAccessKeyOperations } from '../../providers/iam/iam-driver';
 import { ServerRepository } from '../../servers/server.repository';
 import { ServersService } from '../../servers/servers.service';
 import { IamTargetService, type IamTarget } from '../iam-core/iam-target.service';
+import { IamEntityRepository } from '../iam-core/iam-entity.repository';
 import { KeyMetaRepository } from '../iam-core/key-meta.repository';
 
 /**
@@ -72,6 +73,7 @@ export class ServerCredentialsService {
     private readonly crypto: CryptoService,
     private readonly keyMeta: KeyMetaRepository,
     private readonly notifications: NotificationsService,
+    private readonly entities: IamEntityRepository,
   ) {}
 
   async rotate(
@@ -284,11 +286,14 @@ export class ServerCredentialsService {
       { server: target.row.name, reason },
       'Rotated the credentials but could not retire the previous key',
     );
+    // The link points at the key that was left behind, by its opaque id — the
+    // operator's next action is on that one key, not on the whole list.
+    const keyId = this.entities.idFor(target.row.id, 'key', accessKeyId);
     this.notifications.raise({
       level: 'warning',
       title: 'A rotated credential was left active',
       detail: `${target.row.name} now uses a new key, but the previous one (${mask(accessKeyId)}) is still active because ${reason} Remove it yourself when nothing else uses it.`,
-      href: '/keys',
+      href: `/keys/${keyId}/edit`,
       ruleKey: 'key.expiring',
     });
   }

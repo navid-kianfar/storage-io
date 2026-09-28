@@ -6,6 +6,7 @@ This document is the source of truth for `packages/contracts` (zod schemas). Cha
 - Auth: session cookie `sio_session`, or `Authorization: Bearer sio_…`. Every route requires auth unless marked **public**.
 - Errors: `application/problem+json` `{ type, title, status, detail, code, errors?: [{ path, message }] }`. Stable `code` values include `AUTH_INVALID`, `NOT_FOUND`, `VALIDATION`, `CONFLICT`, `PROVIDER_ERROR`, `NOT_SUPPORTED`, `SERVER_OFFLINE`, `BUCKET_NOT_EMPTY` and `RATE_LIMITED`.
 - Timestamps are ISO-8601 strings. Sizes are bytes (number). IDs are UUIDs unless stated.
+- **Every entity a URL can point at carries an opaque `id`.** `docs/ROUTES.md` is binding here: a route param is an id, never a server, bucket, user, group, policy or key **name**. A bucket's id is stable per `(serverId, name)` and lives on its cache row; a user's, group's, policy's and access key's is stable per `(serverId, kind, name)` and lives in `iam_entities`. Both are assigned the first time storage-io sees the entity, survive a restart, and are released only when the entity's row is (a deleted bucket; a deleted **server** for an IAM entity) — so a bucket deleted and created again gets a new id. The name-based endpoints under `/servers/:sid/…` are unchanged; the resolve endpoints below turn an id into one.
 - Lists return `{ items: T[], total: number }` with `page` (1-based) and `pageSize` (default 50, max 500).
 
 ## Shared types
@@ -83,6 +84,7 @@ interface ServerOptions {
 }
 
 interface Bucket {
+  id: string; /* opaque, stable per (serverId, name) */
   serverId: string;
   serverName: string;
   provider: Provider;
@@ -115,18 +117,18 @@ interface CheckResult {
 
 ## Auth
 
-| Method | Path                                                | Body                                        | Response                                                                        |
-| ------ | --------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------- |
-| POST   | `/auth/login` **public**                            | `{ username, password, remember: boolean }` | `{ user: Me }` and sets the cookie. 401 `AUTH_INVALID`; 429 when rate-limited   |
-| POST   | `/auth/logout`                                      | —                                           | 204                                                                             |
-| GET    | `/auth/me`                                          | —                                           | `Me = { username, displayName, email: string \| null }`                         |
-| PATCH  | `/auth/me`                                          | `{ displayName?, email? }`                  | `Me`                                                                            |
-| GET    | `/auth/sessions`                                    | —                                           | `{ items: [{ id, userAgent, ip, createdAt, lastSeenAt, expiresAt, current }] }` |
-| DELETE | `/auth/sessions/:id` · `/auth/sessions?others=true` | —                                           | 204                                                                             |
-| GET    | `/auth/tokens`                                      | —                                           | `{ items: [{ id, name, prefix, createdAt, lastUsedAt, expiresAt }] }`           |
-| POST   | `/auth/tokens`                                      | `{ name, expiresInDays: number \| null }`   | `{ token /* shown once */, item }`                                              |
-| DELETE | `/auth/tokens/:id`                                  | —                                           | 204                                                                             |
-| GET    | `/health` **public**                                | —                                           | `{ status: 'ok', version, uptimeSec }`                                          |
+| Method | Path                                                | Body                                        | Response                                                                                                                                                                                                |
+| ------ | --------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/auth/login` **public**                            | `{ username, password, remember: boolean }` | `{ user: Me }` and sets the cookie. 401 `AUTH_INVALID`; 429 when rate-limited                                                                                                                           |
+| POST   | `/auth/logout`                                      | —                                           | 204                                                                                                                                                                                                     |
+| GET    | `/auth/me`                                          | —                                           | `Me = { username, displayName, email: string \| null }`                                                                                                                                                 |
+| PATCH  | `/auth/me`                                          | `{ displayName?, email? }`                  | `Me`                                                                                                                                                                                                    |
+| GET    | `/auth/sessions`                                    | —                                           | `{ items: [{ id, userAgent, ip, createdAt, lastSeenAt, expiresAt, current }] }`                                                                                                                         |
+| DELETE | `/auth/sessions/:id` · `/auth/sessions?others=true` | —                                           | 204                                                                                                                                                                                                     |
+| GET    | `/auth/tokens`                                      | —                                           | `{ items: [{ id, name, prefix, createdAt, lastUsedAt, expiresAt }] }`                                                                                                                                   |
+| POST   | `/auth/tokens`                                      | `{ name, expiresInDays: number \| null }`   | `{ token /* shown once */, item }`                                                                                                                                                                      |
+| DELETE | `/auth/tokens/:id`                                  | —                                           | 204                                                                                                                                                                                                     |
+| GET    | `/health` · `/api/v1/health` **public**             | —                                           | `{ status: 'ok', version, uptimeSec }` — the same probe on both paths. `/health` is outside the version prefix for the container healthcheck and is the one path exempt from `security.allowedNetworks` |
 
 ## Servers
 
@@ -150,23 +152,24 @@ interface CheckResult {
 
 All per-bucket paths are prefixed `/servers/:sid/buckets/:bucket`.
 
-| Method    | Path                    | Body / query                                                                                               | Response                                                                                                                                                  |
-| --------- | ----------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET       | `/buckets`              | `?q&serverId&access&sort=size\|name\|quota\|written&page&pageSize`                                         | `{ items: Bucket[], total, summary: { buckets, sizeBytes, objects, withQuota, nearQuota, public } }`                                                      |
-| POST      | `/servers/:sid/buckets` | `{ name, region?, versioning: boolean, objectLock: boolean, quota: { limitBytes, mode } \| null, access }` | `Bucket` (201)                                                                                                                                            |
-| GET       | `…`                     | —                                                                                                          | `BucketDetail = Bucket & { owner: string \| null, tags: Record<string,string>, defaultStorageClass: string \| null, noncurrentVersions: number \| null }` |
-| DELETE    | `…`                     | `?force=false`                                                                                             | 204. 409 `BUCKET_NOT_EMPTY`                                                                                                                               |
-| POST      | `…/empty`               | `{ includeVersions: boolean }`                                                                             | `Job` (202)                                                                                                                                               |
-| GET · PUT | `…/access`              | `{ access: 'private'\|'public-read' }`                                                                     | `{ access, policy: object \| null }`                                                                                                                      |
-| GET · PUT | `…/policy`              | `{ policy: object \| null }`                                                                               | `{ policy }`                                                                                                                                              |
-| GET · PUT | `…/versioning`          | `{ status: 'enabled'\|'suspended' }`                                                                       | `{ status }`                                                                                                                                              |
-| GET · PUT | `…/object-lock`         | `{ mode: 'GOVERNANCE'\|'COMPLIANCE'\|null, days: number\|null, years: number\|null }`                      | `{ enabled, mode, days, years }`                                                                                                                          |
-| GET · PUT | `…/lifecycle`           | `{ rules: LifecycleRule[] }`                                                                               | `{ rules }`                                                                                                                                               |
-| GET · PUT | `…/cors`                | `{ rules: CorsRule[] }`                                                                                    | `{ rules }`                                                                                                                                               |
-| GET · PUT | `…/tags`                | `{ tags: Record<string,string> }`                                                                          | `{ tags }`                                                                                                                                                |
-| GET · PUT | `…/replication`         | `{ rules: ReplicationRule[] }`                                                                             | `{ rules, status }`                                                                                                                                       |
-| GET · PUT | `…/notifications`       | `{ targets: NotificationTarget[] }`                                                                        | `{ targets }`                                                                                                                                             |
-| GET · PUT | `…/quota`               | `{ limitBytes: number \| null, mode, threshold }`                                                          | `{ quota: Quota \| null, usage: { sizeBytes, objects } }`                                                                                                 |
+| Method    | Path                    | Body / query                                                                                               | Response                                                                                                                                                                                                                                                  |
+| --------- | ----------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET       | `/buckets`              | `?q&serverId&access&sort=size\|name\|quota\|written&page&pageSize`                                         | `{ items: Bucket[], total, summary: { buckets, sizeBytes, objects, withQuota, nearQuota, public } }`                                                                                                                                                      |
+| GET       | `/buckets/:bucketId`    | —                                                                                                          | `BucketDetail` — resolves the opaque id, refreshing from the bucket's server when it is reachable and answering from the cache when it is not. 404 `NOT_FOUND` for an id that names nothing. Declared **below** `/buckets/export.csv` and `/buckets/bulk` |
+| POST      | `/servers/:sid/buckets` | `{ name, region?, versioning: boolean, objectLock: boolean, quota: { limitBytes, mode } \| null, access }` | `Bucket` (201)                                                                                                                                                                                                                                            |
+| GET       | `…`                     | —                                                                                                          | `BucketDetail = Bucket & { owner: string \| null, tags: Record<string,string>, defaultStorageClass: string \| null, noncurrentVersions: number \| null }`                                                                                                 |
+| DELETE    | `…`                     | `?force=false`                                                                                             | 204. 409 `BUCKET_NOT_EMPTY`                                                                                                                                                                                                                               |
+| POST      | `…/empty`               | `{ includeVersions: boolean }`                                                                             | `Job` (202)                                                                                                                                                                                                                                               |
+| GET · PUT | `…/access`              | `{ access: 'private'\|'public-read' }`                                                                     | `{ access, policy: object \| null }`                                                                                                                                                                                                                      |
+| GET · PUT | `…/policy`              | `{ policy: object \| null }`                                                                               | `{ policy }`                                                                                                                                                                                                                                              |
+| GET · PUT | `…/versioning`          | `{ status: 'enabled'\|'suspended' }`                                                                       | `{ status }`                                                                                                                                                                                                                                              |
+| GET · PUT | `…/object-lock`         | `{ mode: 'GOVERNANCE'\|'COMPLIANCE'\|null, days: number\|null, years: number\|null }`                      | `{ enabled, mode, days, years }`                                                                                                                                                                                                                          |
+| GET · PUT | `…/lifecycle`           | `{ rules: LifecycleRule[] }`                                                                               | `{ rules }`                                                                                                                                                                                                                                               |
+| GET · PUT | `…/cors`                | `{ rules: CorsRule[] }`                                                                                    | `{ rules }`                                                                                                                                                                                                                                               |
+| GET · PUT | `…/tags`                | `{ tags: Record<string,string> }`                                                                          | `{ tags }`                                                                                                                                                                                                                                                |
+| GET · PUT | `…/replication`         | `{ rules: ReplicationRule[] }`                                                                             | `{ rules, status }`                                                                                                                                                                                                                                       |
+| GET · PUT | `…/notifications`       | `{ targets: NotificationTarget[] }`                                                                        | `{ targets }`                                                                                                                                                                                                                                             |
+| GET · PUT | `…/quota`               | `{ limitBytes: number \| null, mode, threshold }`                                                          | `{ quota: Quota \| null, usage: { sizeBytes, objects } }`                                                                                                                                                                                                 |
 
 ```ts
 interface LifecycleRule {
@@ -263,26 +266,33 @@ interface ObjectVersion {
 
 Aggregated lists span every server whose driver supports them. Servers that failed come back in `unavailable: [{ serverId, message }]`.
 
-| Method                | Path                                                | Body / query                                                                                                   | Response                                                                                                       |
-| --------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| GET                   | `/iam/users`                                        | `?serverId&q&status&page&pageSize`                                                                             | `{ items: S3User[], total, unavailable }`                                                                      |
-| POST                  | `/servers/:sid/iam/users`                           | `{ name, secret: string \| null /* minio */, policies: string[], groups: string[], createAccessKey: boolean }` | `{ user: S3User, accessKey: CreatedKey \| null }`                                                              |
-| GET · PATCH · DELETE  | `/servers/:sid/iam/users/:name`                     | PATCH `{ status: 'enabled'\|'disabled' }`                                                                      | `S3UserDetail` / 204                                                                                           |
-| PUT                   | `/servers/:sid/iam/users/:name/policies`            | `{ policies: string[] }` (full set)                                                                            | `S3UserDetail`                                                                                                 |
-| PUT                   | `/servers/:sid/iam/users/:name/groups`              | `{ groups: string[] }`                                                                                         | `S3UserDetail`                                                                                                 |
-| GET                   | `/iam/groups`                                       | `?serverId&q`                                                                                                  | `{ items: S3Group[], total, unavailable }`                                                                     |
-| POST · PATCH · DELETE | `/servers/:sid/iam/groups[/:name]`                  | `{ name, members: string[], policies: string[], status? }`                                                     | `S3Group` / 204                                                                                                |
-| GET                   | `/iam/policies`                                     | `?serverId&q`                                                                                                  | `{ items: PolicySummary[], total, unavailable }`                                                               |
-| GET · PUT · DELETE    | `/servers/:sid/iam/policies/:name`                  | PUT `{ document: object, description?: string }` (create or replace)                                           | `PolicyDetail` / 204 (built-ins are read-only → 409)                                                           |
-| POST                  | `/iam/policies/validate`                            | `{ document }`                                                                                                 | `{ valid, errors: [{ path, message }], warnings: string[] }`                                                   |
-| POST                  | `/iam/policies/simulate`                            | `{ document, action, resource, context?: Record<string,string> }`                                              | `{ decision: 'allow'\|'deny'\|'implicit-deny', statementSid: string \| null, statementIndex: number \| null }` |
-| GET                   | `/iam/access-keys`                                  | `?serverId&userName&status=active\|expiring\|disabled\|expired&q&page`                                         | `{ items: AccessKey[], total, counts: { all, active, expiring, disabled }, unavailable }`                      |
-| POST                  | `/servers/:sid/iam/access-keys`                     | `{ userName, name, expiresAt: string \| null, policy: object \| null }`                                        | `CreatedKey` (201, the secret is shown once)                                                                   |
-| PATCH · DELETE        | `/servers/:sid/iam/access-keys/:accessKeyId`        | `{ name?, status?, expiresAt? }`                                                                               | `AccessKey` / 204                                                                                              |
-| POST                  | `/servers/:sid/iam/access-keys/:accessKeyId/rotate` | `{ graceSeconds: number /* 0 = disable now */, expiresAt: string \| null }`                                    | `CreatedKey`                                                                                                   |
+| Method                | Path                                                | Body / query                                                                                                                         | Response                                                                                                       |
+| --------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| GET                   | `/iam/users`                                        | `?serverId&q&status&page&pageSize`                                                                                                   | `{ items: S3User[], total, unavailable }`                                                                      |
+| GET                   | `/iam/users/:userId`                                | —                                                                                                                                    | `S3UserDetail` — resolves the opaque id. 404 for an id that names nothing                                      |
+| GET                   | `/iam/groups/:groupId`                              | —                                                                                                                                    | `S3Group`                                                                                                      |
+| GET                   | `/iam/policies/:policyId`                           | —                                                                                                                                    | `PolicyDetail`                                                                                                 |
+| GET                   | `/iam/access-keys/:keyId`                           | —                                                                                                                                    | `AccessKey`                                                                                                    |
+| POST                  | `/iam/users/bulk`                                   | `{ users?: [{ serverId, name }], ids?: string[], action: 'enable'\|'disable'\|'delete'\|'attach-policy'\|'detach-policy', payload }` | `{ results: [{ id, serverId, name, ok, message }] }` — always 200; see below                                   |
+| POST                  | `/iam/access-keys/bulk`                             | `{ keys?: [{ serverId, accessKeyId }], ids?: string[], action: 'enable'\|'disable'\|'delete' }`                                      | `{ results: [{ id, serverId, accessKeyId, ok, message }] }` — always 200                                       |
+| POST                  | `/servers/:sid/iam/users`                           | `{ name, secret: string \| null /* minio */, policies: string[], groups: string[], createAccessKey: boolean }`                       | `{ user: S3User, accessKey: CreatedKey \| null }`                                                              |
+| GET · PATCH · DELETE  | `/servers/:sid/iam/users/:name`                     | PATCH `{ status: 'enabled'\|'disabled' }`                                                                                            | `S3UserDetail` / 204                                                                                           |
+| PUT                   | `/servers/:sid/iam/users/:name/policies`            | `{ policies: string[] }` (full set)                                                                                                  | `S3UserDetail`                                                                                                 |
+| PUT                   | `/servers/:sid/iam/users/:name/groups`              | `{ groups: string[] }`                                                                                                               | `S3UserDetail`                                                                                                 |
+| GET                   | `/iam/groups`                                       | `?serverId&q`                                                                                                                        | `{ items: S3Group[], total, unavailable }`                                                                     |
+| POST · PATCH · DELETE | `/servers/:sid/iam/groups[/:name]`                  | `{ name, members: string[], policies: string[], status? }`                                                                           | `S3Group` / 204                                                                                                |
+| GET                   | `/iam/policies`                                     | `?serverId&q`                                                                                                                        | `{ items: PolicySummary[], total, unavailable }`                                                               |
+| GET · PUT · DELETE    | `/servers/:sid/iam/policies/:name`                  | PUT `{ document: object, description?: string }` (create or replace)                                                                 | `PolicyDetail` / 204 (built-ins are read-only → 409)                                                           |
+| POST                  | `/iam/policies/validate`                            | `{ document }`                                                                                                                       | `{ valid, errors: [{ path, message }], warnings: string[] }`                                                   |
+| POST                  | `/iam/policies/simulate`                            | `{ document, action, resource, context?: Record<string,string> }`                                                                    | `{ decision: 'allow'\|'deny'\|'implicit-deny', statementSid: string \| null, statementIndex: number \| null }` |
+| GET                   | `/iam/access-keys`                                  | `?serverId&userName&status=active\|expiring\|disabled\|expired&q&page`                                                               | `{ items: AccessKey[], total, counts: { all, active, expiring, disabled }, unavailable }`                      |
+| POST                  | `/servers/:sid/iam/access-keys`                     | `{ userName, name, expiresAt: string \| null, policy: object \| null }`                                                              | `CreatedKey` (201, the secret is shown once)                                                                   |
+| PATCH · DELETE        | `/servers/:sid/iam/access-keys/:accessKeyId`        | `{ name?, status?, expiresAt? }`                                                                                                     | `AccessKey` / 204                                                                                              |
+| POST                  | `/servers/:sid/iam/access-keys/:accessKeyId/rotate` | `{ graceSeconds: number /* 0 = disable now */, expiresAt: string \| null }`                                                          | `CreatedKey`                                                                                                   |
 
 ```ts
 interface S3User {
+  id: string; /* opaque, stable per (serverId, 'user', name) */
   serverId: string;
   serverName: string;
   provider: Provider;
@@ -299,6 +309,7 @@ interface S3UserDetail extends S3User {
   inheritedPolicies: [{ policy; fromGroup }];
 }
 interface S3Group {
+  id: string;
   serverId;
   serverName;
   name;
@@ -307,6 +318,7 @@ interface S3Group {
   status: 'enabled' | 'disabled';
 }
 interface PolicySummary {
+  id: string;
   serverId;
   serverName;
   name;
@@ -320,6 +332,7 @@ interface PolicyDetail extends PolicySummary {
   attachedTo: { users: string[]; groups: string[] };
 }
 interface AccessKey {
+  id: string;
   serverId;
   serverName;
   provider;
@@ -389,6 +402,7 @@ interface Job {
     serverName;
     bucket;
     filters: JobFilters;
+    prefixes: string[];
     keyCount: number | null;
   };
   target: { serverId; serverName; bucket; prefix } | null;
@@ -431,31 +445,31 @@ interface Job {
 }
 ```
 
-| Method               | Path                                      | Body / query                                                                                 | Response                                                                                      |
-| -------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| GET                  | `/jobs`                                   | `?view=active\|scheduled\|history&page`                                                      | `{ items: Job[], total, counts: { active, scheduled, history } }`                             |
-| POST                 | `/jobs`                                   | `{ name?, type, source: { serverId, bucket, filters }, target?, params, options, schedule }` | `Job` (201)                                                                                   |
-| POST                 | `/jobs/estimate`                          | `{ source }`                                                                                 | `{ objects, bytes, partial: boolean }` (time-boxed listing)                                   |
-| GET · PATCH · DELETE | `/jobs/:id`                               | PATCH `{ enabled?, name? }`                                                                  | `Job` / 204                                                                                   |
-| POST                 | `/jobs/:id/{pause,resume,cancel,run-now}` | —                                                                                            | `Job`                                                                                         |
-| GET                  | `/jobs/:id/logs`                          | `?cursor&level=all\|error`                                                                   | `{ items: [{ at, level: 'info'\|'warn'\|'error', message, key: string\|null }], nextCursor }` |
+| Method               | Path                                      | Body / query                                                                                                                       | Response                                                                                                                                                                                                                 |
+| -------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET                  | `/jobs`                                   | `?view=active\|scheduled\|history&page`                                                                                            | `{ items: Job[], total, counts: { active, scheduled, history } }`                                                                                                                                                        |
+| POST                 | `/jobs`                                   | `{ name?, type, source: { serverId, bucket, filters, keys?: string[], prefixes?: string[] }, target?, params, options, schedule }` | `Job` (201) — `keys` (≤ 100 000) and `prefixes` (≤ 1 000) are an explicit selection from the object browser; they are stored server-side and come back as `source.keyCount` and `source.prefixes`, never as the key list |
+| POST                 | `/jobs/estimate`                          | `{ source }`                                                                                                                       | `{ objects, bytes, partial: boolean }` (time-boxed listing)                                                                                                                                                              |
+| GET · PATCH · DELETE | `/jobs/:id`                               | PATCH `{ enabled?, name? }`                                                                                                        | `Job` / 204                                                                                                                                                                                                              |
+| POST                 | `/jobs/:id/{pause,resume,cancel,run-now}` | —                                                                                                                                  | `Job`                                                                                                                                                                                                                    |
+| GET                  | `/jobs/:id/logs`                          | `?cursor&level=all\|error`                                                                                                         | `{ items: [{ at, level: 'info'\|'warn'\|'error', message, key: string\|null }], nextCursor }`                                                                                                                            |
 
 ## Activity, notifications, dashboard, search, settings, events
 
-| Method      | Path                           | Body / query                                                                                                               | Response                                                                                                      |
-| ----------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| GET         | `/activity`                    | `?q&from&to&serverId&category=objects\|buckets\|access\|servers\|jobs\|system\|auth&result=success\|failure\|warning&page` | `{ items: ActivityEvent[], total }`                                                                           |
-| GET         | `/activity/:id`                | —                                                                                                                          | `ActivityEvent`                                                                                               |
-| GET         | `/activity/export.csv`         | same filters                                                                                                               | `text/csv`                                                                                                    |
-| GET         | `/notifications`               | `?unread=true`                                                                                                             | `{ items: [{ id, at, level: 'info'\|'warning'\|'error', title, detail, href: string\|null, read }], unread }` |
-| POST        | `/notifications/read`          | `{ ids: string[] \| 'all' }`                                                                                               | 204                                                                                                           |
-| GET         | `/dashboard`                   | —                                                                                                                          | `Dashboard` (see below)                                                                                       |
-| GET         | `/search`                      | `?q&limit=20`                                                                                                              | `{ items: [{ type: 'server'\|'bucket'\|'user'\|'key'\|'policy'\|'job', id, label, sublabel, href }] }`        |
-| GET · PATCH | `/settings`                    | PATCH: partial `Settings`                                                                                                  | `Settings`                                                                                                    |
-| POST        | `/settings/notifications/test` | `{ channel: 'email'\|'webhook' }`                                                                                          | `{ ok, detail }`                                                                                              |
-| POST        | `/settings/export`             | `{ passphrase }`                                                                                                           | `application/octet-stream` (encrypted config)                                                                 |
-| POST        | `/settings/import`             | multipart `file` + `passphrase`                                                                                            | `{ servers: number, settings: boolean }`                                                                      |
-| GET         | `/events`                      | SSE                                                                                                                        | `event: server.health\|job.progress\|job.status\|notification\|inventory.updated`, `data: JSON`               |
+| Method      | Path                           | Body / query                                                                                                               | Response                                                                                                                                                                                                                                                                                                                                     |
+| ----------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET         | `/activity`                    | `?q&from&to&serverId&category=objects\|buckets\|access\|servers\|jobs\|system\|auth&result=success\|failure\|warning&page` | `{ items: ActivityEvent[], total }`                                                                                                                                                                                                                                                                                                          |
+| GET         | `/activity/:id`                | —                                                                                                                          | `ActivityEvent`                                                                                                                                                                                                                                                                                                                              |
+| GET         | `/activity/export.csv`         | same filters                                                                                                               | `text/csv`                                                                                                                                                                                                                                                                                                                                   |
+| GET         | `/notifications`               | `?unread=true`                                                                                                             | `{ items: [{ id, at, level: 'info'\|'warning'\|'error', title, detail, href: string\|null, read }], unread }`                                                                                                                                                                                                                                |
+| POST        | `/notifications/read`          | `{ ids: string[] \| 'all' }`                                                                                               | 204                                                                                                                                                                                                                                                                                                                                          |
+| GET         | `/dashboard`                   | —                                                                                                                          | `Dashboard` (see below)                                                                                                                                                                                                                                                                                                                      |
+| GET         | `/search`                      | `?q&limit=20`                                                                                                              | `{ items: [{ type: 'server'\|'bucket'\|'user'\|'group'\|'key'\|'policy'\|'job', id, label, sublabel, href, status: JobStatus \| null }] }` — `id` is the entity's opaque id and `href` is a `docs/ROUTES.md` route built from it alone: never a name and never a query string. `status` is set on a `job` row and `null` on every other type |
+| GET · PATCH | `/settings`                    | PATCH: partial `Settings`                                                                                                  | `Settings`                                                                                                                                                                                                                                                                                                                                   |
+| POST        | `/settings/notifications/test` | `{ channel: 'email'\|'webhook' }`                                                                                          | `{ ok, detail }`                                                                                                                                                                                                                                                                                                                             |
+| POST        | `/settings/export`             | `{ passphrase }`                                                                                                           | `application/octet-stream` (encrypted config)                                                                                                                                                                                                                                                                                                |
+| POST        | `/settings/import`             | multipart `file` + `passphrase`                                                                                            | `{ servers: number, settings: boolean }`                                                                                                                                                                                                                                                                                                     |
+| GET         | `/events`                      | SSE                                                                                                                        | `event: server.health\|server.created\|server.deleted\|job.progress\|job.status\|notification\|inventory.updated\|activity.created`, `data: JSON`                                                                                                                                                                                            |
 
 ```ts
 interface ActivityEvent {
@@ -475,19 +489,21 @@ interface ActivityEvent {
 }
 interface Dashboard {
   totals: {
-    usedBytes;
+    bucketsBytes; /* sum of every bucket's size, from the inventory cache */
     capacityBytes;
     objects;
     buckets;
-    usedDelta7dBytes;
+    bucketsDelta7dBytes;
     objectsDeltaToday: number | null;
     users: number /* S3 users across servers, from the cache */;
     accessKeys: number;
     servers: { total; healthy; degraded; offline };
     nearQuotaBuckets: number;
   };
-  growth: [{ t: string; usedBytes: number }]; /* 30 daily points */
-  byServer: [{ serverId; name; provider; usedBytes; totalBytes }];
+  growth: [{ t: string; bucketsBytes: number }]; /* 30 daily points */
+  byServer: [
+    { serverId; name; provider; usedBytes; totalBytes },
+  ]; /* usedBytes = what the SERVER reports as used capacity */
   jobs: Job[] /* active, max 3 */;
   activity: ActivityEvent[] /* 6 */;
   expiringKeys: AccessKey[]; /* next 30 days */
@@ -540,20 +556,20 @@ interface Settings {
 
 ## Additions (every concept action is implemented; none are stubs)
 
-| Method | Path                                                     | Body / query                                                                                                                                                                                          | Response                                                                                                                                                                                                                                                          |
-| ------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/servers/:sid/buckets/:bucket/objects/import-url`       | `{ url, key, overwrite }` (the API fetches the URL server-side, streams it into the bucket, max size from settings)                                                                                   | `ObjectItem`                                                                                                                                                                                                                                                      |
-| PUT    | `/servers/:sid/buckets/:bucket/objects/storage-class`    | `?key` `{ storageClass }`                                                                                                                                                                             | `ObjectMeta`                                                                                                                                                                                                                                                      |
-| POST   | `/buckets/bulk`                                          | `{ buckets: [{ serverId, bucket }], action: 'quota'\|'lifecycle-rule'\|'tags'\|'access'\|'delete', payload }`                                                                                         | `{ results: [{ serverId, bucket, ok, message }] }` — `delete` takes `payload: { force: boolean }` (`force` empties each bucket first); a bucket that is not empty comes back as `ok: false` with `BUCKET_NOT_EMPTY` in `message` while the rest are still deleted |
-| POST   | `/servers/:id/rotate-credentials`                        | `{ mode: 'auto' } \| { mode: 'manual', accessKeyId, secretAccessKey }` (auto: create a new admin key through the IAM driver, verify it, swap the stored credentials, then disable/delete the old key) | `{ server: Server, rotatedAt }`                                                                                                                                                                                                                                   |
-| GET    | `/servers/:id/nodes/:node/drives`                        | —                                                                                                                                                                                                     | `{ items: [{ path, state, usedBytes, totalBytes, model: string\|null, healing: boolean }] }`                                                                                                                                                                      |
-| GET    | `/servers/:sid/iam/policies/:name/versions`              | —                                                                                                                                                                                                     | `{ items: [{ id, createdAt, document, note }] }` (the app DB snapshots every PUT made through storage-io)                                                                                                                                                         |
-| POST   | `/servers/:sid/iam/policies/:name/versions/:vid/restore` | —                                                                                                                                                                                                     | `PolicyDetail`                                                                                                                                                                                                                                                    |
-| GET    | `/iam/users/export.csv` · `/iam/access-keys/export.csv`  | list filters                                                                                                                                                                                          | `text/csv`                                                                                                                                                                                                                                                        |
-| PATCH  | `/jobs/:id`                                              | `{ enabled?, name?, concurrency?, schedule? }` (live concurrency change for running jobs; schedule edit for scheduled ones)                                                                           | `Job`                                                                                                                                                                                                                                                             |
-| POST   | `/jobs/:id/duplicate`                                    | `{ asSchedule?: { cron, timezone } }`                                                                                                                                                                 | `Job`                                                                                                                                                                                                                                                             |
-| GET    | `/jobs/:id/runs`                                         | `?page`                                                                                                                                                                                               | `{ items: Job[], total }` (each run of a recurring job is a child `Job` with `parentId`)                                                                                                                                                                          |
-| GET    | `/servers/:sid/buckets/:bucket/notifications/status`     | —                                                                                                                                                                                                     | `{ items: [{ targetId, arn, state: 'online'\|'offline'\|'unknown', detail }] }` (MinIO target status via admin API; other providers return `unknown`)                                                                                                             |
+| Method | Path                                                     | Body / query                                                                                                                                                                                          | Response                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/servers/:sid/buckets/:bucket/objects/import-url`       | `{ url, key, overwrite }` (the API fetches the URL server-side, streams it into the bucket, max size from settings)                                                                                   | `ObjectItem`                                                                                                                                                                                                                                                                                                                                                                                                      |
+| PUT    | `/servers/:sid/buckets/:bucket/objects/storage-class`    | `?key` `{ storageClass }`                                                                                                                                                                             | `ObjectMeta`                                                                                                                                                                                                                                                                                                                                                                                                      |
+| POST   | `/buckets/bulk`                                          | `{ buckets: [{ serverId, bucket }], action: 'quota'\|'lifecycle-rule'\|'tags'\|'access'\|'delete', payload }`                                                                                         | `{ results: [{ id, serverId, bucket, ok, message }] }` — `id` is the bucket's opaque id, read before the action so a `delete` row still carries it, and `null` for a bucket that was never cached. — `delete` takes `payload: { force: boolean }` (`force` empties each bucket first); a bucket that is not empty comes back as `ok: false` with `BUCKET_NOT_EMPTY` in `message` while the rest are still deleted |
+| POST   | `/servers/:id/rotate-credentials`                        | `{ mode: 'auto' } \| { mode: 'manual', accessKeyId, secretAccessKey }` (auto: create a new admin key through the IAM driver, verify it, swap the stored credentials, then disable/delete the old key) | `{ server: Server, rotatedAt }`                                                                                                                                                                                                                                                                                                                                                                                   |
+| GET    | `/servers/:id/nodes/:node/drives`                        | —                                                                                                                                                                                                     | `{ items: [{ path, state, usedBytes, totalBytes, model: string\|null, healing: boolean }] }`                                                                                                                                                                                                                                                                                                                      |
+| GET    | `/servers/:sid/iam/policies/:name/versions`              | —                                                                                                                                                                                                     | `{ items: [{ id, createdAt, document, note }] }` (the app DB snapshots every PUT made through storage-io)                                                                                                                                                                                                                                                                                                         |
+| POST   | `/servers/:sid/iam/policies/:name/versions/:vid/restore` | —                                                                                                                                                                                                     | `PolicyDetail`                                                                                                                                                                                                                                                                                                                                                                                                    |
+| GET    | `/iam/users/export.csv` · `/iam/access-keys/export.csv`  | list filters                                                                                                                                                                                          | `text/csv`                                                                                                                                                                                                                                                                                                                                                                                                        |
+| PATCH  | `/jobs/:id`                                              | `{ enabled?, name?, concurrency?, schedule? }` (live concurrency change for running jobs; schedule edit for scheduled ones)                                                                           | `Job`                                                                                                                                                                                                                                                                                                                                                                                                             |
+| POST   | `/jobs/:id/duplicate`                                    | `{ asSchedule?: { cron, timezone } }`                                                                                                                                                                 | `Job`                                                                                                                                                                                                                                                                                                                                                                                                             |
+| GET    | `/jobs/:id/runs`                                         | `?page`                                                                                                                                                                                               | `{ items: Job[], total }` (each run of a recurring job is a child `Job` with `parentId`)                                                                                                                                                                                                                                                                                                                          |
+| GET    | `/servers/:sid/buckets/:bucket/notifications/status`     | —                                                                                                                                                                                                     | `{ items: [{ targetId, arn, state: 'online'\|'offline'\|'unknown', detail }] }` (MinIO target status via admin API; other providers return `unknown`)                                                                                                                                                                                                                                                             |
 
 Contract additions: `Job.parentId: string | null`. Settings gains `notifications.telegram: { enabled, botToken?: string /* write-only */, chatId }` (with rule flags per channel), `activity.syslog: { enabled, host, port, protocol: 'udp'|'tcp'|'tls', format: 'rfc5424'|'json', facility }` and `transfers.importUrlMaxMb`. `POST /settings/notifications/test` accepts `channel: 'email'|'webhook'|'telegram'|'syslog'`. Admin credentials come from env, so there is no password-change endpoint; the Settings page shows them as "Managed by environment".
 
@@ -582,7 +598,7 @@ Behaviour a caller can observe that the tables above do not spell out:
 - `DELETE …/buckets/:bucket?force=true` empties the bucket **in the request**, in batches of 1000, and answers 204 only once it is gone. Above 100 000 objects it answers 409 `BUCKET_NOT_EMPTY` and names `POST …/empty`, which is the job-backed path with no size limit. A force delete that answered 204 while work continued in the background would tell the operator the bucket was gone when it was not.
 - The 409 for a non-empty bucket is enforced by the API, not left to the provider: SeaweedFS deletes a non-empty bucket and its contents without complaint.
 - `POST …/objects/delete` and `POST …/objects/copy` return a `Job` instead of a count when the request names a prefix, or more than 5 000 objects to delete / 200 to copy. `deleted`/`copied` are then `0`.
-- `POST …/objects/copy` maps each source key to `destPrefix` + the key's last segment. A whole folder is expressed as a `prefixes` entry, which becomes a job.
+- `POST …/objects/copy` maps each source key to `destPrefix` + the key's last segment. A whole folder is expressed as a `prefixes` entry, which becomes a job. Every entry in `prefixes` is carried into that job (`JobSource.prefixes`), not just the first, and `POST …/objects/delete` does the same.
 - `PUT …/buckets/:bucket/object-lock` answers 409 `NOT_SUPPORTED` unless the bucket already has object lock; S3 only accepts it at creation. On a lock-enabled bucket it edits the default retention.
 - A `hard` quota is pushed to the provider where the driver has a native one (MinIO today) and the response says `native: true`. Where it is not native, the API refuses an upload that would exceed the limit using the cached size. An `alert` quota is never pushed to the provider.
 - `GET …/notifications/status` reports `unknown` for every target outside MinIO, and for a MinIO target its admin API does not list.
@@ -660,6 +676,15 @@ Behaviour a caller can observe that the tables above do not spell out.
   job started from a selection in the object browser), or `null` for a filter-defined
   job. The keys themselves are **not** in the contract: a selection can be thousands
   of keys and would then appear in every page of `GET /jobs`.
+- **`JobSource.prefixes`** is every prefix that selection contained — all of them,
+  not the first. It is separate from `filters.prefix` because the two are different
+  things: `filters.prefix` is the single prefix a filter-defined job narrows its
+  listing to (it is pushed to the storage server as the listing's `Prefix`), while a
+  selection has as many prefixes as the operator ticked. A job with a non-empty
+  `prefixes` works the **union** of its `keyCount` keys and every one of those
+  prefixes, with overlaps removed — a prefix inside another prefix, or a key inside
+  a selected prefix, is counted once. `prefixes` is `[]` for a filter-defined job,
+  and `filters.prefix` is `""` for a selection-defined one.
 - **`GET /jobs/:id/logs`** pages by `cursor`, which is opaque and monotonic — not an
   offset, so lines arriving while an operator reads are never shown twice.
 
@@ -732,3 +757,99 @@ ciphertext ‖ tag(16)`; the key is `scrypt(passphrase, salt, N=2^15, r=8, p=1)`
 - Vite's fingerprinted assets are `public, max-age=31536000, immutable`;
   `index.html` is `no-cache` (still revalidated by ETag, so an unchanged deploy
   answers 304). An unknown `/api` path is still a problem+json 404, never HTML.
+
+## Implementation notes (opaque ids, resolve endpoints and bulk IAM)
+
+Behaviour a caller can observe that the tables above do not spell out.
+
+### Ids
+
+- **A bucket's id lives on its `bucket_cache` row**, so it exists as soon as the
+  bucket has been seen once — by the inventory sweep, or by the request that
+  created it — and it is written on insert and never on update. Repeated lists,
+  a refresh and a restart all return the same id.
+- **A user's, group's, policy's and access key's id lives in `iam_entities`**, a
+  registry rather than a mirror: one row per `(serverId, kind, name)`, holding an
+  id and two timestamps and nothing else about the entity. A row is written the
+  first time storage-io lists or returns the entity and is never rewritten.
+- **An id is released only when its row is.** Deleting a bucket drops its cache
+  row, so a bucket deleted and created again under the same name gets a **new
+  id** — it is not the bucket the link pointed at. An IAM entity's registry row
+  outlives the entity, so a user deleted and recreated keeps its id; deleting the
+  **server** cascades every one of its rows away.
+- **A resolve endpoint answers 404 for an id it never issued**, and for an id of
+  the wrong kind — a group id handed to `/iam/users/:userId` is a 404, not a
+  cross-type read.
+- `GET /buckets/:bucketId` reads the bucket from its server, exactly as
+  `GET /servers/:sid/buckets/:bucket` does. When the server cannot be reached it
+  answers from the cache with `unavailable: true` rather than a 502; a bucket the
+  server no longer has is still a 404.
+- **Route order.** `/buckets/export.csv`, `/buckets/bulk`,
+  `/iam/users/export.csv`, `/iam/access-keys/export.csv`, `/iam/users/bulk`,
+  `/iam/access-keys/bulk`, `/iam/policies/validate` and `/iam/policies/simulate`
+  are all declared above their parameter siblings, so a literal segment is never
+  read as an id. E2E tests assert each one still answers.
+
+### Bulk IAM
+
+- Both endpoints **always answer 200** with one row per target, in the order
+  `ids` first then the reference list. A partial failure is rows, never a 4xx.
+- A target may be addressed by `(serverId, name)` or by opaque `id`; **exactly
+  one of the two lists must be non-empty**, and a request with neither is 400
+  `VALIDATION`. At most 500 targets per request.
+- An `ids` entry the registry never issued comes back as
+  `{ id, serverId: null, name: null, ok: false, message: 'NOT_FOUND: …' }` —
+  the only case where `serverId` and `name` are null.
+- `message` on a failed row is `"<CODE>: <sentence>"`, mapped the same way the
+  problem+json envelope maps it. No provider body, stack or path crosses the
+  boundary.
+- `attach-policy` and `detach-policy` require `payload: { policy }`; the other
+  three actions take no payload. The set is applied by reading the user's current
+  policies and writing the full set back, because `PUT …/policies` is a full set.
+- Rows are applied **sequentially**, not in parallel: each one is a call to a
+  storage server's admin API, and five hundred at once is how the console becomes
+  the reason that server is slow.
+
+### Jobs from an explicit selection
+
+- `POST /jobs` accepts `source.keys` (≤ 100 000) and `source.prefixes` (≤ 1 000).
+  They are stored server-side in the job row's `params`, exactly where
+  `POST …/objects/delete` and `…/copy` put a selection, so the engine has one way
+  to read one. Empty strings are dropped: a `""` prefix is every object in the
+  bucket, which is not what ticking nothing means.
+- They come back as `source.keyCount` and `source.prefixes`. **The key list never
+  comes back** — a selection can be thousands of keys and would then appear in
+  every page of `GET /jobs`.
+- A job with a selection works the **union** of its keys and prefixes with
+  overlaps removed, as documented under "Jobs" above.
+
+### `activity.created`
+
+- Emitted whenever an audit row is recorded — by the interceptor on a mutating
+  request, or directly by a system event.
+- **Bursts are throttled**: the first row goes out at once and everything
+  recorded in the next second is folded into a single trailing frame carrying the
+  **newest** row and `suppressed`, the count of the ones it stands in for. A bulk
+  action over five hundred users is one leading frame and one trailing frame, not
+  five hundred. The trailing frame always arrives, so the list is never left
+  stale.
+- Like every frame on this stream it is a hint about which query to invalidate;
+  `GET /activity` is the authoritative answer.
+
+### `server.created` and `server.deleted`
+
+- Carry `{ serverId, serverName, at }` rather than the whole `Server`: a
+  `deleted` frame has no row left to describe, and a client refetches anyway.
+- `server.deleted` is published **after** the row is gone, so a client that
+  refetches on the frame cannot race the delete and see the server come back.
+
+### `Dashboard.totals.bucketsBytes` (contract change)
+
+- Renamed from `usedBytes`, and `usedDelta7dBytes` to `bucketsDelta7dBytes`,
+  because `byServer[].usedBytes` is a **different measurement** and the two do
+  not have to agree. `totals.bucketsBytes` is the sum of every bucket's size from
+  the inventory cache — the operator's data. `byServer[].usedBytes` is what the
+  storage server reports as its own used capacity, which includes replication,
+  erasure-coding overhead, noncurrent versions and anything on the server that
+  storage-io did not put there. `growth[].usedBytes` is renamed to
+  `bucketsBytes` for the same reason: it is the daily series of that same total.

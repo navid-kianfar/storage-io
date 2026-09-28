@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gte, isNotNull, like, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import {
   emptyCapabilityMap,
   type CapabilityMap,
@@ -26,7 +26,7 @@ import {
 } from '../db/schema';
 import { CryptoService } from '../crypto/crypto.service';
 import type { ServerConnection } from '../providers/provider-driver';
-import { escapeLike } from '../activity/activity.service';
+import { likeEscaped } from '../common/sql/like';
 
 const UPTIME_WINDOW_HOURS = 24;
 
@@ -59,8 +59,10 @@ export class ServerRepository {
     if (filters.status !== undefined) conditions.push(eq(servers.status, filters.status));
     if (filters.provider !== undefined) conditions.push(eq(servers.provider, filters.provider));
     if (filters.q !== undefined && filters.q.length > 0) {
-      const needle = `%${escapeLike(filters.q)}%`;
-      const search = or(like(servers.name, needle), like(servers.endpoint, needle));
+      const search = or(
+        likeEscaped(servers.name, filters.q),
+        likeEscaped(servers.endpoint, filters.q),
+      );
       if (search !== undefined) conditions.push(search);
     }
 

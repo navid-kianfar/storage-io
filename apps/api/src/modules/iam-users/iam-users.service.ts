@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import {
   IAM_USER_CSV_COLUMNS,
+  type IamUserBulkRequest,
+  type IamUserBulkResponse,
+  type IamUserBulkResult,
   type CreateS3UserRequest,
   type CreateS3UserResponse,
   type ListIamUsersQuery,
@@ -13,11 +16,13 @@ import {
   type UpdateS3UserRequest,
 } from '@storage-io/contracts';
 import { CSV_BOM, csvRow } from '../../common/csv';
+import { bulkMessageOf } from '../../common/errors/bulk-message';
 import {
   ConflictError,
   NotFoundError,
   NotSupportedError,
 } from '../../common/errors/domain.exception';
+import { IamEntityRepository, requireId } from '../iam-core/iam-entity.repository';
 import { matchesQuery, paginate } from '../iam-core/iam-page';
 import { IamStatsService } from '../iam-core/iam-stats.service';
 import { IamTargetService, type IamTarget } from '../iam-core/iam-target.service';
@@ -41,6 +46,7 @@ export class IamUsersService {
     private readonly targets: IamTargetService,
     private readonly accessKeys: AccessKeysService,
     private readonly stats: IamStatsService,
+    private readonly entities: IamEntityRepository,
   ) {}
 
   /* ------------------------------ reading ------------------------- */
@@ -87,6 +93,17 @@ export class IamUsersService {
   async findOne(serverIdOrName: string, name: string): Promise<S3UserDetail> {
     const target = this.targets.targetFor(serverIdOrName, 'iamUsers');
     return this.detailOf(target, name);
+  }
+
+  /**
+   * `GET /iam/users/:userId` — the resolve endpoint the web app navigates by. The
+   * id names a server and a user name; the detail is then read from that server
+   * exactly as the name-based route does.
+   */
+  async findById(userId: string): Promise<S3UserDetail> {
+    const ref = this.entities.find(userId);
+    if (ref === null || ref.kind !== 'user') throw new NotFoundError('No such user.');
+    return this.findOne(ref.serverId, ref.name);
   }
 
   /* ------------------------------ writing ------------------------- */
@@ -200,6 +217,114 @@ export class IamUsersService {
     await this.stats.refreshServer(target.row.id);
   }
 
+  /* -------------------------------- bulk -------------------------- */
+
+  /**
+   * One action over many users. Every row is attempted and reported on its own:
+   * a set where the third user is on an offline server must still apply to the
+   * other nine, which is what makes this different from a loop that throws.
+   *
+   * Sequential rather than parallel, like the bucket bulk: each row is one or two
+   * calls to a storage server's admin API, and a hundred at once is how the
+   * console becomes the reason that server is slow.
+   */
+  async bulk(request: IamUserBulkRequest): Promise<IamUserBulkResponse> {
+    const targets = this.resolveBulkTargets(request);
+    const results: IamUserBulkResult[] = [];
+
+    for (const target of targets) {
+      if (target.serverId === null || target.name === null) {
+        results.push({ ...target, ok: false, message: 'NOT_FOUND: no such user.' });
+        continue;
+      }
+
+      try {
+        await this.applyBulkAction(request, target.serverId, target.name);
+        results.push({ ...target, ok: true, message: null });
+      } catch (error) {
+        results.push({ ...target, ok: false, message: bulkMessageOf(error) });
+      }
+    }
+
+    return { results };
+  }
+
+  /**
+   * The request's targets, however they were addressed. `ids` are resolved in one
+   * query; an id this installation never issued becomes a row with no server and
+   * a `NOT_FOUND` message rather than failing the whole request.
+   */
+  private resolveBulkTargets(
+    request: IamUserBulkRequest,
+  ): readonly { id: string | null; serverId: string | null; name: string | null }[] {
+    const ids = request.ids ?? [];
+    const refs = request.users ?? [];
+
+    const resolved = this.entities.findMany(ids);
+    const byId = ids.map((id) => {
+      const entity = resolved.get(id);
+      if (entity === undefined || entity.kind !== 'user') {
+        return { id, serverId: null, name: null };
+      }
+      return { id, serverId: entity.serverId, name: entity.name };
+    });
+
+    const byRef = refs.map((ref) => ({
+      id: null,
+      serverId: ref.serverId,
+      name: ref.name,
+    }));
+
+    return [...byId, ...byRef];
+  }
+
+  private async applyBulkAction(
+    request: IamUserBulkRequest,
+    serverId: string,
+    name: string,
+  ): Promise<void> {
+    switch (request.action) {
+      case 'enable':
+        await this.setStatus(serverId, name, { status: 'enabled' });
+        return;
+      case 'disable':
+        await this.setStatus(serverId, name, { status: 'disabled' });
+        return;
+      case 'delete':
+        await this.delete(serverId, name);
+        return;
+      case 'attach-policy': {
+        const next = await this.policiesWith(serverId, name, request.payload.policy, true);
+        await this.setPolicies(serverId, name, { policies: next });
+        return;
+      }
+      case 'detach-policy': {
+        const next = await this.policiesWith(serverId, name, request.payload.policy, false);
+        await this.setPolicies(serverId, name, { policies: next });
+        return;
+      }
+    }
+  }
+
+  /**
+   * The user's policy set with one name added or removed. `PUT …/policies` takes
+   * a full set, so attaching one means reading the current set first — and reading
+   * it per row is unavoidable: two rows may be different users on different
+   * servers.
+   */
+  private async policiesWith(
+    serverId: string,
+    name: string,
+    policy: string,
+    attach: boolean,
+  ): Promise<string[]> {
+    const target = this.targets.targetFor(serverId, 'iamPolicies');
+    const user = await this.requireUser(target, name);
+    const current = user.policies.filter((existing) => existing !== policy);
+    if (!attach) return current;
+    return [...current, policy];
+  }
+
   /* ------------------------------ mapping ------------------------- */
 
   /** One server's users, with each one's key count. */
@@ -209,8 +334,11 @@ export class IamUsersService {
 
     const keyCounts = await this.keyCountsOf(target);
     const stamp = this.targets.stamp(target.row);
+    const names = raw.map((user) => user.name);
+    const ids = this.entities.idsFor(target.row.id, 'user', names);
 
     return raw.map((user) => ({
+      id: requireId(ids, user.name),
       ...stamp,
       name: user.name,
       status: statusOf(user, keyCounts.get(user.name)),
@@ -228,8 +356,10 @@ export class IamUsersService {
     const raw = await this.requireUser(target, name);
     const counts = await this.keyCountsOf(target, name);
     const stamp = this.targets.stamp(target.row);
+    const id = this.entities.idFor(target.row.id, 'user', raw.name);
 
     return {
+      id,
       ...stamp,
       name: raw.name,
       status: statusOf(raw, counts.get(name)),

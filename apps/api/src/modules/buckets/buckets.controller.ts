@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ZodValidationPipe } from 'nestjs-zod';
@@ -8,6 +8,7 @@ import {
   type Bucket,
   type BucketBulkRequest,
   type BucketBulkResponse,
+  type BucketDetail,
   type BucketList,
 } from '@storage-io/contracts';
 import { LogActivity } from '../../activity/activity.interceptor';
@@ -19,9 +20,11 @@ import { ExportBucketsQueryDto, ListBucketsQueryDto } from './buckets.dto';
  * The installation-wide bucket endpoints. Per-bucket routes live in
  * `BucketDetailController`, under `/servers/:sid/buckets/:bucket`.
  *
- * `bulk` and `export.csv` are declared before nothing in particular here — this
- * controller has no `:param` route, so route order is not load bearing. It is in
- * `BucketDetailController` that it matters.
+ * **Route order is load bearing here.** `export.csv` is a literal GET and
+ * `:bucketId` is a parameter GET, so the literal has to be declared first or
+ * Express reads "export.csv" as a bucket id. `bulk` is a POST and could not
+ * collide, but it is declared above the parameter route for the same reason the
+ * next person will look for.
  */
 @ApiTags('buckets')
 @Controller('buckets')
@@ -70,6 +73,16 @@ export class BucketsController {
   ): Promise<BucketBulkResponse> {
     return this.buckets.bulk(body);
   }
+
+  /**
+   * Resolves the opaque id a URL carries. Declared last, below every literal
+   * segment of this controller.
+   */
+  @Get(':bucketId')
+  @ApiOperation({ summary: 'One bucket by its opaque id, refreshed from its server' })
+  async findById(@Param('bucketId') bucketId: string): Promise<BucketDetail> {
+    return this.buckets.findById(bucketId);
+  }
 }
 
 /** Column order must match `BUCKET_CSV_COLUMNS`. */
@@ -90,5 +103,6 @@ function toCsvCells(bucket: Bucket): readonly unknown[] {
     bucket.quota?.mode ?? null,
     bucket.quota?.native ?? null,
     bucket.unavailable,
+    bucket.id,
   ];
 }

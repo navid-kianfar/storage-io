@@ -13,13 +13,17 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ZodValidationPipe } from 'nestjs-zod';
 import {
   createS3UserRequestSchema,
+  iamUserBulkRequestSchema,
   listIamUsersQuerySchema,
   setUserGroupsRequestSchema,
   setUserPoliciesRequestSchema,
   updateS3UserRequestSchema,
   type CreateS3UserResponse,
+  type IamUserBulkRequest,
+  type IamUserBulkResponse,
   type S3UserDetail,
   type S3UserList,
 } from '@storage-io/contracts';
@@ -34,6 +38,11 @@ class UpdateS3UserDto extends dtoFrom(updateS3UserRequestSchema) {}
 class SetUserPoliciesDto extends dtoFrom(setUserPoliciesRequestSchema) {}
 class SetUserGroupsDto extends dtoFrom(setUserGroupsRequestSchema) {}
 
+/**
+ * **Route order is load bearing.** `iam/users/export.csv` is a literal GET and
+ * `iam/users/:userId` is a parameter GET, so the literal is declared first or
+ * Express reads "export.csv" as an id.
+ */
 @ApiTags('iam-users')
 @Controller()
 export class IamUsersController {
@@ -51,6 +60,32 @@ export class IamUsersController {
   @ApiOperation({ summary: 'The filtered user list as CSV' })
   async exportCsv(@Query() query: ListIamUsersQueryDto): Promise<string> {
     return this.users.exportCsv(query);
+  }
+
+  /**
+   * One action over many users. Always 200 with a row per user, never a 4xx for a
+   * partial failure: the caller needs to know which users it applied to. The pipe
+   * is on the parameter because the body is a discriminated union — `payload` is
+   * typed by `action` — and a DTO class cannot extend a union type.
+   */
+  @Post('iam/users/bulk')
+  @LogActivity({
+    category: 'access',
+    action: 'iam-user.bulk',
+    title: 'Applied a bulk action to S3 users',
+    failureTitle: 'Failed to apply a bulk action to S3 users',
+  })
+  @ApiOperation({ summary: 'Apply one action to many S3 users' })
+  async bulk(
+    @Body(new ZodValidationPipe(iamUserBulkRequestSchema)) body: IamUserBulkRequest,
+  ): Promise<IamUserBulkResponse> {
+    return this.users.bulk(body);
+  }
+
+  @Get('iam/users/:userId')
+  @ApiOperation({ summary: 'One S3 user by its opaque id' })
+  async findById(@Param('userId') userId: string): Promise<S3UserDetail> {
+    return this.users.findById(userId);
   }
 
   @Post('servers/:sid/iam/users')

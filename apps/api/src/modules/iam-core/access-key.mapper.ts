@@ -27,8 +27,17 @@ export interface KeyServerStamp {
   readonly provider: Provider;
 }
 
+/**
+ * The server stamp plus storage-io's opaque id for this one key. The id is per
+ * key and the rest is per server, so the caller builds it once per row from a
+ * stamp it built once per server.
+ */
+export interface KeyIdentity extends KeyServerStamp {
+  readonly id: string;
+}
+
 export function toAccessKey(
-  stamp: KeyServerStamp,
+  identity: KeyIdentity,
   raw: RawAccessKey,
   meta: KeyMetaRow | undefined,
   now: Date = new Date(),
@@ -36,7 +45,7 @@ export function toAccessKey(
   const expiresAt = raw.expiresAt ?? meta?.expiresAt ?? null;
 
   return {
-    ...stamp,
+    ...identity,
     accessKeyId: raw.accessKeyId,
     userName: raw.userName.length > 0 ? raw.userName : (meta?.userName ?? ''),
     name: raw.name ?? meta?.name ?? null,

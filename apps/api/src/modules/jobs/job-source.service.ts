@@ -58,6 +58,16 @@ export interface JobSourceRequest {
 @Injectable()
 export class JobSourceService {
   /**
+   * The page size every listing here uses.
+   *
+   * Writable, and the only thing in this file that is: resume across a page
+   * boundary cannot be proved with a single page, and forcing a real bucket to
+   * hold more than a thousand objects for one assertion is a slower and less
+   * exact test than turning the page size down. Nothing in `src/` writes it.
+   */
+  pageSize = LIST_PAGE_SIZE;
+
+  /**
    * One page of matching objects. Called in a loop by the engine, which owns the
    * token: a generator holding the token would lose it on a pause.
    */
@@ -79,7 +89,7 @@ export class JobSourceService {
    * size filter meant both.
    */
   keyPage(keys: readonly string[], offset: number): JobPage {
-    const slice = keys.slice(offset, offset + LIST_PAGE_SIZE);
+    const slice = keys.slice(offset, offset + this.pageSize);
     const items = slice.map((key): JobCandidate => ({ key, size: 0, lastModified: null }));
     const nextOffset = offset + slice.length;
     return {
@@ -102,7 +112,7 @@ export class JobSourceService {
         // and applying it here instead would list the whole bucket to throw most
         // of it away.
         Prefix: filters.prefix.length > 0 ? filters.prefix : undefined,
-        MaxKeys: LIST_PAGE_SIZE,
+        MaxKeys: this.pageSize,
         ContinuationToken: request.startToken ?? undefined,
       }),
     );
@@ -143,7 +153,7 @@ export class JobSourceService {
       new ListObjectVersionsCommand({
         Bucket: request.bucket,
         Prefix: filters.prefix.length > 0 ? filters.prefix : undefined,
-        MaxKeys: LIST_PAGE_SIZE,
+        MaxKeys: this.pageSize,
         KeyMarker: keyMarker,
         VersionIdMarker: versionMarker,
       }),

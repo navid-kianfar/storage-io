@@ -88,6 +88,16 @@ export class InventoryService {
     return this.repository.findOneDetail(serverId, bucket);
   }
 
+  /** What a bucket id names, or `null` when no cached bucket carries it. */
+  locate(bucketId: string): { readonly serverId: string; readonly name: string } | null {
+    return this.repository.locate(bucketId);
+  }
+
+  /** A cached bucket's opaque id, or `null` when it has never been cached. */
+  idOf(serverId: string, bucket: string): string | null {
+    return this.repository.idOf(serverId, bucket);
+  }
+
   cachedFor(serverId: string): readonly Bucket[] {
     return this.repository.cachedFor(serverId);
   }

@@ -7,7 +7,6 @@ import {
   eq,
   gte,
   inArray,
-  like,
   lt,
   notInArray,
   or,
@@ -32,7 +31,8 @@ import {
 import { DB } from '../../db/db.module';
 import type { AppDatabase } from '../../db/migrate';
 import { bucketCache, bucketSizeDaily, quotas, servers } from '../../db/schema';
-import { escapeLike } from '../../activity/activity.service';
+import { CryptoService } from '../../crypto/crypto.service';
+import { likeEscaped } from '../../common/sql/like';
 
 /** A quota threshold is stored in permille so the column stays an integer. */
 const PERMILLE = 1000;
@@ -82,7 +82,10 @@ export interface BucketFacts {
  */
 @Injectable()
 export class InventoryRepository {
-  constructor(@Inject(DB) private readonly db: AppDatabase) {}
+  constructor(
+    @Inject(DB) private readonly db: AppDatabase,
+    private readonly crypto: CryptoService,
+  ) {}
 
   /* ---------------------------- reading ---------------------------- */
 
@@ -188,6 +191,32 @@ export class InventoryRepository {
     }
   }
 
+  /**
+   * What a bucket id names. Deliberately not a whole `Bucket`: the resolve
+   * endpoint reads the bucket live from its server afterwards, and this is the
+   * one thing it needs first.
+   */
+  locate(bucketId: string): { readonly serverId: string; readonly name: string } | null {
+    const [row] = this.db
+      .select({ serverId: bucketCache.serverId, name: bucketCache.name })
+      .from(bucketCache)
+      .where(eq(bucketCache.id, bucketId))
+      .limit(1)
+      .all();
+    return row ?? null;
+  }
+
+  /** The bucket's opaque id, or `null` when it has never been cached. */
+  idOf(serverId: string, bucket: string): string | null {
+    const [row] = this.db
+      .select({ id: bucketCache.id })
+      .from(bucketCache)
+      .where(and(eq(bucketCache.serverId, serverId), eq(bucketCache.name, bucket)))
+      .limit(1)
+      .all();
+    return row?.id ?? null;
+  }
+
   findOne(serverId: string, bucket: string): Bucket | null {
     const [row] = this.selectJoined()
       .where(and(eq(bucketCache.serverId, serverId), eq(bucketCache.name, bucket)))
@@ -241,6 +270,9 @@ export class InventoryRepository {
     this.db.transaction((tx) => {
       for (const fact of facts) {
         const values = {
+          // Only ever used by the insert half of the upsert: `set` below leaves
+          // `id` out, so a bucket already in the cache keeps the id it was given.
+          id: this.crypto.newId(),
           serverId,
           name: fact.name,
           region: fact.region ?? null,
@@ -429,6 +461,7 @@ export class InventoryRepository {
   private selectJoined() {
     return this.db
       .select({
+        id: bucketCache.id,
         serverId: bucketCache.serverId,
         serverName: servers.name,
         provider: servers.provider,
@@ -463,8 +496,10 @@ export class InventoryRepository {
     if (filters.access !== undefined) conditions.push(eq(bucketCache.access, filters.access));
 
     if (filters.q !== undefined && filters.q.length > 0) {
-      const needle = `%${escapeLike(filters.q)}%`;
-      const search = or(like(bucketCache.name, needle), like(servers.name, needle));
+      const search = or(
+        likeEscaped(bucketCache.name, filters.q),
+        likeEscaped(servers.name, filters.q),
+      );
       if (search !== undefined) conditions.push(search);
     }
 
@@ -534,6 +569,7 @@ const usageRatioSql = (): SQL<number> => sql<number>`case
   else cast(coalesce(${bucketCache.sizeBytes}, 0) as real) / ${quotas.limitBytes} end`;
 
 interface JoinedRow {
+  readonly id: string;
   readonly serverId: string;
   readonly serverName: string;
   readonly provider: string;
@@ -560,6 +596,7 @@ interface JoinedRow {
 
 function toBucket(row: JoinedRow): Bucket {
   return {
+    id: row.id,
     serverId: row.serverId,
     serverName: row.serverName,
     provider: row.provider as Provider,

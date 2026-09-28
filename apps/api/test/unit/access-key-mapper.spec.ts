@@ -3,7 +3,7 @@ import {
   countKeys,
   isExpiringSoon,
   toAccessKey,
-  type KeyServerStamp,
+  type KeyIdentity,
 } from '../../src/modules/iam-core/access-key.mapper';
 import { matchesQuery, paginate } from '../../src/modules/iam-core/iam-page';
 import type { KeyMetaRow } from '../../src/db/schema';
@@ -16,7 +16,8 @@ import type { RawAccessKey } from '../../src/providers/iam/iam-driver';
  * Garage), a name (IAM, RGW), or a session policy that survives an update (MinIO).
  */
 
-const STAMP: KeyServerStamp = {
+const STAMP: KeyIdentity = {
+  id: '8f1a2d3c-0000-4000-8000-000000000001',
   serverId: 'server-1',
   serverName: 'minio-lab',
   provider: 'minio',

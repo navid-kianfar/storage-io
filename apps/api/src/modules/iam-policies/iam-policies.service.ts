@@ -18,6 +18,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../common/errors/domain.exception';
+import { IamEntityRepository, requireId } from '../iam-core/iam-entity.repository';
 import { matchesQuery } from '../iam-core/iam-page';
 import { IamTargetService, type IamTarget } from '../iam-core/iam-target.service';
 import { PolicyVersionRepository } from '../iam-core/policy-version.repository';
@@ -47,6 +48,7 @@ export class IamPoliciesService {
   constructor(
     private readonly targets: IamTargetService,
     private readonly versions: PolicyVersionRepository,
+    private readonly entities: IamEntityRepository,
   ) {}
 
   /* ------------------------------ reading ------------------------- */
@@ -70,6 +72,15 @@ export class IamPoliciesService {
   async findOne(serverIdOrName: string, name: string): Promise<PolicyDetail> {
     const target = this.targets.targetFor(serverIdOrName, 'iamPolicies');
     return this.detailOf(target, name);
+  }
+
+  /**
+   * `GET /iam/policies/:policyId` — the resolve endpoint the editor navigates by.
+   */
+  async findById(policyId: string): Promise<PolicyDetail> {
+    const ref = this.entities.find(policyId);
+    if (ref === null || ref.kind !== 'policy') throw new NotFoundError('No such policy.');
+    return this.findOne(ref.serverId, ref.name);
   }
 
   /* ------------------------------ writing ------------------------- */
@@ -201,9 +212,13 @@ export class IamPoliciesService {
       this.attachedPoliciesOfGroups(target),
     ]);
 
+    const names = raw.map((policy) => policy.name);
+    const ids = this.entities.idsFor(target.row.id, 'policy', names);
+
     return raw.map((policy) => {
       const metadata = stored.get(policy.name);
       return {
+        id: requireId(ids, policy.name),
         serverId: target.row.id,
         serverName: target.row.name,
         name: policy.name,
@@ -222,8 +237,10 @@ export class IamPoliciesService {
 
     const note = this.versions.latestNote(target.row.id, name);
     const writtenAt = this.versions.lastWrittenAt(target.row.id, name);
+    const id = this.entities.idFor(target.row.id, 'policy', policy.name);
 
     return {
+      id,
       serverId: target.row.id,
       serverName: target.row.name,
       name: policy.name,

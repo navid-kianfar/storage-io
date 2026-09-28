@@ -3,6 +3,7 @@ import { ServersModule } from '../../servers/servers.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { JobsModule } from '../jobs/jobs.module';
 import { IamUsersModule } from '../iam-users/iam-users.module';
+import { IamGroupsModule } from '../iam-groups/iam-groups.module';
 import { AccessKeysModule } from '../access-keys/access-keys.module';
 import { IamPoliciesModule } from '../iam-policies/iam-policies.module';
 import { SearchController } from './search.controller';
@@ -18,6 +19,7 @@ import { SearchService } from './search.service';
     InventoryModule,
     JobsModule,
     IamUsersModule,
+    IamGroupsModule,
     AccessKeysModule,
     IamPoliciesModule,
   ],

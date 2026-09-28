@@ -31,3 +31,15 @@ Read first: docs/ROUTES.md (binding), docs/briefs/web-pages.md (hard rules), app
 - Touch targets ≥ 40 px on mobile; row actions reachable without hover.
 
 Verification: in the built-in browser at 375 and 1440 (and a pass at 768), light and dark, `dir=rtl` (fa), against the real API on :3000. Go through every route in ROUTES.md and every dialog. typecheck/lint/test green. Commit nothing. Report: short.
+
+## 4. Collected fixes (from the integration passes)
+- Breadcrumbs: add a central entity-name resolver (server/bucket/user/group/policy/key/job from the query cache or the resolve endpoints) so id routes never show a UUID in the breadcrumb or page title.
+- Fix the typecheck errors in `src/mocks/*` and the IAM test fixtures caused by the new `id` fields (Bucket, S3User, S3Group, PolicySummary, AccessKey). Mocks must mirror the real contract.
+- Command palette and search: use the API's `href` (now ROUTES.md-compliant) or type+id. Jobs go to `/jobs/$jobId`.
+- Upload dialog title reads "Upload to Select" when no bucket is picked: use a neutral title ("Upload files") until a bucket is chosen.
+- Welcome → size units hint: make it describe the selected option (decimal vs binary), not always decimal.
+- After any `@storage-io/contracts` rebuild, restart the web dev server (Vite's module graph breaks otherwise).
+- `Dashboard.totals.usedBytes` may be renamed by the backend (bucket bytes vs server capacity). Follow the contract.
+- Users bulk bar: switch to the new `POST /iam/users/bulk` (and `/iam/access-keys/bulk` for keys), one request.
+- Run a live transfer end to end (upload a real file) and check the populated transfers popover and floating panel.
+- Refresh the lists in other tabs on the SSE events `activity.created`, `server.created` and `server.deleted`.

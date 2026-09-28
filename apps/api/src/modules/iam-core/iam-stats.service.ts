@@ -9,6 +9,7 @@ import type { AccessKey } from '@storage-io/contracts';
 import { AppConfigService } from '../../config/app-config.service';
 import { ServerRepository } from '../../servers/server.repository';
 import { ProviderRegistryService } from '../../providers/provider-registry.service';
+import { IamEntityRepository, requireId } from './iam-entity.repository';
 import { KeyMetaRepository } from './key-meta.repository';
 import { toAccessKey } from './access-key.mapper';
 
@@ -52,6 +53,7 @@ export class IamStatsService implements OnApplicationBootstrap, OnApplicationShu
     private readonly servers: ServerRepository,
     private readonly registry: ProviderRegistryService,
     private readonly keyMeta: KeyMetaRepository,
+    private readonly entities: IamEntityRepository,
   ) {}
 
   /**
@@ -165,15 +167,23 @@ export class IamStatsService implements OnApplicationBootstrap, OnApplicationShu
           // Counting through the mapper rather than the raw list so an expired key
           // is not counted as one an operator can use.
           const meta = this.keyMeta.byServer(row.id);
-          const stamp = { serverId: row.id, serverName: row.name, provider: row.provider };
-          const keys: AccessKey[] = rawKeys.map((raw) =>
-            toAccessKey(
-              { ...stamp, provider: row.provider as AccessKey['provider'] },
-              raw,
-              meta.get(raw.accessKeyId),
-              now,
-            ),
+          const stamp = {
+            serverId: row.id,
+            serverName: row.name,
+            provider: row.provider as AccessKey['provider'],
+          };
+          // The sweep is a listing like any other, so it is also where a key first
+          // seen since the last pass gets its opaque id.
+          const ids = this.entities.idsFor(
+            row.id,
+            'key',
+            rawKeys.map((raw) => raw.accessKeyId),
           );
+          const keys: AccessKey[] = rawKeys.map((raw) => {
+            const id = requireId(ids, raw.accessKeyId);
+            const identity = { ...stamp, id };
+            return toAccessKey(identity, raw, meta.get(raw.accessKeyId), now);
+          });
 
           if (wantsUsers) this.servers.update(row.id, { userCount: users.length });
           return { users: users.length, keys: keys.length, wroteUsers: wantsUsers };

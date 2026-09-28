@@ -15,6 +15,7 @@ import {
 } from '@storage-io/contracts';
 import { ConflictError, NotFoundError } from '../common/errors/domain.exception';
 import { CryptoService } from '../crypto/crypto.service';
+import { EventBusService } from '../events/event-bus.service';
 import { SettingsService } from '../settings/settings.service';
 import { ConnectionTesterService } from '../providers/connection-tester.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
@@ -43,6 +44,7 @@ export class ServersService {
     private readonly registry: ProviderRegistryService,
     private readonly tester: ConnectionTesterService,
     private readonly settings: SettingsService,
+    private readonly bus: EventBusService,
   ) {}
 
   list(filters: ListServersQuery): ServerList {
@@ -91,6 +93,15 @@ export class ServersService {
     });
 
     await this.refreshFromTest(inserted);
+
+    // Another tab must not keep a list that is missing a server the operator
+    // just added; the frame says which query to invalidate, nothing more.
+    this.bus.publish('server.created', {
+      serverId: inserted.id,
+      serverName: inserted.name,
+      at: new Date().toISOString(),
+    });
+
     return this.repository.toContract(this.requireRow(inserted.id));
   }
 
@@ -145,6 +156,15 @@ export class ServersService {
     this.registry.evict(row.id);
     const removed = this.repository.delete(row.id);
     if (!removed) throw new NotFoundError('No such server.');
+
+    // Published after the row is gone, so a client that refetches on the frame
+    // cannot race the delete and see the server come back.
+    this.bus.publish('server.deleted', {
+      serverId: row.id,
+      serverName: row.name,
+      at: new Date().toISOString(),
+    });
+
     this.logger.log({ server: row.name }, 'Server connection removed');
   }
 

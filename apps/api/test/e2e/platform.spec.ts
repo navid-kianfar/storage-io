@@ -537,9 +537,15 @@ describe('platform (e2e)', () => {
       expect(response.body.code).toBe('NOT_FOUND');
     });
 
-    it('serves /health without the version prefix, and not with it', async () => {
-      await harness.http().get('/health').expect(200);
-      await harness.http().get('/api/v1/health').expect(404);
+    it('serves the same liveness probe with and without the version prefix', async () => {
+      // `/health` is what supervises the process (the Docker healthcheck);
+      // `/api/v1/health` is what docs/API.md documents. Both are public.
+      const bare = await harness.http().get('/health').expect(200);
+      const prefixed = await harness.http().get('/api/v1/health').expect(200);
+
+      expect(bare.body.status).toBe('ok');
+      expect(prefixed.body.status).toBe('ok');
+      expect(prefixed.body.version).toBe(bare.body.version);
     });
   });
 });

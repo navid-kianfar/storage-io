@@ -15,6 +15,7 @@ import { ActivityService } from '../../activity/activity.service';
 import { ServerRepository } from '../../servers/server.repository';
 import { InventoryRepository } from '../inventory/inventory.repository';
 import { IamStatsService } from '../iam-core/iam-stats.service';
+import { IamEntityRepository, requireId } from '../iam-core/iam-entity.repository';
 import { KeyMetaRepository } from '../iam-core/key-meta.repository';
 import { toAccessKey } from '../iam-core/access-key.mapper';
 import { JobsRepository } from '../jobs/jobs.repository';
@@ -49,6 +50,7 @@ export class DashboardService {
     private readonly jobs: JobsRepository,
     private readonly iamStats: IamStatsService,
     private readonly keyMeta: KeyMetaRepository,
+    private readonly entities: IamEntityRepository,
   ) {}
 
   async get(): Promise<Dashboard> {
@@ -82,18 +84,21 @@ export class DashboardService {
 
   private async totals(
     serverRows: readonly ServerRow[],
-    growth: readonly { t: string; usedBytes: number }[],
+    growth: readonly { t: string; bucketsBytes: number }[],
   ): Promise<DashboardTotals> {
     // One aggregate query over the whole cache, not a reduce over every bucket.
     const summary = this.inventory.summary({});
     const counts = await this.iamStats.counts();
 
     return {
-      usedBytes: summary.sizeBytes,
+      // The operator's own data, summed from the bucket cache. `byServer[]`'s
+      // `usedBytes` is the server's reported capacity use and is a different
+      // number on purpose — see the contract.
+      bucketsBytes: summary.sizeBytes,
       capacityBytes: sumOrNull(serverRows, (row) => row.capacityTotalBytes),
       objects: summary.objects,
       buckets: summary.buckets,
-      usedDelta7dBytes: deltaOver(growth, GROWTH_DELTA_DAYS),
+      bucketsDelta7dBytes: deltaOver(growth, GROWTH_DELTA_DAYS),
       objectsDeltaToday: this.objectsDeltaToday(),
       users: counts.users,
       accessKeys: counts.accessKeys,
@@ -112,11 +117,11 @@ export class DashboardService {
    * as the samples go, not padded to 30 points: a two-day-old install showing 28
    * zeroes followed by its real size reads as a cliff that never happened.
    */
-  private growth(): readonly { t: string; usedBytes: number }[] {
+  private growth(): readonly { t: string; bucketsBytes: number }[] {
     return this.inventory.dailyTotals(DASHBOARD_GROWTH_DAYS).map((point) => ({
       // The samples are keyed by UTC day; the contract wants a date-time.
       t: `${point.day}T00:00:00.000Z`,
-      usedBytes: point.usedBytes,
+      bucketsBytes: point.usedBytes,
     }));
   }
 
@@ -176,28 +181,54 @@ export class DashboardService {
     if (rows.length === 0) return [];
 
     const byId = new Map(serverRows.map((row) => [row.id, row]));
+    // One registry call per server rather than one per key: the ids are already
+    // there for any key that has been listed, and this is a page-load path.
+    const keyIds = this.keyIdsOf(rows);
+
     const keys: AccessKey[] = [];
     for (const meta of rows) {
       const server = byId.get(meta.serverId);
       if (server === undefined) continue;
-      keys.push(
-        toAccessKey(
-          {
-            serverId: server.id,
-            serverName: server.name,
-            provider: server.provider as Provider,
-          },
-          rawFromMeta(meta),
-          meta,
-          now,
-        ),
-      );
+
+      const lookup = keyIdKey(meta.serverId, meta.accessKeyId);
+      const identity = {
+        id: requireId(keyIds, lookup),
+        serverId: server.id,
+        serverName: server.name,
+        provider: server.provider as Provider,
+      };
+      keys.push(toAccessKey(identity, rawFromMeta(meta), meta, now));
     }
     return keys;
+  }
+
+  /**
+   * The opaque id of every key in `rows`, keyed by server and access key id. One
+   * registry call per server rather than one per key: the ids are already there
+   * for any key that has been listed, and this is a page-load path.
+   */
+  private keyIdsOf(rows: readonly KeyMetaRow[]): ReadonlyMap<string, string> {
+    const byServer = new Map<string, string[]>();
+    for (const meta of rows) {
+      const existing = byServer.get(meta.serverId);
+      if (existing === undefined) byServer.set(meta.serverId, [meta.accessKeyId]);
+      else existing.push(meta.accessKeyId);
+    }
+
+    const result = new Map<string, string>();
+    for (const [serverId, accessKeyIds] of byServer) {
+      const ids = this.entities.idsFor(serverId, 'key', accessKeyIds);
+      for (const [accessKeyId, id] of ids) result.set(keyIdKey(serverId, accessKeyId), id);
+    }
+    return result;
   }
 }
 
 /* ------------------------------ helpers --------------------------- */
+
+/** A key's identity across servers, for the flat lookup `expiringKeys` builds. */
+const keyIdKey = (serverId: string, accessKeyId: string): string =>
+  `${serverId}\u0000${accessKeyId}`;
 
 /**
  * `key_meta` is the only source here, so the "provider's view" handed to the
@@ -233,10 +264,10 @@ function sumOrNull<T>(items: readonly T[], pick: (item: T) => number | null): nu
 
 /**
  * The change over the last `days` of samples. Zero when there is nothing to
- * compare against, because the contract's `usedDelta7dBytes` is a number and "no
- * change" is the only truthful number to show for an install with one sample.
+ * compare against, because the contract's `bucketsDelta7dBytes` is a number and
+ * "no change" is the only truthful number to show for an install with one sample.
  */
-function deltaOver(series: readonly { t: string; usedBytes: number }[], days: number): number {
+function deltaOver(series: readonly { t: string; bucketsBytes: number }[], days: number): number {
   const latest = series[series.length - 1];
   if (latest === undefined) return 0;
 
@@ -244,5 +275,5 @@ function deltaOver(series: readonly { t: string; usedBytes: number }[], days: nu
   // The oldest sample at or after the cutoff; falling back to the oldest sample
   // there is, so a 3-day-old install reports its 3-day growth rather than zero.
   const baseline = series.find((point) => Date.parse(point.t) >= cutoff) ?? series[0] ?? latest;
-  return latest.usedBytes - baseline.usedBytes;
+  return latest.bucketsBytes - baseline.bucketsBytes;
 }

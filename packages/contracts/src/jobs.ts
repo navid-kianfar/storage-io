@@ -66,6 +66,17 @@ export const jobSourceSchema = z.object({
   bucket: z.string(),
   filters: jobFiltersSchema,
   /**
+   * The prefixes explicitly chosen in the object browser — "delete these three
+   * folders". `[]` when the job is defined by its filters, in which case
+   * `filters.prefix` is the single prefix the listing is narrowed to.
+   *
+   * They are separate from `filters.prefix` because a filter has exactly one
+   * prefix (it is pushed to S3 as `Prefix` on the listing) while a selection has
+   * as many as the operator ticked. Folding a selection into `filters.prefix`
+   * means keeping the first and silently dropping the rest.
+   */
+  prefixes: z.array(z.string()),
+  /**
    * How many explicitly chosen object keys the job works on, for a job started
    * from a selection in the object browser rather than from a filter; `null` when
    * the job is defined by its filters.
@@ -188,6 +199,15 @@ export const jobListSchema = listOf(jobSchema).extend({
 });
 export type JobList = z.infer<typeof jobListSchema>;
 
+/**
+ * The upper bound on an explicit selection sent with a job. A hundred thousand
+ * keys is roughly 10 MB of JSON — more than the object browser can select in one
+ * view, and small enough that the row it is stored in stays readable. Past it the
+ * honest answer is a filter, not a longer list.
+ */
+export const JOB_SELECTION_MAX_KEYS = 100_000;
+export const JOB_SELECTION_MAX_PREFIXES = 1_000;
+
 export const createJobRequestSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   type: jobTypeSchema,
@@ -195,6 +215,16 @@ export const createJobRequestSchema = z.object({
     serverId: z.string().min(1),
     bucket: z.string().min(1),
     filters: jobFiltersSchema,
+    /**
+     * An explicit selection from the object browser. The job works the **union**
+     * of these keys and `prefixes`, with overlaps removed; the keys themselves
+     * are stored server-side and never come back in a `Job` — `source.keyCount`
+     * is what a client renders. Omitted (or empty) means the job is defined by
+     * its filters alone.
+     */
+    keys: z.array(z.string().min(1).max(1024)).max(JOB_SELECTION_MAX_KEYS).optional(),
+    /** The folders that selection contained; all of them, not just the first. */
+    prefixes: z.array(z.string().max(1024)).max(JOB_SELECTION_MAX_PREFIXES).optional(),
   }),
   target: z
     .object({

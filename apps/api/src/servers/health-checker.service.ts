@@ -257,7 +257,9 @@ export class HealthCheckerService implements OnApplicationBootstrap, OnApplicati
         level: 'error',
         title: `${row.name} is offline`,
         detail: result.detail ?? 'The server stopped responding.',
-        href: `/servers/${row.name}`,
+        // The route takes the id: a server can be renamed, and a name is not a
+        // safe path segment. See docs/ROUTES.md.
+        href: `/servers/${row.id}`,
         ruleKey: 'server.offline',
         // A flapping server transitions into offline repeatedly; one alert per
         // server per dedup window is what an operator can act on.

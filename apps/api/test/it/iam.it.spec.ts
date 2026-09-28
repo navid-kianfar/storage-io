@@ -175,6 +175,84 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
       expect(enabled.body.status).toBe('enabled');
     });
 
+    /**
+     * The opaque ids the web app navigates by, against a driver that really
+     * lists. The e2e suite proves the 404 and the route order; only a live
+     * listing proves that the id a list hands out is the id the resolve
+     * endpoint answers to, and that it does not change on the next keystroke.
+     */
+    it('gives a listed user a stable id that resolves back to the user', async () => {
+      const first = await harness
+        .http()
+        .get(`/api/v1/iam/users?serverId=${MINIO_SERVER}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const second = await harness
+        .http()
+        .get(`/api/v1/iam/users?serverId=${MINIO_SERVER}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const find = (body: { items: { name: string; id: string }[] }): string | undefined =>
+        body.items.find((user) => user.name === USER)?.id;
+
+      const id = find(first.body);
+      expect(id).toEqual(expect.any(String));
+      expect(find(second.body)).toBe(id);
+      // Never the name: the id is what a URL may carry.
+      expect(id).not.toBe(USER);
+
+      const resolved = await harness
+        .http()
+        .get(`/api/v1/iam/users/${id as string}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(resolved.body).toMatchObject({ id, name: USER, serverName: MINIO_SERVER });
+      expect(resolved.body.accessKeys).toEqual(expect.any(Array));
+    });
+
+    it('gives a listed access key an id that resolves back to the key', async () => {
+      const listed = await harness
+        .http()
+        .get(`/api/v1/iam/access-keys?serverId=${MINIO_SERVER}&userName=${USER}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const [key] = listed.body.items as { id: string; accessKeyId: string }[];
+      expect(key?.id).toEqual(expect.any(String));
+
+      const resolved = await harness
+        .http()
+        .get(`/api/v1/iam/access-keys/${key?.id as string}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(resolved.body).toMatchObject({ id: key?.id, accessKeyId: key?.accessKeyId });
+    });
+
+    it('gives a listed policy an id that resolves to its document', async () => {
+      const listed = await harness
+        .http()
+        .get(`/api/v1/iam/policies?serverId=${MINIO_SERVER}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const readonly = (listed.body.items as { id: string; name: string }[]).find(
+        (policy) => policy.name === 'readonly',
+      );
+      expect(readonly?.id).toEqual(expect.any(String));
+
+      const resolved = await harness
+        .http()
+        .get(`/api/v1/iam/policies/${readonly?.id as string}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(resolved.body).toMatchObject({ id: readonly?.id, name: 'readonly', builtIn: true });
+      expect(resolved.body.document).toEqual(expect.any(Object));
+    });
+
     it('never leaks MINIO_ROOT_PASSWORD through an IAM response', async () => {
       // The admin `info` payload contains it; nothing here reads that payload, and
       // this is the assertion that keeps it that way.

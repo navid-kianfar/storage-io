@@ -6,6 +6,7 @@ import type { KeyMetaRow } from '../../db/schema';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { ServerRepository } from '../../servers/server.repository';
 import { ProviderRegistryService } from '../../providers/provider-registry.service';
+import { IamEntityRepository } from './iam-entity.repository';
 import { KeyMetaRepository } from './key-meta.repository';
 
 /**
@@ -40,6 +41,7 @@ export class KeyExpiryService {
     private readonly servers: ServerRepository,
     private readonly registry: ProviderRegistryService,
     private readonly notifications: NotificationsService,
+    private readonly entities: IamEntityRepository,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES, { name: 'key-expiry' })
@@ -78,11 +80,14 @@ export class KeyExpiryService {
       this.keyMeta.upsert(row.serverId, row.accessKeyId, { status: 'expired' });
 
       const serverName = this.serverNameOf(row.serverId);
+      const keyId = this.entities.idFor(row.serverId, 'key', row.accessKeyId);
       this.notifications.raise({
         level: 'warning',
         title: 'An access key expired',
         detail: `"${row.name ?? row.accessKeyId}" for ${row.userName} on ${serverName} has expired and no longer works.`,
-        href: '/keys',
+        // Rotating it is what the operator came to do; the route takes the key's
+        // opaque id, never its access key id. See docs/ROUTES.md.
+        href: `/keys/${keyId}/rotate`,
         ruleKey: 'key.expiring',
       });
     }
@@ -92,11 +97,12 @@ export class KeyExpiryService {
     const soon = this.keyMeta.expiringSoon(nowIso, untilIso);
     for (const row of soon) {
       const serverName = this.serverNameOf(row.serverId);
+      const keyId = this.entities.idFor(row.serverId, 'key', row.accessKeyId);
       this.notifications.raise({
         level: 'info',
         title: 'An access key expires soon',
         detail: `"${row.name ?? row.accessKeyId}" for ${row.userName} on ${serverName} expires on ${row.expiresAt ?? 'an unknown date'}.`,
-        href: '/keys',
+        href: `/keys/${keyId}/rotate`,
         ruleKey: 'key.expiring',
       });
       this.keyMeta.upsert(row.serverId, row.accessKeyId, {

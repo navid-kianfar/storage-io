@@ -24,6 +24,13 @@ export const bucketNameSchema = z
   });
 
 export const bucketSchema = z.object({
+  /**
+   * storage-io's own opaque id for this bucket, stable per `(serverId, name)`
+   * and assigned the first time the bucket is seen. It is what a URL carries —
+   * a bucket name is not unique across servers and is not a safe path segment.
+   * A bucket deleted and created again may get a new id.
+   */
+  id: z.string(),
   serverId: z.string(),
   serverName: z.string(),
   provider: providerSchema,
@@ -92,6 +99,9 @@ export const BUCKET_CSV_COLUMNS = [
   'quotaMode',
   'quotaNative',
   'unavailable',
+  // Appended rather than placed first: every existing column keeps its position,
+  // so a spreadsheet or script built against the previous export still reads.
+  'id',
 ] as const;
 
 export const createBucketRequestSchema = z.object({
@@ -266,6 +276,12 @@ export const bucketBulkRequestSchema = z.discriminatedUnion('action', [
 export type BucketBulkRequest = z.infer<typeof bucketBulkRequestSchema>;
 
 export const bucketBulkResultSchema = bucketRefSchema.extend({
+  /**
+   * The bucket's opaque id, resolved before the action ran — so a row for a
+   * bucket that was just deleted still carries the id the caller navigated by.
+   * `null` when the installation has never cached this bucket.
+   */
+  id: z.string().nullable(),
   ok: z.boolean(),
   message: z.string().nullable(),
 });

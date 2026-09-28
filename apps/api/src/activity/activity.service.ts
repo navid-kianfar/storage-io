@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, gte, like, lt, lte, or, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lt, lte, or, type SQL } from 'drizzle-orm';
 import {
   type ActivityCategory,
   type ActivityEvent,
@@ -13,6 +13,8 @@ import { DB } from '../db/db.module';
 import type { AppDatabase } from '../db/migrate';
 import { activity } from '../db/schema';
 import { CryptoService } from '../crypto/crypto.service';
+import { likeEscaped } from '../common/sql/like';
+import { ActivityEventPublisher } from './activity-event.publisher';
 import { ActivitySyslogService } from './activity-syslog.service';
 
 /** Keys whose values never reach the log, whatever nesting they sit at. */
@@ -54,7 +56,8 @@ export interface RecordActivityInput {
  *
  * Whatever the source, `details` is sanitized here rather than at each call site
  * — one place to get right, and a new caller cannot forget. The same is true of
- * syslog forwarding: it hangs off `record`, so no call site can leave it out.
+ * syslog forwarding and the `activity.created` SSE frame: both hang off `record`,
+ * so no call site can leave either out.
  */
 @Injectable()
 export class ActivityService {
@@ -62,6 +65,7 @@ export class ActivityService {
     @Inject(DB) private readonly db: AppDatabase,
     private readonly crypto: CryptoService,
     private readonly syslog: ActivitySyslogService,
+    private readonly events: ActivityEventPublisher,
   ) {}
 
   record(input: RecordActivityInput): ActivityEvent {
@@ -102,8 +106,9 @@ export class ActivityService {
       .run();
 
     // After the row is written, and never instead of it: the local trail is the
-    // authoritative one and a collector is an extra copy.
+    // authoritative one, and a collector and a live stream are extra copies.
     this.syslog.forward(event);
+    this.events.publish(event);
     return event;
   }
 
@@ -170,12 +175,11 @@ export class ActivityService {
     if (filters.result !== undefined) conditions.push(eq(activity.result, filters.result));
 
     if (filters.q !== undefined && filters.q.length > 0) {
-      const needle = `%${escapeLike(filters.q)}%`;
       const search = or(
-        like(activity.title, needle),
-        like(activity.action, needle),
-        like(activity.target, needle),
-        like(activity.actorName, needle),
+        likeEscaped(activity.title, filters.q),
+        likeEscaped(activity.action, filters.q),
+        likeEscaped(activity.target, filters.q),
+        likeEscaped(activity.actorName, filters.q),
       );
       if (search !== undefined) conditions.push(search);
     }
@@ -205,11 +209,6 @@ function toActivityEvent(row: ActivityRow): ActivityEvent {
     requestId: row.requestId,
     details: row.details,
   };
-}
-
-/** `%` and `_` are wildcards in LIKE; a search for "a_b" must mean "a_b". */
-export function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 /**

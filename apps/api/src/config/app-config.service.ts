@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { AppConfig } from './env.schema';
+import type { AppConfig, TrustProxySetting } from './env.schema';
 
 /** DI token for the parsed environment. */
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -58,6 +58,16 @@ export class AppConfigService {
 
   get allowedOrigins(): readonly string[] {
     return this.config.allowedOrigins;
+  }
+
+  /**
+   * `false` unless the operator named the proxies in front of the API. With it
+   * off, `X-Forwarded-For` is ignored entirely and `request.ip` is the socket's
+   * peer — which is what the allowed-networks middleware and the login throttler
+   * both key on.
+   */
+  get trustProxy(): TrustProxySetting {
+    return this.config.trustProxy;
   }
 
   get swaggerEnabled(): boolean {

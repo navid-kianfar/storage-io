@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import type { Bucket } from '@storage-io/contracts';
 import { ActivityService } from '../../activity/activity.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { ServerRepository } from '../../servers/server.repository';
@@ -79,12 +80,19 @@ export class QuotaWatcherService {
     }
     if (quota.alertedAt !== null) return false;
 
-    this.raise(quota, bucket.serverName, bucket.sizeBytes, ratio);
+    this.raise(quota, bucket, ratio);
     this.quotas.markAlerted(quota.serverId, quota.bucket);
     return true;
   }
 
-  private raise(quota: StoredQuota, serverName: string, sizeBytes: number, ratio: number): void {
+  /**
+   * Takes the whole `Bucket` rather than its name and size because the link has
+   * to carry the bucket's opaque id: `/buckets/<name>` is not a route, and two
+   * servers may hold a bucket of the same name. See docs/ROUTES.md.
+   */
+  private raise(quota: StoredQuota, bucket: Bucket, ratio: number): void {
+    const serverName = bucket.serverName;
+    const sizeBytes = bucket.sizeBytes ?? 0;
     const percent = Math.round(ratio * 100);
     const thresholdPercent = Math.round(quota.threshold * 100);
     const detail = `${quota.bucket} on ${serverName} is at ${percent}% of its ${formatBytes(quota.limitBytes)} quota (${formatBytes(sizeBytes)} used), past the ${thresholdPercent}% alert threshold.`;
@@ -93,7 +101,7 @@ export class QuotaWatcherService {
       level: percent >= FULL_PERCENT ? 'error' : 'warning',
       title: `${quota.bucket} is at ${percent}% of its quota`,
       detail,
-      href: `/buckets/${quota.bucket}`,
+      href: `/buckets/${bucket.id}`,
       ruleKey: 'quota.threshold',
     });
 

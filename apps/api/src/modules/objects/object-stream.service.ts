@@ -20,6 +20,52 @@ const BYTES_PER_MB = 1024 * 1024;
 /** `Content-Type` for a body whose type the client did not declare. */
 const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
 const ZIP_CONTENT_TYPE = 'application/zip';
+
+/* --------------------- what a browser may render ------------------ */
+
+/**
+ * The object store holds whatever an operator (or an application writing through
+ * one of their access keys) put in it, and the console is served from the same
+ * origin as this API. So a `text/html` object handed back as `text/html` with
+ * `Content-Disposition: inline` is stored cross-site scripting against the
+ * console's own origin — session cookie included.
+ *
+ * Only inert types are therefore rendered. Everything else is
+ * `application/octet-stream` with an `attachment` disposition, whatever the
+ * provider said the type was and whatever `?inline=true` asked for.
+ */
+const INLINE_EXACT_TYPES: readonly string[] = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/bmp',
+  'application/pdf',
+];
+/** Whole families a browser plays rather than executes. */
+const INLINE_TYPE_PREFIXES: readonly string[] = ['video/', 'audio/'];
+/**
+ * Every `text/*` subtype is served as plain text with an explicit charset.
+ * `text/html` therefore shows as source, and a missing charset can no longer be
+ * sniffed into UTF-7 or the page's own encoding.
+ */
+const TEXT_PLAIN_CONTENT_TYPE = 'text/plain; charset=utf-8';
+
+/**
+ * Sent on every response that carries object bytes.
+ *
+ * `nosniff` stops the browser second-guessing the type above; the policy makes
+ * the response a document that can load nothing and run nothing. `sandbox` with
+ * no tokens is the strongest form — a unique origin with scripts, forms and
+ * plugins off — and `img-src`/`media-src`/`frame-src 'self' blob:` are what the
+ * built-in PDF and media viewers need to still render the bytes themselves.
+ */
+export const DOWNLOAD_SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy':
+    "default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob:; style-src 'unsafe-inline'; sandbox",
+};
 /** Keys pulled into one ZIP before the request is refused. */
 export const ZIP_MAX_ENTRIES = 10_000;
 /** No compression: object stores hold compressed data, and this is CPU we save. */
@@ -182,6 +228,7 @@ export class ObjectStreamService {
     const entries = await this.collectZipEntries(client, bucket, keys, prefixes);
 
     response.setHeader('Content-Type', ZIP_CONTENT_TYPE);
+    applyDownloadSecurityHeaders(response);
     response.setHeader('Content-Disposition', contentDisposition(false, filename));
     // Length is unknown until the archive is finished, so the response is chunked.
     response.setHeader('Cache-Control', 'no-store');
@@ -195,18 +242,45 @@ export class ObjectStreamService {
       this.logger.warn({ bucket, err: error.message }, 'ZIP archiver warning');
     });
 
+    // Started here and awaited on every path below, including the failing ones.
+    // An outstanding `pipeline` promise is fire-and-forget: when a `GetObject`
+    // partway through the selection throws, the response is torn down, the
+    // pipeline rejects with ERR_STREAM_PREMATURE_CLOSE and — with nothing
+    // observing it — Node takes the whole process down.
     const piped = pipeline(archive, response);
+    let failure: Error | null = null;
 
-    for (const key of entries) {
-      const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-      const body = asReadable(object.Body);
-      if (body === null) continue;
-      archive.append(body, { name: key, date: object.LastModified });
+    try {
+      for (const key of entries) {
+        const name = zipEntryName(key);
+        if (name === null) {
+          // An entry whose whole path was traversal or separators has no safe
+          // name to give it, so it is left out and said so rather than renamed
+          // to something the operator did not ask for.
+          this.logger.warn({ bucket, key }, 'Skipped a ZIP entry with no safe name');
+          continue;
+        }
+        const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+        const body = asReadable(object.Body);
+        if (body === null) continue;
+        archive.append(body, { name, date: object.LastModified });
+      }
+      await archive.finalize();
+    } catch (error) {
+      failure = error instanceof Error ? error : new Error(String(error));
+      archive.destroy(failure);
     }
 
-    await archive.finalize();
-    await piped;
-    return bytes;
+    if (failure === null) {
+      await piped;
+      return bytes;
+    }
+
+    // The pipeline is now rejecting too, because the archive above was destroyed.
+    // Its rejection is observed and dropped so the caller sees the cause rather
+    // than the consequence.
+    await piped.catch(() => undefined);
+    throw failure;
   }
 
   private async collectZipEntries(
@@ -260,16 +334,46 @@ function asReadable(body: GetObjectCommandOutput['Body']): Readable | null {
 }
 
 /**
- * Copies the provider's own content headers through, so a browser treats the
- * object exactly as the server described it, and sets 206 for a satisfied range —
- * without which a media player will not seek.
+ * How an object is handed to the browser: never as the provider described it,
+ * always as one of the types the allow-list above says is safe to render.
+ *
+ * `inline` in the answer is the caller's `?inline=true` **and** the type earning
+ * it — a type off the allow-list is an attachment even when the caller asked for
+ * inline, because "download it instead" is the safe failure.
+ */
+export function downloadPresentation(
+  providerType: string | null | undefined,
+  wantsInline: boolean,
+): { readonly contentType: string; readonly inline: boolean } {
+  const base = (providerType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+
+  if (base.startsWith('text/')) {
+    return { contentType: TEXT_PLAIN_CONTENT_TYPE, inline: wantsInline };
+  }
+  if (INLINE_EXACT_TYPES.includes(base)) return { contentType: base, inline: wantsInline };
+  for (const prefix of INLINE_TYPE_PREFIXES) {
+    if (base.startsWith(prefix)) return { contentType: base, inline: wantsInline };
+  }
+  // image/svg+xml, application/xml, application/javascript and everything else a
+  // browser would execute or treat as markup.
+  return { contentType: DEFAULT_CONTENT_TYPE, inline: false };
+}
+
+/**
+ * The response headers for one object's bytes: the provider's cache and validator
+ * headers pass through, its `Content-Type` does not (see `downloadPresentation`),
+ * and 206 is set for a satisfied range — without which a media player will not
+ * seek.
  */
 function applyDownloadHeaders(
   response: Response,
   object: GetObjectCommandOutput,
   input: DownloadInput,
 ): void {
-  response.setHeader('Content-Type', object.ContentType ?? DEFAULT_CONTENT_TYPE);
+  const presentation = downloadPresentation(object.ContentType, input.inline);
+
+  response.setHeader('Content-Type', presentation.contentType);
+  applyDownloadSecurityHeaders(response);
   response.setHeader('Accept-Ranges', 'bytes');
   if (object.ContentLength !== undefined) {
     response.setHeader('Content-Length', String(object.ContentLength));
@@ -285,12 +389,19 @@ function applyDownloadHeaders(
 
   response.setHeader(
     'Content-Disposition',
-    contentDisposition(input.inline, basenameOf(input.key)),
+    contentDisposition(presentation.inline, basenameOf(input.key)),
   );
 
   if (object.ContentRange !== undefined) {
     response.setHeader('Content-Range', object.ContentRange);
     response.status(206);
+  }
+}
+
+/** Overwrites the app-wide CSP `bootstrap.ts` set, which is far looser than this. */
+export function applyDownloadSecurityHeaders(response: Response): void {
+  for (const [name, value] of Object.entries(DOWNLOAD_SECURITY_HEADERS)) {
+    response.setHeader(name, value);
   }
 }
 
@@ -306,6 +417,27 @@ export function contentDisposition(inline: boolean, filename: string): string {
 }
 
 export const basenameOf = (key: string): string => key.split('/').filter(Boolean).pop() ?? key;
+
+/**
+ * The name an object key is written under inside a ZIP.
+ *
+ * An object key is not a path — S3 will happily store `../../etc/cron.d/x` or
+ * `/etc/passwd` — and several extractors still resolve entry names against the
+ * destination directory. So the name is normalised here: backslashes become
+ * separators (Windows extractors treat them as such), leading slashes are
+ * dropped, and `.` and `..` segments are removed rather than resolved, because
+ * resolving them would still let a key climb above the archive root.
+ *
+ * `null` when nothing is left — the caller skips that entry and reports it.
+ */
+export function zipEntryName(key: string): string | null {
+  const segments = key
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
+  if (segments.length === 0) return null;
+  return segments.join('/');
+}
 
 /**
  * A pass-through that fails once more than `limitBytes` has gone through it.

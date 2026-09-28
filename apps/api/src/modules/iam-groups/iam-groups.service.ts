@@ -6,6 +6,7 @@ import type {
   UpsertS3GroupRequest,
 } from '@storage-io/contracts';
 import { ConflictError, NotFoundError } from '../../common/errors/domain.exception';
+import { IamEntityRepository, requireId } from '../iam-core/iam-entity.repository';
 import { matchesQuery } from '../iam-core/iam-page';
 import { IamTargetService, type IamTarget } from '../iam-core/iam-target.service';
 
@@ -23,7 +24,10 @@ import { IamTargetService, type IamTarget } from '../iam-core/iam-target.service
  */
 @Injectable()
 export class IamGroupsService {
-  constructor(private readonly targets: IamTargetService) {}
+  constructor(
+    private readonly targets: IamTargetService,
+    private readonly entities: IamEntityRepository,
+  ) {}
 
   async list(query: ListIamGroupsQuery): Promise<S3GroupList> {
     const aggregated = await this.targets.aggregate('iamGroups', query.serverId, async (target) =>
@@ -39,6 +43,16 @@ export class IamGroupsService {
     );
 
     return { items: sorted, total: sorted.length, unavailable: [...aggregated.unavailable] };
+  }
+
+  /**
+   * `GET /iam/groups/:groupId` — the resolve endpoint the web app navigates by.
+   */
+  async findById(groupId: string): Promise<S3Group> {
+    const ref = this.entities.find(groupId);
+    if (ref === null || ref.kind !== 'group') throw new NotFoundError('No such group.');
+    const target = this.targets.targetFor(ref.serverId, 'iamGroups');
+    return this.requireGroup(target, ref.name);
   }
 
   async create(serverIdOrName: string, request: UpsertS3GroupRequest): Promise<S3Group> {
@@ -85,8 +99,11 @@ export class IamGroupsService {
   private async groupsOf(target: IamTarget): Promise<readonly S3Group[]> {
     const groups = this.targets.providers.iamGroupsFor(target.connection);
     const raw = await groups.list(target.connection);
+    const names = raw.map((group) => group.name);
+    const ids = this.entities.idsFor(target.row.id, 'group', names);
 
     return raw.map((group) => ({
+      id: requireId(ids, group.name),
       serverId: target.row.id,
       serverName: target.row.name,
       name: group.name,
@@ -101,7 +118,9 @@ export class IamGroupsService {
     const group = await groups.get(target.connection, name);
     if (group === null) throw new NotFoundError(`No group "${name}" on ${target.row.name}.`);
 
+    const id = this.entities.idFor(target.row.id, 'group', group.name);
     return {
+      id,
       serverId: target.row.id,
       serverName: target.row.name,
       name: group.name,

@@ -276,20 +276,16 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
     );
 
     const includeVersions = versionsNeededFor(job);
-    const explicitKeys = this.repository.storedKeys(row);
+    const plan = planSegments(
+      this.repository.storedKeys(row),
+      this.repository.storedPrefixes(row),
+      job.source.filters.prefix,
+    );
 
     if (state.progress.total === null) {
       state.progress = {
         ...state.progress,
-        total:
-          explicitKeys === null
-            ? await this.estimator.totalFor(
-                contexts.source,
-                job.source.bucket,
-                job.source.filters,
-                includeVersions,
-              )
-            : explicitKeys.length,
+        total: await this.planTotal(contexts.source, job, plan, includeVersions),
       };
     }
 
@@ -304,39 +300,48 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
       options: job.options,
     };
 
-    let token = row.checkpoint;
-    for (;;) {
+    let checkpoint = parseCheckpoint(row.checkpoint);
+    while (checkpoint.segment < plan.length) {
       const control = this.controls.get(row.id);
       if (control !== undefined) {
-        this.handleControl(row.id, control, token);
+        this.handleControl(row.id, control, checkpoint);
         return;
       }
       if (this.stopped) {
         // Shutdown: the row stays `running` and `onApplicationBootstrap` requeues
         // it. Writing `paused` here would need an operator to resume by hand after
         // a restart they did not ask about.
-        this.persist(row.id, token, state.progress);
+        this.persist(row.id, checkpoint, state.progress);
         return;
       }
-      if (this.sourceWentOffline(row, token, state.progress)) return;
+      if (this.sourceWentOffline(row, checkpoint, state.progress)) return;
 
-      const page =
-        explicitKeys === null
-          ? await this.source.page({
-              client: contexts.source.client,
-              bucket: job.source.bucket,
-              filters: job.source.filters,
-              includeVersions,
-              startToken: token,
-            })
-          : this.source.keyPage(explicitKeys, token === null ? 0 : Number(token));
+      const segment = plan[checkpoint.segment] as JobSegment;
+      const page = await this.listPage(contexts.source, job, segment, checkpoint, includeVersions);
+      const done = await this.processPage(row.id, execution, page, job, checkpoint.cursor);
 
-      await this.processPage(row.id, execution, page, job);
+      if (checkpoint.cursor + done < page.items.length) {
+        // A page only ends early because a pause, a cancel or a shutdown said so.
+        // The checkpoint therefore stays *on this page* and records how far into
+        // it the run got: advancing to `nextToken` here is what used to drop the
+        // rest of the page on the floor and make a resume skip those objects.
+        checkpoint = { ...checkpoint, cursor: checkpoint.cursor + done };
+        this.emitProgress(row.id, state, true);
+        const interrupted = this.controls.get(row.id);
+        if (interrupted !== undefined) {
+          this.handleControl(row.id, interrupted, checkpoint);
+          return;
+        }
+        this.persist(row.id, checkpoint, state.progress);
+        return;
+      }
 
-      token = page.nextToken;
-      this.persist(row.id, token, state.progress);
+      checkpoint =
+        page.nextToken === null
+          ? { segment: checkpoint.segment + 1, token: null, cursor: 0 }
+          : { segment: checkpoint.segment, token: page.nextToken, cursor: 0 };
+      this.persist(row.id, checkpoint, state.progress);
       this.emitProgress(row.id, state, true);
-      if (token === null) break;
     }
 
     const outcome = outcomeFor(state.progress);
@@ -344,14 +349,27 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
     this.reportCompletion(job, outcome, state.progress);
   }
 
+  /**
+   * One page, from `skip` onwards, and how many of those entries it got through.
+   *
+   * The answer is a *count from the start of the slice*, not a set of keys, and
+   * that only works because the pool dispatches in order and `runWithPool` waits
+   * for everything it dispatched before it resolves: the entries it reports are
+   * therefore a contiguous run from the front, which is the one shape a single
+   * number can describe.
+   */
   private async processPage(
     jobId: string,
     execution: JobExecution,
     page: JobPage,
     job: Job,
-  ): Promise<void> {
+    skip: number,
+  ): Promise<number> {
     const state = this.runs.get(jobId);
-    if (state === undefined) return;
+    if (state === undefined) return 0;
+
+    const items = skip === 0 ? page.items : page.items.slice(skip);
+    if (items.length === 0) return 0;
 
     if (job.options.dryRun) {
       // A dry run reports what the filters matched, which is the question it is
@@ -359,21 +377,20 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
       // is a HEAD per object, and an operator sizing a job is not waiting for it.
       state.progress = {
         ...state.progress,
-        processed: state.progress.processed + page.items.length,
-        bytes: state.progress.bytes + page.items.reduce((total, item) => total + item.size, 0),
+        processed: state.progress.processed + items.length,
+        bytes: state.progress.bytes + items.reduce((total, item) => total + item.size, 0),
       };
       this.recordRate(state);
       this.emitProgress(jobId, state, false);
-      return;
+      return items.length;
     }
 
     if (BATCHED_DELETE_TYPES.includes(execution.type)) {
-      await this.processDeletes(jobId, execution, page.items);
-      return;
+      return this.processDeletes(jobId, execution, items);
     }
 
-    await runWithPool(
-      page.items,
+    return runWithPool(
+      items,
       () => state.concurrency,
       async (candidate) => {
         await this.applyOne(jobId, execution, candidate);
@@ -382,16 +399,17 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
     );
   }
 
+  /** Entries deleted, counted from the start of `items` — see `processPage`. */
   private async processDeletes(
     jobId: string,
     execution: JobExecution,
     items: readonly JobCandidate[],
-  ): Promise<void> {
+  ): Promise<number> {
     const state = this.runs.get(jobId);
-    if (state === undefined) return;
+    if (state === undefined) return 0;
 
     for (let offset = 0; offset < items.length; offset += DELETE_BATCH_SIZE) {
-      if (this.controls.has(jobId) || this.stopped) return;
+      if (this.controls.has(jobId) || this.stopped) return offset;
       const batch = items.slice(offset, offset + DELETE_BATCH_SIZE);
       const result = await this.actions.deleteBatch(execution, batch);
 
@@ -412,6 +430,7 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
       this.recordRate(state);
       this.emitProgress(jobId, state, false);
     }
+    return items.length;
   }
 
   private async applyOne(
@@ -447,21 +466,81 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
     this.emitProgress(jobId, state, false);
   }
 
+  /* --------------------------- the source --------------------------- */
+
+  /**
+   * One page of whichever segment the checkpoint is on.
+   *
+   * A prefix segment overrides `filters.prefix` with its own, because that field
+   * is the *listing* prefix and each selected folder is its own listing. Every
+   * other filter — glob, size, dates, tags — still applies to all of them.
+   */
+  private listPage(
+    source: StorageContext,
+    job: Job,
+    segment: JobSegment,
+    checkpoint: JobCheckpoint,
+    includeVersions: boolean,
+  ): Promise<JobPage> | JobPage {
+    if (segment.kind === 'keys') {
+      const offset = checkpoint.token === null ? 0 : Number(checkpoint.token);
+      return this.source.keyPage(segment.keys, offset);
+    }
+    return this.source.page({
+      client: source.client,
+      bucket: job.source.bucket,
+      filters: { ...job.source.filters, prefix: segment.prefix },
+      includeVersions,
+      startToken: checkpoint.token,
+    });
+  }
+
+  /**
+   * The job's `progress.total`, summed over the plan.
+   *
+   * One segment whose listing did not finish inside its budget makes the whole
+   * total `null` rather than a sum that is missing a folder: a progress bar
+   * against a number known to be too small reads as a job that overshoots 100%.
+   */
+  private async planTotal(
+    source: StorageContext,
+    job: Job,
+    plan: readonly JobSegment[],
+    includeVersions: boolean,
+  ): Promise<number | null> {
+    let total = 0;
+    for (const segment of plan) {
+      if (segment.kind === 'keys') {
+        total += segment.keys.length;
+        continue;
+      }
+      const part = await this.estimator.totalFor(
+        source,
+        job.source.bucket,
+        { ...job.source.filters, prefix: segment.prefix },
+        includeVersions,
+      );
+      if (part === null) return null;
+      total += part;
+    }
+    return total;
+  }
+
   /* ----------------------------- control ---------------------------- */
 
-  private handleControl(jobId: string, control: Control, token: string | null): void {
+  private handleControl(jobId: string, control: Control, checkpoint: JobCheckpoint): void {
     const state = this.runs.get(jobId);
     const progress = state?.progress;
     this.controls.delete(jobId);
 
     if (control === 'pause') {
-      this.persist(jobId, token, progress);
+      this.persist(jobId, checkpoint, progress);
       this.transition(jobId, 'paused', 'running', {});
       this.appendLog(jobId, 'info', 'Paused. Resuming continues from this point.', null);
       return;
     }
 
-    this.persist(jobId, token, progress);
+    this.persist(jobId, checkpoint, progress);
     this.transition(jobId, 'cancelled', 'running', { finishedAt: new Date().toISOString() });
     this.appendLog(jobId, 'warn', 'Cancelled by the operator.', null);
   }
@@ -473,13 +552,13 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
    */
   private sourceWentOffline(
     row: JobRow,
-    token: string | null,
+    checkpoint: JobCheckpoint,
     progress: JobProgress | undefined,
   ): boolean {
     const offline = this.offlineServerName(row);
     if (offline === null) return false;
 
-    this.persist(row.id, token, progress);
+    this.persist(row.id, checkpoint, progress);
     this.repository.update(row.id, { status: 'queued', waitingFor: `${offline} offline` });
     this.bus.publish('job.status', {
       jobId: row.id,
@@ -534,9 +613,13 @@ export class JobEngineService implements OnApplicationBootstrap, OnApplicationSh
     return null;
   }
 
-  private persist(jobId: string, token: string | null, progress: JobProgress | undefined): void {
+  private persist(
+    jobId: string,
+    checkpoint: JobCheckpoint,
+    progress: JobProgress | undefined,
+  ): void {
     this.repository.update(jobId, {
-      checkpoint: token,
+      checkpoint: serializeCheckpoint(checkpoint),
       ...(progress === undefined ? {} : { progress: { ...progress } }),
     });
     this.flushLogs(jobId);
@@ -728,6 +811,116 @@ interface ResolvedContexts {
   readonly target: StorageContext | null;
 }
 
+/* ---------------------------- the plan ----------------------------- */
+
+/**
+ * One stretch of work: either the explicit keys an operator picked, or one
+ * selected prefix to list.
+ */
+export type JobSegment =
+  | { readonly kind: 'keys'; readonly keys: readonly string[] }
+  | { readonly kind: 'prefix'; readonly prefix: string };
+
+/**
+ * The segments a run walks, in order, with the overlaps removed.
+ *
+ * The union has to be exact in both directions — every selected object worked on,
+ * none of them twice — and the cheap place to make it exact is here, on the
+ * *selection*, not later on the listed keys:
+ *
+ * - A prefix contained in another prefix (`p1/sub/` under `p1/`) is dropped,
+ *   because listing `p1/` already returns everything under it.
+ * - An explicit key that falls under a surviving prefix is dropped for the same
+ *   reason.
+ *
+ * What is left cannot overlap: two prefixes where neither contains the other list
+ * disjoint key sets, and the remaining keys are under none of them. So the run
+ * needs no set of keys it has already seen — which matters, because that set
+ * would have to survive a pause and a restart to be worth anything.
+ *
+ * With nothing selected the plan is the single filter-defined listing, which is
+ * what `POST /jobs` creates and what every job did before selections carried more
+ * than one prefix.
+ */
+export function planSegments(
+  explicitKeys: readonly string[] | null,
+  explicitPrefixes: readonly string[],
+  filterPrefix: string,
+): readonly JobSegment[] {
+  const prefixes = distinct(explicitPrefixes).filter(
+    (prefix, _index, all) => !all.some((other) => other !== prefix && prefix.startsWith(other)),
+  );
+  const keys = distinct(explicitKeys ?? []).filter(
+    (key) => !prefixes.some((prefix) => key.startsWith(prefix)),
+  );
+
+  const segments: JobSegment[] = [];
+  if (keys.length > 0) segments.push({ kind: 'keys', keys });
+  for (const prefix of prefixes) segments.push({ kind: 'prefix', prefix });
+
+  if (segments.length > 0) return segments;
+  // Nothing was selected, or every selected key was swallowed by a prefix that
+  // itself turned out to be empty: fall back to the filter's own listing.
+  return [{ kind: 'prefix', prefix: filterPrefix }];
+}
+
+const distinct = (values: readonly string[]): readonly string[] => [...new Set(values)];
+
+/* -------------------------- the checkpoint -------------------------- */
+
+/**
+ * Where a run stopped, precisely enough to start again without redoing or
+ * skipping anything.
+ *
+ * `token` is the token the **current** page was listed with, not the next one.
+ * That is the whole fix: storing `nextToken` after a pause that happened in the
+ * middle of a page threw away the rest of that page, and the resume started at
+ * the page after it.
+ */
+export interface JobCheckpoint {
+  /** Index into the plan `planSegments` produced. */
+  readonly segment: number;
+  /** The continuation token (or key offset) the current page was listed with. */
+  readonly token: string | null;
+  /** Entries of the current page already processed, counted from its start. */
+  readonly cursor: number;
+}
+
+export const CHECKPOINT_START: JobCheckpoint = { segment: 0, token: null, cursor: 0 };
+
+export const serializeCheckpoint = (checkpoint: JobCheckpoint): string =>
+  JSON.stringify(checkpoint);
+
+/**
+ * A checkpoint written before this format existed is a bare continuation token,
+ * which is exactly `{ segment: 0, token: <it>, cursor: 0 }` — the first segment,
+ * at the start of that page. So an upgrade resumes an in-flight job correctly
+ * instead of restarting it.
+ */
+export function parseCheckpoint(raw: string | null): JobCheckpoint {
+  if (raw === null || raw.length === 0) return CHECKPOINT_START;
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (isCheckpoint(parsed)) {
+      return { segment: parsed.segment, token: parsed.token, cursor: parsed.cursor };
+    }
+  } catch {
+    // Not JSON at all, so it is a token from the old format.
+  }
+  return { segment: 0, token: raw, cursor: 0 };
+}
+
+function isCheckpoint(value: unknown): value is JobCheckpoint {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate['segment'] === 'number' &&
+    typeof candidate['cursor'] === 'number' &&
+    (candidate['token'] === null || typeof candidate['token'] === 'string')
+  );
+}
+
 export const clampConcurrency = (value: number): number =>
   Math.min(JOB_CONCURRENCY_MAX, Math.max(JOB_CONCURRENCY_MIN, Math.trunc(value)));
 
@@ -765,13 +958,18 @@ export function outcomeFor(progress: JobProgress): JobStatus {
  *
  * `shouldStop` is checked before each item, so a pause or cancel takes effect
  * within one object rather than one page.
+ *
+ * It resolves with **how many items it started**, which — because it starts them
+ * in order and does not resolve until every started one has settled — is also how
+ * far into `items` the work is complete. That number is the within-page cursor a
+ * paused job writes to its checkpoint.
  */
 export function runWithPool<T>(
   items: readonly T[],
   limitOf: () => number,
   worker: (item: T) => Promise<void>,
   shouldStop: () => boolean,
-): Promise<void> {
+): Promise<number> {
   return new Promise((resolve, reject) => {
     let cursor = 0;
     let active = 0;
@@ -780,7 +978,7 @@ export function runWithPool<T>(
     const finish = (): void => {
       if (settled) return;
       settled = true;
-      resolve();
+      resolve(cursor);
     };
     const fail = (error: unknown): void => {
       if (settled) return;
