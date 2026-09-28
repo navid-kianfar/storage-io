@@ -45,11 +45,10 @@ import { ProviderMark } from '@/components/app/ProviderMark';
 import { Spinner } from '@/components/app/Spinner';
 import { useServerList } from '@/features/shell/api';
 import { toastProblem } from '@/lib/api/problems';
-import { downloadTextFile, timestampedFilename, toCsv } from '@/lib/csv';
+import { downloadBlob, timestampedFilename } from '@/lib/csv';
 import { useDialogs } from '@/lib/dialogs/useDialogs';
-import { useFormat } from '@/lib/format/FormatProvider';
-import { fetchAllBuckets, s3Uri, useBucketBulkAction, useBuckets } from './api';
-import { BUCKET_HIDDEN_COLUMNS, bucketColumns, quotaRatio } from './columns';
+import { fetchBucketsCsv, s3Uri, useBucketBulkAction, useBuckets } from './api';
+import { BUCKET_HIDDEN_COLUMNS, bucketColumns } from './columns';
 import { BucketAccessDialog } from './dialogs/BucketAccessDialog';
 import { BucketQuotaDialog } from './dialogs/BucketQuotaDialog';
 import { BucketTagsDialog } from './dialogs/BucketTagsDialog';
@@ -107,7 +106,6 @@ export function BucketsPage() {
   const { t: tDomain } = useTranslation('domain');
   const navigate = useNavigate();
   const dialogs = useDialogs();
-  const format = useFormat();
 
   const search: BucketsSearch = useSearch({ strict: false });
   const servers = useServerList();
@@ -251,38 +249,17 @@ export function BucketsPage() {
     [t],
   );
 
+  /**
+   * The API writes the CSV: `GET /buckets/export.csv` applies the same filters and
+   * streams every matching bucket, so the file is not limited to the page on screen.
+   */
   async function exportCsv(): Promise<void> {
     setExporting(true);
     try {
-      const all = await fetchAllBuckets(filters);
-      const header = [
-        t('buckets.column.bucket'),
-        t('buckets.column.server'),
-        t('buckets.column.region'),
-        t('buckets.column.objects'),
-        t('buckets.column.size'),
-        t('buckets.column.quota'),
-        t('buckets.column.access'),
-        t('buckets.column.versioning'),
-        t('buckets.column.created'),
-      ];
-      const rows = all.items.map((bucket) => {
-        const ratio = quotaRatio(bucket);
-        return [
-          bucket.name,
-          bucket.serverName,
-          bucket.region ?? '',
-          bucket.objects === null ? '' : format.number(bucket.objects),
-          bucket.sizeBytes === null ? '' : format.bytes(bucket.sizeBytes),
-          bucket.quota === null ? '' : format.bytes(bucket.quota.limitBytes),
-          ratio === null ? '' : format.percent(ratio),
-          tDomain(`access.${bucket.access}`),
-          tDomain(`versioning.${bucket.versioning}`),
-          bucket.createdAt === null ? '' : format.dateTime(bucket.createdAt, 'date'),
-        ];
-      });
-      downloadTextFile(timestampedFilename('buckets', 'csv'), toCsv([header, ...rows]));
-      toast.success(t('buckets.export.done', { count: all.items.length }));
+      const blob = await fetchBucketsCsv(filters);
+      const filename = timestampedFilename('buckets', 'csv');
+      downloadBlob(filename, blob);
+      toast.success(t('buckets.export.started'), { description: filename });
     } catch (error) {
       toastProblem(error, tCommon, t('buckets.export.failed'));
     } finally {

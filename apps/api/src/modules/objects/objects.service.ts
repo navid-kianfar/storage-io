@@ -576,6 +576,18 @@ export class ObjectsService {
   /**
    * Restoring a version copies it over the current one rather than deleting the
    * versions above it: the history stays intact, which is the point of having it.
+   *
+   * The copy names the same key as its own source, which not every driver accepts:
+   *
+   * - MinIO and AWS allow it, because `?versionId=` makes the source a different
+   *   object. That is the fast path — the bytes never leave the server.
+   * - SeaweedFS refuses it ("copy an object to itself"), and refuses the usual
+   *   escape of `MetadataDirective: REPLACE` too, because its gateway cannot parse
+   *   a `?versionId=` source in that path at all.
+   *
+   * So the copy is attempted, and a driver that will not do it gets the honest
+   * fallback: read that version and write it back. One object's bytes through the
+   * API is a fair price for a restore that works everywhere.
    */
   async restoreVersion(
     sid: string,
@@ -583,21 +595,68 @@ export class ObjectsService {
     request: RestoreVersionRequest,
   ): Promise<ObjectItem> {
     const context = this.storage.forServer(sid);
-    await context.client.send(
-      new CopyObjectCommand({
+    const source = await context.client.send(
+      new HeadObjectCommand({
         Bucket: bucket,
         Key: request.key,
-        CopySource: `${copySource(bucket, request.key)}?versionId=${encodeURIComponent(request.versionId)}`,
-        MetadataDirective: 'COPY',
-        TaggingDirective: 'COPY',
+        VersionId: request.versionId,
       }),
     );
+
+    try {
+      await context.client.send(
+        new CopyObjectCommand({
+          Bucket: bucket,
+          Key: request.key,
+          CopySource: `${copySource(bucket, request.key)}?versionId=${encodeURIComponent(request.versionId)}`,
+          MetadataDirective: 'COPY',
+          TaggingDirective: 'COPY',
+        }),
+      );
+    } catch (cause) {
+      this.logger.debug(
+        `Server-side restore of "${request.key}" was refused (${cause instanceof Error ? cause.message : 'unknown error'}); rewriting the version instead.`,
+      );
+      await this.rewriteVersion(context, bucket, request, source);
+    }
     this.noteWrite(context, bucket);
 
     const head = await context.client.send(
       new HeadObjectCommand({ Bucket: bucket, Key: request.key }),
     );
     return toItem(request.key, head);
+  }
+
+  /** Reads one version's bytes and writes them back as the current object. */
+  private async rewriteVersion(
+    context: StorageContext,
+    bucket: string,
+    request: RestoreVersionRequest,
+    source: HeadObjectCommandOutput,
+  ): Promise<void> {
+    const object = await context.client.send(
+      new GetObjectCommand({ Bucket: bucket, Key: request.key, VersionId: request.versionId }),
+    );
+    const body = object.Body;
+    if (!(body instanceof Readable)) {
+      throw new ProviderError('The server returned an empty body for that version.');
+    }
+
+    const tags = await this.readTags(context, bucket, request.key, request.versionId);
+    try {
+      await this.streams.upload(context.client, {
+        bucket,
+        key: request.key,
+        body,
+        contentType: source.ContentType ?? null,
+        metadata: { ...(source.Metadata ?? {}) },
+        tags,
+        storageClass: null,
+        contentLength: source.ContentLength ?? null,
+      });
+    } finally {
+      body.destroy();
+    }
   }
 
   /* --------------------------------- tags -------------------------- */

@@ -12,6 +12,8 @@ import {
   mockSettings,
 } from './fixtures';
 import { bucketHandlers } from './bucketHandlers';
+import { iamHandlers } from './iamHandlers';
+import { jobHandlers } from './jobHandlers';
 import { objectHandlers } from './objectHandlers';
 import { pageHandlers } from './pageHandlers';
 import { settingsHandlers } from './settingsHandlers';
@@ -60,6 +62,11 @@ export const handlers = [
   ...bucketHandlers,
   ...objectHandlers,
   ...settingsHandlers,
+
+  // The bulk-jobs and IAM (S3 users, groups, policies, access keys) endpoints,
+  // stateful for the same reason: those pages are flows, not screenshots.
+  ...jobHandlers,
+  ...iamHandlers,
 
   // The overview / first-run / servers / quotas pages' endpoints. These are the
   // stateful versions of `/servers` and `/dashboard`.

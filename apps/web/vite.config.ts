@@ -32,6 +32,15 @@ export default defineConfig({
         target: API_TARGET,
         changeOrigin: true,
       },
+      // The running API answers `/health` at the root rather than under the
+      // prefix, and Settings → About reads it. Without this the dev server
+      // answers with index.html and the version card reports the API as
+      // unreachable. In production the API serves the app, so no proxy is
+      // involved.
+      '/health': {
+        target: API_TARGET,
+        changeOrigin: true,
+      },
     },
   },
   preview: { port: 4174, strictPort: true },

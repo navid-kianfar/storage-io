@@ -242,7 +242,11 @@ function CreateBucketDialog({ params, onClose }: DialogProps) {
             hint={
               lockSupported
                 ? t('buckets.create.objectLockHint')
-                : t('buckets.create.objectLockNeedsVersioning')
+                : // Not "enable versioning first": versioning will not help, this
+                  // provider has no object lock at all.
+                  t('buckets.create.objectLockNotSupported', {
+                    provider: server?.provider ?? '',
+                  })
             }
           >
             <Switch

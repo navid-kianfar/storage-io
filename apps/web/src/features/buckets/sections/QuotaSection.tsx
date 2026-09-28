@@ -20,7 +20,7 @@ import { Spinner } from '@/components/app/Spinner';
 import { Switch } from '@/components/app/Switch';
 import { toastProblem } from '@/lib/api/problems';
 import { useBucketQuota, useSaveBucketQuota, type BucketRefParams } from '../api';
-import { SectionCard, sectionAvailability } from '../components/SectionCard';
+import { SectionCard } from '../components/SectionCard';
 
 /**
  * Quota. Two things make this section more than a number field:
@@ -28,6 +28,9 @@ import { SectionCard, sectionAvailability } from '../components/SectionCard';
  * - a provider without a native quota still gets one, stored by storage-io and
  *   enforced only as an alert (`Quota.native === false`). The badge says which of
  *   the two the operator is looking at, because "4 TB" means different things.
+ *   That is why this section is never "not supported": `bucketQuota` says whether
+ *   the *driver* has one, and the API answers `PUT …/quota` either way. Only an
+ *   offline server has nothing to show.
  * - the usage figures come from the same response, so the meter and the limit can
  *   never disagree.
  */
@@ -46,7 +49,10 @@ export function QuotaSection({
   const { t } = useTranslation('pages');
   const { t: tDomain } = useTranslation('domain');
 
-  const availability = sectionAvailability(server, 'bucketQuota', loading);
+  // Deliberately not gated on the `bucketQuota` capability: a driver without a
+  // native quota still accepts an alert-only one, which is what /quotas lists and
+  // what the create dialog offers.
+  const availability = server?.status === 'offline' ? 'offline' : loading ? 'loading' : 'ready';
   const quotaQuery = useBucketQuota(bucketRef, availability === 'ready');
   const saved = quotaQuery.data;
   const quota = saved?.quota ?? null;

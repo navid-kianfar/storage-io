@@ -1,3 +1,7 @@
+import {
+  OBJECT_BATCH_MAX_KEYS,
+  type ObjectBatchAction,
+} from '@storage-io/contracts';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import {
   ArchiveIcon,
@@ -11,6 +15,7 @@ import {
   FolderPlusIcon,
   FolderUpIcon,
   GaugeIcon,
+  GavelIcon,
   GitBranchIcon,
   GlobeIcon,
   InfoIcon,
@@ -64,6 +69,7 @@ import { enqueueDownload, enqueueUploads, recordCompletedDownload } from '@/feat
 import { toastProblem } from '@/lib/api/problems';
 import { downloadBlob } from '@/lib/csv';
 import { useDialogs } from '@/lib/dialogs/useDialogs';
+import { useRecentBuckets } from '@/stores/recentBuckets';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { objectContentUrl, useDownloadZip, useObjectListing, useObjectMeta } from './api';
@@ -74,6 +80,7 @@ import { ObjectInspector } from './components/ObjectInspector';
 import { ObjectListing, type ListingView } from './components/ObjectListing';
 import { PathBar } from './components/PathBar';
 import { UploadPanel } from './components/UploadPanel';
+import { BatchActionDialog } from './dialogs/BatchActionDialog';
 import { CopyMoveDialog } from './dialogs/CopyMoveDialog';
 import { DeleteObjectsDialog } from './dialogs/DeleteObjectsDialog';
 import { EditContentsSheet } from './dialogs/EditContentsSheet';
@@ -181,6 +188,26 @@ export function ObjectBrowserPage() {
   const bucket = useBucketDetail(scope);
   const versioned = bucket.data?.versioning === 'enabled';
 
+  // A provider that cannot do it at all should not offer it: MinIO has no CORS,
+  // SeaweedFS has no storage classes and no object lock. The API would answer 409
+  // NOT_SUPPORTED, which is a worse way to learn the same thing.
+  const storageClassesSupported = server?.capabilities.storageClasses !== 'not_supported';
+  const objectLockSupported = server?.capabilities.objectLock !== 'not_supported';
+
+  // Remembered for the /browse picker. It waits for the detail, because that is
+  // what proves the bucket exists and gives the server's id rather than whatever
+  // the URL happened to name it.
+  const rememberVisit = useRecentBuckets((state) => state.visit);
+  const visited = bucket.data;
+  useEffect(() => {
+    if (visited === undefined) return;
+    rememberVisit({
+      serverId: visited.serverId,
+      serverName: visited.serverName,
+      bucket: visited.name,
+    });
+  }, [visited, rememberVisit]);
+
   const [searchText, setSearchText] = useState(filterText);
   useEffect(() => {
     if (searchText === filterText) return;
@@ -276,10 +303,13 @@ export function ObjectBrowserPage() {
   const [copyMode, setCopyMode] = useState<'copy' | 'move' | null>(null);
   const [copyTargets, setCopyTargets] = useState<readonly Entry[]>([]);
   const [deleteTargets, setDeleteTargets] = useState<readonly Entry[]>([]);
+  const [batchAction, setBatchAction] = useState<ObjectBatchAction | null>(null);
   const [renameKey, setRenameKey] = useState<string | null>(null);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [metadataOpen, setMetadataOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  // A link that names an object (`?obj=`) is a link to that object: opening it
+  // should show the object, not the folder with the inspector collapsed.
+  const [inspectorOpen, setInspectorOpen] = useState(activeKey !== null);
 
   const zip = useDownloadZip(scope);
 
@@ -345,12 +375,31 @@ export function ObjectBrowserPage() {
     );
   }, [downloadEntry, scope, selectedEntries, server?.name, t, tCommon, zip]);
 
+  /** The explicit object keys in the selection; a folder is not one of them. */
+  const selectedKeys = useMemo(
+    () =>
+      selectedEntries
+        .filter((entry) => entry.kind === 'object')
+        .map((entry) => (entry.kind === 'object' ? entry.object.key : '')),
+    [selectedEntries],
+  );
+  const selectionHasFolders = useMemo(
+    () => selectedEntries.some((entry) => entry.kind === 'prefix'),
+    [selectedEntries],
+  );
+
+  /**
+   * A metadata change over the selection goes straight to the API when it is a set
+   * the operator can wait for: at most 1000 explicit keys, no folders. Anything
+   * larger describes work that outlives a dialog, so it becomes a job.
+   */
+  const batchable =
+    !selectionHasFolders && selectedKeys.length > 0 && selectedKeys.length <= OBJECT_BATCH_MAX_KEYS;
+
   /** Hands a selection to the job engine: one request describes the whole set. */
   const runAsJob = useCallback(
     (jobType?: 'tag' | 'storage-class' | 'retention') => {
-      const keys = selectedEntries
-        .filter((entry) => entry.kind === 'object')
-        .map((entry) => (entry.kind === 'object' ? entry.object.key : ''));
+      const keys = selectedKeys;
       dialogs.open('new-job', {
         server: scope.serverId,
         bucket: scope.bucket,
@@ -359,7 +408,21 @@ export function ObjectBrowserPage() {
         ...(jobType === undefined ? {} : { type: jobType }),
       });
     },
-    [dialogs, prefix, scope.bucket, scope.serverId, selectedEntries],
+    [dialogs, prefix, scope.bucket, scope.serverId, selectedKeys],
+  );
+
+  /** One entry point for the four metadata actions: batch now, or job wizard. */
+  const applyToSelection = useCallback(
+    (action: ObjectBatchAction) => {
+      if (batchable) {
+        setBatchAction(action);
+        return;
+      }
+      // The job engine has no legal-hold type of its own; it is a retention job.
+      const jobType = action === 'tags' ? 'tag' : action === 'legal-hold' ? 'retention' : action;
+      runAsJob(jobType);
+    },
+    [batchable, runAsJob],
   );
 
   const copyShareLinks = useCallback(() => {
@@ -705,18 +768,28 @@ export function ObjectBrowserPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuItem onSelect={() => runAsJob('tag')}>
+                  <DropdownMenuItem onSelect={() => applyToSelection('tags')}>
                     <TagsIcon />
                     {t('browse.bulk.editTags')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => runAsJob('storage-class')}>
-                    <ArchiveIcon />
-                    {t('browse.bulk.storageClass')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => runAsJob('retention')}>
-                    <LockIcon />
-                    {t('browse.bulk.retention')}
-                  </DropdownMenuItem>
+                  {storageClassesSupported ? (
+                    <DropdownMenuItem onSelect={() => applyToSelection('storage-class')}>
+                      <ArchiveIcon />
+                      {t('browse.bulk.storageClass')}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {objectLockSupported ? (
+                    <>
+                      <DropdownMenuItem onSelect={() => applyToSelection('retention')}>
+                        <LockIcon />
+                        {t('browse.bulk.retention')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => applyToSelection('legal-hold')}>
+                        <GavelIcon />
+                        {t('browse.bulk.legalHold')}
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
                   <DropdownMenuItem onSelect={copyShareLinks}>
                     <LinkIcon />
                     {t('browse.bulk.shareLinks')}
@@ -927,6 +1000,16 @@ export function ObjectBrowserPage() {
           setSelected(EMPTY_SELECTION);
           setSearch({ obj: undefined });
         }}
+      />
+
+      <BatchActionDialog
+        action={batchAction}
+        scope={scope}
+        keys={selectedKeys}
+        onOpenChange={(open) => {
+          if (!open) setBatchAction(null);
+        }}
+        onApplied={() => setSelected(EMPTY_SELECTION)}
       />
 
       {renameKey === null ? null : (

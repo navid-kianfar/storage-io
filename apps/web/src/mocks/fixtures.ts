@@ -228,6 +228,7 @@ export const mockJobs: readonly Job[] = [
         glob: null,
         tags: {},
       },
+      keyCount: null,
     },
     target: {
       serverId: mockServers[1]!.id,

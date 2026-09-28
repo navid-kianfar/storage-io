@@ -45,6 +45,15 @@ export const queryKeys = {
       [...queryKeys.objects.all, 'meta', serverId, bucket, key, versionId ?? null] as const,
     versions: (serverId: string, bucket: string, key: string) =>
       [...queryKeys.objects.all, 'versions', serverId, bucket, key] as const,
+    archiveEntries: (serverId: string, bucket: string, key: string, versionId?: string) =>
+      [
+        ...queryKeys.objects.all,
+        'archive-entries',
+        serverId,
+        bucket,
+        key,
+        versionId ?? null,
+      ] as const,
   },
   iam: {
     all: ['iam'] as const,

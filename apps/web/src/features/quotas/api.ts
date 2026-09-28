@@ -58,39 +58,11 @@ export function useSetQuota(): UseMutationResult<SetQuotaResponse, Error, SetQuo
   });
 }
 
-/** `GET /quotas/export.csv` is not in the contract, so the CSV is built client-side. */
-export function quotaRowsToCsv(
-  rows: readonly {
-    readonly server: string;
-    readonly bucket: string;
-    readonly usedBytes: number | null;
-    readonly limitBytes: number | null;
-    readonly usageRatio: number | null;
-    readonly mode: string;
-    readonly threshold: number | null;
-    readonly support: string;
-  }[],
-  headers: readonly string[],
-): string {
-  const escape = (value: string | number | null): string => {
-    if (value === null) return '';
-    const text = String(value);
-    return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-  };
-  const lines = [headers.map(escape).join(',')];
-  for (const row of rows) {
-    lines.push(
-      [
-        escape(row.server),
-        escape(row.bucket),
-        escape(row.usedBytes),
-        escape(row.limitBytes),
-        escape(row.usageRatio),
-        escape(row.mode),
-        escape(row.threshold),
-        escape(row.support),
-      ].join(','),
-    );
-  }
-  return lines.join('\n');
+/**
+ * The CSV export. `GET /quotas/export.csv` takes the same filters as the list, so
+ * the file holds every bucket the filters match — not just the page on screen,
+ * which is all a browser-built CSV could have known about.
+ */
+export function fetchQuotasCsv(filters: ListQuotasQuery): Promise<Blob> {
+  return api.blob('/quotas/export.csv', { ...filters });
 }

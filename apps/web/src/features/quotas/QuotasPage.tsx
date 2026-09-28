@@ -1,5 +1,6 @@
 import {
   QUOTA_FILTERS,
+  type ListQuotasQuery,
   type QuotaFilter,
   type QuotaRow,
   type QuotaSupport,
@@ -52,6 +53,7 @@ import {
   Skeleton,
   Sparkline,
   StatusDot,
+  Spinner,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -59,9 +61,10 @@ import {
   type ComboboxOption,
   type SegmentedOption,
 } from '@/components/app';
-import { quotaRowsToCsv, useQuotas } from '@/features/quotas/api';
+import { fetchQuotasCsv, useQuotas } from '@/features/quotas/api';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
+import { downloadBlob, timestampedFilename } from '@/lib/csv';
 import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { useFormat } from '@/lib/format/FormatProvider';
 
@@ -80,7 +83,6 @@ import '@/features/quotas/dialogs/EditQuotaDialog';
  * after the operator had already been told it worked.
  */
 
-const CSV_MIME = 'text/csv;charset=utf-8';
 
 interface QuotasSearch {
   readonly q?: string;
@@ -169,42 +171,30 @@ export function QuotasPage() {
     [t],
   );
 
+  const [exporting, setExporting] = useState(false);
+
+  /**
+   * The API writes the CSV. `GET /quotas/export.csv` takes the same filters, so the
+   * file covers every matching bucket rather than the page being looked at.
+   */
   const exportCsv = useCallback(() => {
-    if (rows.length === 0) {
-      toast.error(t('quotas.export.nothing'));
-      return;
-    }
-    const csv = quotaRowsToCsv(
-      rows.map((row) => ({
-        server: row.bucket.serverName,
-        bucket: row.bucket.name,
-        usedBytes: row.bucket.sizeBytes,
-        limitBytes: row.bucket.quota?.limitBytes ?? null,
-        usageRatio: row.usageRatio,
-        mode: row.bucket.quota?.mode ?? '',
-        threshold: row.bucket.quota?.threshold ?? null,
-        support: row.supported,
-      })),
-      [
-        t('quotas.column.server'),
-        t('quotas.column.bucket'),
-        t('quotas.column.usedBytes'),
-        t('quotas.column.limitBytes'),
-        t('quotas.column.usageRatio'),
-        t('quotas.column.enforcement'),
-        t('quotas.column.alertAt'),
-        t('quotas.column.support'),
-      ],
-    );
-    const blob = new Blob([csv], { type: CSV_MIME });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `quotas-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success(t('quotas.export.done'), { description: link.download });
-  }, [rows, t]);
+    setExporting(true);
+    const filters: ListQuotasQuery = {
+      filter,
+      ...(query.length > 0 ? { q: query } : {}),
+      ...(serverId === null ? {} : { serverId }),
+    };
+    fetchQuotasCsv(filters)
+      .then((blob) => {
+        const filename = timestampedFilename('quotas', 'csv');
+        downloadBlob(filename, blob);
+        toast.success(t('quotas.export.done'), { description: filename });
+      })
+      .catch((error: unknown) => {
+        apiError.toastError(error, t('quotas.export.failed'));
+      })
+      .finally(() => setExporting(false));
+  }, [apiError, filter, query, serverId, t]);
 
   const openEdit = useCallback(
     (row: QuotaRow) =>
@@ -453,8 +443,8 @@ export function QuotasPage() {
         description={t('quotas.description')}
         actions={
           <>
-            <Button variant="outline" onClick={exportCsv}>
-              <FileDownIcon />
+            <Button variant="outline" onClick={exportCsv} disabled={exporting}>
+              {exporting ? <Spinner /> : <FileDownIcon />}
               {tCommon('table.exportCsv')}
             </Button>
             <Button onClick={() => dialogs.openHere('edit-quota')}>

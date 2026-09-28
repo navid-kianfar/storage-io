@@ -12,12 +12,10 @@ import { z } from 'zod';
 import { AppShell } from '@/components/shell/AppShell';
 import type { RouteCrumbData } from '@/components/shell/Breadcrumbs';
 import { LoginPage } from '@/features/auth/LoginPage';
-import { i18next } from '@/i18n';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query/keys';
 import { NotFoundPage } from '@/pages/NotFoundPage';
-import { PlaceholderPage } from '@/pages/PlaceholderPage';
 
 /**
  * Code-based routes (not the file-based generator), as docs/ARCHITECTURE.md
@@ -67,48 +65,59 @@ const loginRoute = createRoute({
  * Everything below here needs a session. The check is a `beforeLoad` on the layout
  * route, so a protected page never renders and then vanishes; a later 401 from any
  * request is handled by the API client's unauthorized handler.
+ *
+ * There are two such layouts: the app shell, and the bare first-run chrome. The
+ * guard is one function shared by both, so a route cannot end up protected by one
+ * and not the other.
  */
+async function requireSession({
+  context,
+  location,
+}: {
+  readonly context: RouterContext;
+  readonly location: { readonly href: string };
+}): Promise<void> {
+  try {
+    await context.queryClient.ensureQueryData({
+      queryKey: queryKeys.auth.me(),
+      queryFn: () => api.get<Me>('/auth/me'),
+      retry: false,
+      staleTime: Number.POSITIVE_INFINITY,
+    });
+  } catch (error) {
+    if (isApiError(error) && (error.status === 401 || error.status === 403)) {
+      // TanStack's `redirect()` is a control-flow signal the router unwraps; it is
+      // deliberately not an Error subclass.
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect({ to: '/login', search: { redirect: location.href }, replace: true });
+    }
+    // A network or 5xx failure is not an auth failure: let the shell render and
+    // report it, rather than bouncing the operator to a login they do not need.
+  }
+}
+
 const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'protected',
-  beforeLoad: async ({ context, location }) => {
-    try {
-      await context.queryClient.ensureQueryData({
-        queryKey: queryKeys.auth.me(),
-        queryFn: () => api.get<Me>('/auth/me'),
-        retry: false,
-        staleTime: Number.POSITIVE_INFINITY,
-      });
-    } catch (error) {
-      if (isApiError(error) && (error.status === 401 || error.status === 403)) {
-        // TanStack's `redirect()` is a control-flow signal the router unwraps; it is
-        // deliberately not an Error subclass.
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw redirect({ to: '/login', search: { redirect: location.href }, replace: true });
-      }
-      // A network or 5xx failure is not an auth failure: let the shell render and
-      // report it, rather than bouncing the operator to a login they do not need.
-    }
-  },
+  beforeLoad: requireSession,
   component: AppShell,
 });
 
-/** i18next is initialised in main.tsx, so page titles have to be read lazily. */
-function pageText(key: string): string {
-  return i18next.t(key, { ns: 'pages' });
-}
-
-function placeholder(page: string, components: readonly string[]) {
-  return function PlaceholderRoute() {
-    return (
-      <PlaceholderPage
-        title={pageText(`${page}.title`)}
-        description={pageText(`${page}.description`)}
-        components={components}
-      />
-    );
-  };
-}
+/**
+ * The first-run layout: signed in, but no sidebar and no top bar. `/welcome` runs
+ * before any server exists, so the shell would be a menu of things that do not
+ * work yet — the concept's `setup.html` draws it as a logo bar and a centred
+ * wizard, and this is that.
+ */
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'setup',
+  beforeLoad: requireSession,
+  component: lazyRouteComponent(
+    () => import('@/features/welcome/WelcomeLayout'),
+    'WelcomeLayout',
+  ),
+});
 
 const overviewRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -121,7 +130,7 @@ const overviewRoute = createRoute({
 });
 
 const welcomeRoute = createRoute({
-  getParentRoute: () => protectedRoute,
+  getParentRoute: () => setupRoute,
   path: '/welcome',
   staticData: { crumb: 'welcome.title' },
   component: lazyRouteComponent(() => import('@/features/welcome/WelcomePage'), 'WelcomePage'),
@@ -168,7 +177,10 @@ const browseRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/browse',
   staticData: { crumb: 'browse.title' },
-  component: placeholder('browse', ['Combobox', 'EmptyState', 'DataTable']),
+  component: lazyRouteComponent(
+    () => import('@/features/objects/BucketPickerPage'),
+    'BucketPickerPage',
+  ),
 });
 
 const browsePrefixRoute = createRoute({
@@ -194,14 +206,7 @@ const jobsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/jobs',
   staticData: { crumb: 'jobs.title' },
-  component: placeholder('jobs', [
-    'DataTable',
-    'Meter',
-    'JobStatusBadge',
-    'useStepper',
-    'DateRangePicker',
-    'CodeEditor',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/jobs/JobsPage'), 'JobsPage'),
 });
 
 const transfersRoute = createRoute({
@@ -218,72 +223,42 @@ const usersRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/users',
   staticData: { crumb: 'users.title' },
-  component: placeholder('users', [
-    'DataTable',
-    'UserStatusBadge',
-    'Combobox',
-    'ConfirmDialog',
-    'CopyField',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/iam/UsersPage'), 'UsersPage'),
 });
 
 const policiesRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/policies',
   staticData: { crumb: 'policies.title' },
-  component: placeholder('policies', [
-    'CodeEditor',
-    'DataTable',
-    'ConfirmDialog',
-    'SegmentedControl',
-    'EmptyState',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/iam/PoliciesPage'), 'PoliciesPage'),
 });
 
 const keysRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/keys',
   staticData: { crumb: 'keys.title' },
-  component: placeholder('keys', [
-    'DataTable',
-    'AccessKeyStatusBadge',
-    'DatePicker',
-    'CopyField',
-    'ConfirmDialog',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/iam/KeysPage'), 'KeysPage'),
 });
 
 const activityRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/activity',
   staticData: { crumb: 'activity.title' },
-  component: placeholder('activity', [
-    'DataTable',
-    'DateRangePicker',
-    'Combobox',
-    'CodeEditor',
-    'RelativeTime',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/activity/ActivityPage'), 'ActivityPage'),
 });
 
 const settingsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/settings',
   staticData: { crumb: 'settings.title' },
-  component: placeholder('settings', [
-    'SegmentedControl',
-    'ChoiceCards',
-    'Combobox',
-    'CopyField',
-    'ConfirmDialog',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/settings/SettingsPage'), 'SettingsPage'),
 });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  setupRoute.addChildren([welcomeRoute]),
   protectedRoute.addChildren([
     overviewRoute,
-    welcomeRoute,
     serversRoute,
     serverDetailRoute,
     bucketsRoute,

@@ -15,6 +15,7 @@ import {
   useServerList,
   useSettings,
 } from '@/features/shell/api';
+import { useEngineSettings } from '@/features/transfers/useEngineSettings';
 import { FormatProvider } from '@/lib/format/FormatProvider';
 import { useEventStream } from '@/lib/events/useEventStream';
 import { hasPaletteModifier } from '@/lib/platform';
@@ -40,6 +41,8 @@ export function AppShell({ children }: { readonly children?: ReactNode }) {
   const logout = useLogout();
 
   useEventStream({ enabled: me.isSuccess });
+  // The transfer engine outlives every page, so its settings are applied here.
+  useEngineSettings();
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
 
@@ -89,6 +92,7 @@ export function AppShell({ children }: { readonly children?: ReactNode }) {
             unread={notifications.data?.unread ?? 0}
             notificationsLoading={notifications.isLoading}
             onMarkAllRead={() => markAllRead.mutate('all')}
+            onMarkNotificationRead={(id) => markAllRead.mutate([id])}
             markingAllRead={markAllRead.isPending}
             onOpenCommandPalette={openPalette}
           />

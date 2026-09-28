@@ -576,7 +576,8 @@
       "accessCustomHint": "Edit JSON after creating",
       "submit": "Create bucket",
       "created": "Bucket created",
-      "failed": "The bucket could not be created"
+      "failed": "The bucket could not be created",
+      "objectLockNotSupported": "{{provider}} has no object lock, so retention cannot be enforced on this bucket."
     },
     "delete": {
       "title": "Delete bucket?",
@@ -954,7 +955,8 @@
       "retention": "Set retention",
       "shareLinks": "Copy share links",
       "asJob": "Run as bulk job…",
-      "delete": "Delete"
+      "delete": "Delete",
+      "legalHold": "Legal hold…"
     },
     "row": {
       "actions": "Object actions",
@@ -1016,7 +1018,12 @@
       "objectsInFolder_one": "1 object",
       "objectsInFolder_other": "{{count}} objects",
       "tagsLimit_one": "One tag per object.",
-      "tagsLimit_other": "Up to {{count}} tags per object. Tags drive lifecycle rules and policies."
+      "tagsLimit_other": "Up to {{count}} tags per object. Tags drive lifecycle rules and policies.",
+      "archiveUnsupported": "This archive format cannot be listed without downloading it.",
+      "archiveEmpty": "This archive is empty.",
+      "archiveCount_one": "1 entry",
+      "archiveCount_other": "{{count}} entries",
+      "archiveTruncated": "Only the first entries are shown — the archive is larger than the preview reads."
     },
     "metadataDialog": {
       "title": "Edit metadata",
@@ -1078,7 +1085,8 @@
       "save": "Save",
       "saved": "Saved as a new version",
       "tooLarge": "This object is too large to edit in the browser ({{size}}).",
-      "binary": "This object does not look like text."
+      "binary": "This object does not look like text.",
+      "savedReplaced": "Saved, replacing the object"
     },
     "delete": {
       "titleOne": "Delete this object?",
@@ -1152,6 +1160,50 @@
       "queued": "Queued",
       "finished_one": "1 upload finished",
       "finished_other": "{{count}} uploads finished"
+    },
+    "picker": {
+      "description": "Pick a server and a bucket, or carry on where you left off.",
+      "title": "Open a bucket",
+      "hint": "The object browser works inside one bucket at a time.",
+      "browse": "Browse",
+      "recent": "Recent buckets",
+      "recentHint": "The buckets this browser opened last.",
+      "noRecent": "Nothing opened yet",
+      "noRecentHint": "Buckets you open show up here.",
+      "noServers": "No servers are connected",
+      "noServersHint": "Connect an S3 server before browsing objects.",
+      "noBuckets": "No buckets exist on any connected server yet.",
+      "noBucketsOnServer": "This server has no buckets.",
+      "forget": "Remove {{bucket}} from recent buckets",
+      "server": "Server",
+      "bucket": "Bucket"
+    },
+    "batch": {
+      "title": {
+        "tags_one": "Edit tags on 1 object",
+        "tags_other": "Edit tags on {{count}} objects",
+        "storage-class_one": "Storage class for 1 object",
+        "storage-class_other": "Storage class for {{count}} objects",
+        "retention_one": "Retention for 1 object",
+        "retention_other": "Retention for {{count}} objects",
+        "legal-hold_one": "Legal hold on 1 object",
+        "legal-hold_other": "Legal hold on {{count}} objects"
+      },
+      "description_one": "The change is applied to the selected object right away.",
+      "description_other": "The change is applied to the {{count}} selected objects right away.",
+      "apply": "Apply",
+      "applied_one": "1 object updated",
+      "applied_other": "{{count}} objects updated",
+      "partial": "{{updated}} updated, {{failed}} failed",
+      "failed": "The change could not be applied",
+      "tagsHint": "These tags replace the tags on every selected object.",
+      "storageClassHint": "Objects are rewritten in place; large objects take longer.",
+      "retentionMode": "Mode",
+      "governance": "Governance — a privileged user can shorten it",
+      "compliance": "Compliance — nobody can shorten it",
+      "retainUntil": "Retain until",
+      "complianceWarning": "A compliance retention cannot be shortened or removed by anyone, including the root account, until it expires.",
+      "legalHoldOn": "Place a legal hold"
     }
   },
   "quotas": {
@@ -1219,7 +1271,8 @@
     },
     "export": {
       "done": "Export ready",
-      "nothing": "There is nothing to export."
+      "nothing": "There is nothing to export.",
+      "failed": "The quota export could not be created"
     },
     "edit": {
       "title": "Edit quota",
@@ -1251,7 +1304,261 @@
   },
   "jobs": {
     "title": "Bulk jobs",
-    "description": "Copy, move, delete, tag and retention work running in the background."
+    "description": "Copy, move, delete or re-tag millions of objects without keeping a browser open.",
+    "more": "More",
+    "newJob": "New bulk job",
+    "newSchedule": "New schedule",
+    "pauseAll": "Pause all jobs",
+    "exportHistory": "Export history",
+    "jobDefaults": "Job defaults",
+    "noRunningJobs": "No job is running right now.",
+    "moreActions": "More actions",
+    "actionsFor": "Actions for {{name}}",
+    "pause": "Pause",
+    "resume": "Resume",
+    "viewLog": "View log",
+    "cancelJob": "Cancel job",
+    "copyId": "Copy job ID",
+    "changeConcurrency": "Change concurrency",
+    "saveAsSchedule": "Save as schedule",
+    "runNow": "Run now",
+    "runAgain": "Run again",
+    "duplicateAsSchedule": "Duplicate as a schedule",
+    "deleteRecord": "Delete this record",
+    "serverHealth": "Server health",
+    "dryRunBadge": "Dry run",
+    "listing": "Listing…",
+    "progressOf": "Progress of {{name}}",
+    "waitingFor": "Waiting for",
+    "tab": {
+      "active": "Active",
+      "scheduled": "Scheduled",
+      "history": "History"
+    },
+    "stat": {
+      "objectsPerSec": "Objects / s",
+      "throughput": "Throughput",
+      "eta": "ETA",
+      "failed": "Failed",
+      "transferred": "Transferred",
+      "started": "Started"
+    },
+    "waitingAlert": {
+      "title_one": "One job is waiting for a server",
+      "title_other": "{{count}} jobs are waiting for a server"
+    },
+    "column": {
+      "job": "Job",
+      "type": "Operation",
+      "schedule": "Schedule",
+      "nextRun": "Next run",
+      "lastRun": "Last run",
+      "enabled": "Enabled",
+      "status": "Status",
+      "objects": "Objects",
+      "failed": "Failed",
+      "size": "Size",
+      "duration": "Duration",
+      "started": "Started",
+      "finished": "Finished"
+    },
+    "cron": {
+      "everyMinute": "Every minute",
+      "everyNMinutes": "Every {{count}} minutes",
+      "hourly": "Every hour at minute {{minute}}",
+      "everyNHours": "Every {{count}} hours",
+      "daily": "Every day at {{time}}",
+      "weekdays": "Every weekday at {{time}}",
+      "weekly": "Every {{weekday}} at {{time}}",
+      "monthly": "Day {{day}} of every month at {{time}}"
+    },
+    "scheduled": {
+      "title": "Scheduled jobs",
+      "description": "Recurring jobs run on the server, even when nobody is signed in."
+    },
+    "history": {
+      "title": "Finished jobs",
+      "description": "Everything that has already run, newest first.",
+      "deleteTitle": "Delete this job record?",
+      "deleteDescription": "The record and its log are removed. Objects the job already wrote are untouched.",
+      "searchPlaceholder": "Search finished jobs…",
+      "allOperations": "All operations",
+      "anyResult": "Any result"
+    },
+    "schedule": {
+      "edit": "Edit schedule",
+      "editTitle": "Edit schedule",
+      "editDescription": "Change when this job runs. The next run is recalculated as soon as you save.",
+      "delete": "Delete schedule",
+      "deleteTitle": "Delete this schedule?",
+      "deleteDescription": "The schedule stops running. Its past runs stay in the history.",
+      "runHistory": "Run history",
+      "noRuns": "This schedule has not run yet",
+      "toggleFor": "Enable the schedule {{name}}"
+    },
+    "concurrency": {
+      "description": "Applied to the running job straight away — it is not restarted."
+    },
+    "log": {
+      "stream": "Log stream",
+      "follow": "Follow",
+      "download": "Download log",
+      "empty": "No log lines yet",
+      "progress": "Progress",
+      "levelFilter": "Filter the log by level",
+      "level": {
+        "all": "All",
+        "error": "Errors"
+      },
+      "failedObjects": "Failed objects",
+      "showingFailures": "Showing {{shown}} of {{total}} failed objects"
+    },
+    "cancel": {
+      "title": "Cancel this job?",
+      "description": "Objects already processed stay as they are — nothing is rolled back. The job cannot be resumed after it is cancelled.",
+      "keepRunning": "Keep running",
+      "job": "Job",
+      "processed": "Processed",
+      "transferred": "Transferred"
+    },
+    "empty": {
+      "activeTitle": "Nothing is running",
+      "activeDescription": "Start a bulk job and it keeps going on the server after you close this page.",
+      "scheduledTitle": "No schedules yet",
+      "scheduledDescription": "A recurring job runs on the server on its own timetable.",
+      "historyTitle": "No finished jobs yet",
+      "historyDescription": "Jobs appear here once they complete, fail or are cancelled."
+    },
+    "export": {
+      "nothing": "There is nothing to export."
+    },
+    "toast": {
+      "paused": "Job paused",
+      "resumed": "Job resumed",
+      "cancelled": "Job cancelled",
+      "queued": "Job queued",
+      "started": "Bulk job started",
+      "scheduled": "Job scheduled",
+      "startFailed": "The job could not be started",
+      "commandFailed": "That did not work",
+      "concurrencyChanged": "Concurrency changed",
+      "concurrencyFailed": "Concurrency could not be changed",
+      "scheduleSaved": "Schedule saved",
+      "scheduleSaveFailed": "The schedule could not be saved",
+      "enabled": "Schedule enabled",
+      "disabled": "Schedule disabled",
+      "duplicated": "Job queued again",
+      "savedAsSchedule": "Saved as a schedule",
+      "duplicateFailed": "The job could not be duplicated",
+      "deleted": "Deleted",
+      "deleteFailed": "That could not be deleted",
+      "copyFailed": "The clipboard is not available"
+    },
+    "wizard": {
+      "title": "New bulk job",
+      "description": "Runs server-side against one source prefix. You can close this window once it starts.",
+      "step": {
+        "operation": "Operation",
+        "scope": "Scope",
+        "options": "Options",
+        "review": "Review"
+      },
+      "name": "Job name",
+      "typeHint": {
+        "copy": "Keep the source objects",
+        "move": "Copy, verify, then delete",
+        "delete": "Objects or noncurrent versions",
+        "tag": "Add or replace object tags",
+        "storage-class": "STANDARD, GLACIER and friends",
+        "retention": "Object lock governance or compliance",
+        "restore-versions": "Make an earlier version current"
+      },
+      "destructiveNote": "This operation cannot be undone once it starts, so a dry run is enabled by default.",
+      "sourceServer": "Source server",
+      "sourceBucket": "Source bucket",
+      "pickServer": "Pick a server",
+      "pickBucket": "Pick a bucket",
+      "prefix": "Prefix",
+      "prefixHint": "Leave empty to match the whole bucket.",
+      "filters": "Filters",
+      "filtersHint": "All filters must match. Leave a field empty to ignore it.",
+      "modifiedAfter": "Modified after",
+      "modifiedBefore": "Modified before",
+      "minSize": "Minimum size",
+      "maxSize": "Maximum size",
+      "glob": "Name matches",
+      "globHint": "Glob pattern on the object key",
+      "tagFilters": "Tag matches",
+      "tagFiltersHint": "Every pair must be present on the object",
+      "estimatedScope": "Estimated scope",
+      "noEstimate": "Not counted yet",
+      "partial": "partial count",
+      "recount": "Recount",
+      "estimateFailed": "The source could not be counted",
+      "targetServer": "Target server",
+      "targetBucket": "Target bucket",
+      "targetPrefix": "Target prefix",
+      "targetPrefixHint": "Only used by Copy and Move.",
+      "tagsToApply": "Tags to apply",
+      "tagsToApplyHint": "Added to every matching object",
+      "storageClass": "Storage class",
+      "storageClassHint": "The class name the storage server itself uses",
+      "retentionMode": "Retention mode",
+      "retentionDays": "Retention (days)",
+      "retention": {
+        "GOVERNANCE": "Governance",
+        "COMPLIANCE": "Compliance"
+      },
+      "onConflict": "On conflict",
+      "conflict": {
+        "skip": "Skip",
+        "skipHint": "Leave the target object",
+        "overwrite": "Overwrite",
+        "overwriteHint": "Replace the target object",
+        "rename": "Keep both",
+        "renameHint": "Add a numeric suffix"
+      },
+      "concurrency": "Concurrency",
+      "concurrencyHint": "Higher values finish sooner but add load to both servers.",
+      "parallel": "parallel",
+      "dryRun": "Dry run first",
+      "dryRunHint": "Lists everything that would change, without touching an object",
+      "includeVersions": "Include noncurrent versions",
+      "includeVersionsHint": "Acts on every version, not only the current one",
+      "scheduleLabel": "Schedule",
+      "schedule": {
+        "now": "Run now",
+        "at": "Once, later",
+        "cron": "Recurring",
+        "save": "Save schedule"
+      },
+      "startAt": "Start at",
+      "cronExpression": "Cron expression",
+      "cronInvalid": "That is not five cron fields.",
+      "start": "Start job",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "review": {
+        "operation": "Operation",
+        "source": "Source",
+        "target": "Target",
+        "filters": "Filters",
+        "noFilters": "No filters — the whole prefix",
+        "estimate": "Estimated scope",
+        "destructiveTitle": "This cannot be undone",
+        "destructiveGeneric": "Objects this job touches cannot be restored from storage-io afterwards.",
+        "destructiveBody": {
+          "delete": "Deleted objects are gone. On a versioned bucket a delete marker is written instead, unless noncurrent versions are included.",
+          "move": "Source objects are deleted once the copy is verified.",
+          "retention": "A compliance retention cannot be shortened or removed by anyone, including the storage server's own administrator.",
+          "empty-bucket": "Every object in the bucket is deleted."
+        },
+        "acknowledge": "I understand what this job will do",
+        "acknowledgeHint": "A dry run lists every change first without touching an object."
+      }
+    },
+    "failedObjects_one": "{{count}} object failed",
+    "failedObjects_other": "{{count}} objects failed"
   },
   "transfers": {
     "title": "Transfers",
@@ -1278,9 +1585,9 @@
     "bandwidth": {
       "label": "Bandwidth limit",
       "none": "No bandwidth limit",
-      "limit": "Limit to {{mbps}} MB/s",
+      "limit": "Limit to {{mbps}} Mb/s",
       "saved": "Bandwidth limit saved",
-      "hint": "Applied to downloads streamed by this browser and to the API's own transfer endpoints."
+      "hint": "Megabits per second, per transfer. Applied to downloads streamed by this browser, between the parts of a large upload, and to the API's own transfer endpoints."
     },
     "action": {
       "pauseAll": "Pause all",
@@ -1337,7 +1644,9 @@
       "megabytes": "MB",
       "reset": "Reset to defaults",
       "saved": "Transfer settings saved",
-      "failed": "The settings could not be saved"
+      "failed": "The settings could not be saved",
+      "retries": "Retries per part",
+      "retriesHint": "How many times a failed part is tried again before the transfer gives up. 0 sends each part once."
     },
     "chart": {
       "title": "Throughput",
@@ -1354,23 +1663,802 @@
   },
   "users": {
     "title": "S3 users",
-    "description": "Users and groups on every server whose driver supports them."
+    "description": "Service accounts that applications use to sign S3 requests.",
+    "tabsLabel": "S3 access",
+    "exportList": "Export list",
+    "searchPlaceholder": "Search users…",
+    "allServers": "All servers",
+    "allStatuses": "All statuses",
+    "serverFilter": "Filter by server",
+    "statusFilter": "Filter by status",
+    "resetFilters": "Reset filters",
+    "created": "Created",
+    "editUser": "Edit",
+    "attachPolicy": "Attach policy",
+    "copyArn": "Copy ARN",
+    "enable": "Enable",
+    "disable": "Disable",
+    "actionsFor": "Actions for {{name}}",
+    "note": {
+      "title": "These users live on the storage servers",
+      "body": "Each one is an IAM user on a single server, managed through that server's admin API. They are not storage-io sign-in accounts — storage-io itself has one administrator."
+    },
+    "tab": {
+      "users": "Users",
+      "groups": "Groups"
+    },
+    "column": {
+      "user": "User",
+      "server": "Server",
+      "status": "Status",
+      "policies": "Policies",
+      "accessKeys": "Access keys",
+      "groups": "Groups",
+      "lastActivity": "Last activity"
+    },
+    "empty": {
+      "title": "No S3 users yet",
+      "description": "A user is created on one storage server through its admin API."
+    },
+    "export": {
+      "nothing": "There is nothing to export."
+    },
+    "bulk": {
+      "applied_one": "{{count}} user",
+      "applied_other": "{{count}} users",
+      "partial": "{{failed}} of {{total}} did not work"
+    },
+    "delete": {
+      "title_one": "Delete this user?",
+      "title_other": "Delete {{count}} users?",
+      "description": "Their access keys are deleted with them. Objects they uploaded are not touched.",
+      "warning": "Applications still signing requests with these keys will start failing immediately."
+    },
+    "attach": {
+      "description_one": "Applies to {{count}} selected user.",
+      "description_other": "Applies to {{count}} selected users.",
+      "policy": "Policy",
+      "note": "Users on a server that does not have this policy are skipped."
+    },
+    "toast": {
+      "created": "User created",
+      "enabled": "User enabled",
+      "disabled": "User disabled",
+      "deleted": "User deleted",
+      "statusFailed": "The user could not be changed",
+      "policyAttached": "Policy attached",
+      "policyDetached": "Policy detached",
+      "policyFailed": "The policies could not be saved",
+      "groupJoined": "Added to group",
+      "groupLeft": "Removed from group",
+      "groupFailed": "The groups could not be saved",
+      "groupCreated": "Group created",
+      "groupSaved": "Group saved",
+      "groupDeleted": "Group deleted",
+      "groupSaveFailed": "The group could not be saved"
+    },
+    "create": {
+      "action": "Create user",
+      "title": "Create S3 user",
+      "description": "The user is created on one server through its admin API.",
+      "server": "Server",
+      "serverOffline": "Offline — cannot be selected",
+      "username": "Username",
+      "usernameHint": "Lowercase letters, digits and dashes. It cannot be changed later.",
+      "usernameInvalid": "Lowercase letters, digits and dashes only, 3–64 characters.",
+      "secret": "Secret access key",
+      "secretHint": "Shown only once. Store it in your secret manager before you continue.",
+      "secretGenerated": "New secret generated",
+      "generate": "Generate",
+      "policies": "Policies",
+      "policiesHint": "A user with no policy can authenticate but cannot read or write anything.",
+      "noPolicies": "This server has no policies yet.",
+      "groups": "Groups",
+      "createKey": "Create an access key now",
+      "createKeyHint": "Issues one key pair together with the user",
+      "submit": "Create user",
+      "failed": "The user could not be created"
+    },
+    "sheet": {
+      "tabs": "User details",
+      "overview": "Overview",
+      "policies": "Policies",
+      "accessKeys": "Access keys",
+      "groups": "Groups",
+      "enabled": "User enabled",
+      "enabledHint": "A disabled user keeps its keys but every request is denied.",
+      "details": "Details",
+      "provider": "Provider",
+      "arn": "ARN",
+      "created": "Created",
+      "builtIn": "Built-in",
+      "custom": "Custom",
+      "inherited": "Inherited",
+      "inheritedFrom": "Inherited from {{group}}",
+      "detach": "Detach",
+      "noPolicies": "No policies attached",
+      "attachTitle": "Attach a policy",
+      "attachDescription": "Policies from this server only",
+      "selectPolicy": "Select a policy…",
+      "attach": "Attach",
+      "effectiveNote": "Effective permissions are the union of the user's own policies and the policies of every group it belongs to.",
+      "keyCount_one": "{{count}} access key",
+      "keyCount_other": "{{count}} access keys",
+      "noKeys": "No access keys",
+      "expires": "Expires",
+      "lastUsed": "Last used",
+      "deleteKey": "Delete key",
+      "secretOnceNote": "A secret key is shown once. Rotating a key issues a new secret and keeps the old one valid for the grace period so deployments can catch up.",
+      "noGroups": "This server has no groups",
+      "groupHint": "{{count}} members · {{policies}}",
+      "groupsScopeNote": "Only groups on {{server}} can be joined.",
+      "appliedImmediately": "Changes are applied on the server immediately."
+    },
+    "groups": {
+      "searchPlaceholder": "Search groups…",
+      "create": "Create group",
+      "createTitle": "Create group",
+      "editTitle": "Edit group",
+      "dialogDescription": "A group is created on one server; a user can only join groups on its own server.",
+      "pickServerFirst": "Pick a server to see its members and policies.",
+      "name": "Group name",
+      "nameHint": "Letters, digits, dots, dashes and underscores.",
+      "nameInvalid": "3–128 characters, letters, digits, dots, dashes and underscores.",
+      "members": "Members",
+      "noMembers": "This server has no S3 users yet.",
+      "enabled": "Group enabled",
+      "enabledHint": "A disabled group grants none of its policies.",
+      "edit": "Edit group",
+      "addMembers": "Add members",
+      "delete": "Delete group",
+      "deleteTitle": "Delete this group?",
+      "deleteDescription": "Its members keep their own policies but lose the ones this group granted.",
+      "actionsFor": "Actions for {{name}}",
+      "scopeNote": "Groups are per server; a user can only join groups on its own server.",
+      "column": {
+        "group": "Group",
+        "members": "Members"
+      },
+      "empty": {
+        "title": "No groups yet",
+        "description": "A group collects users on one server and grants them a shared set of policies."
+      }
+    }
   },
   "policies": {
     "title": "Policies",
-    "description": "IAM policy documents, validation and simulation."
+    "description": "IAM policy documents that decide what each user and group may do.",
+    "newPolicy": "New policy",
+    "startFromTemplate": "Start from a template",
+    "importJson": "Import JSON",
+    "downloadJson": "Download JSON",
+    "versionHistory": "Version history",
+    "duplicate": "Duplicate",
+    "duplicateDescription": "Copies this document to a new policy on the same server. Built-in policies are duplicated this way to make a version you own.",
+    "deletePolicy": "Delete policy",
+    "copyArn": "Copy ARN",
+    "copyJson": "Copy JSON",
+    "filterPlaceholder": "Filter policies…",
+    "countSuffix": "policies",
+    "readOnly": "Read-only",
+    "noDescription": "No description",
+    "version": "Policy version",
+    "versionHint": "Fixed by the S3 IAM specification.",
+    "builtInTitle": "Built-in policy",
+    "builtInBody": "It ships with the server and cannot be edited or deleted. Duplicate it to make a version you own.",
+    "editorLabel": "Policy editor",
+    "visual": "Visual",
+    "json": "JSON",
+    "sameDocument": "Both views edit the same document.",
+    "validJson": "Valid JSON",
+    "invalidJsonTitle": "This is not a valid policy document",
+    "invalidJsonBody": "Fix the JSON on the JSON tab; the visual editor cannot show statements it could not read.",
+    "documentLabel": "Policy document",
+    "noStatements": "No statements",
+    "noStatementsHint": "A policy with no statements grants nothing.",
+    "addStatement": "Add statement",
+    "statementCount_one": "{{count}} statement",
+    "statementCount_other": "{{count}} statements",
+    "statementNumber": "Statement {{index}}",
+    "statementActions": "Actions for statement {{index}}",
+    "unnamedStatement": "Unnamed",
+    "notActions": "Not actions",
+    "notResources": "Not resources",
+    "validate": "Validate",
+    "saveChanges": "Save changes",
+    "lastSaved": "Last saved",
+    "group": {
+      "builtIn": "Built-in",
+      "custom": "Custom"
+    },
+    "effect": {
+      "Allow": "Allow",
+      "Deny": "Deny"
+    },
+    "decision": {
+      "allow": "Allowed",
+      "deny": "Denied",
+      "implicit-deny": "Denied (no matching statement)"
+    },
+    "template": {
+      "read-only": "Read-only bucket",
+      "read-write": "Read-write bucket",
+      "upload-only": "Upload-only",
+      "public-read": "Public read",
+      "blank": "Blank"
+    },
+    "templateHint": {
+      "read-only": "GetObject and ListBucket on one bucket",
+      "read-write": "Full object access on one bucket",
+      "upload-only": "PutObject without listing or reading",
+      "public-read": "Anonymous read of every object",
+      "blank": "Start from an empty statement"
+    },
+    "empty": {
+      "title": "No policies yet",
+      "description": "A policy is a JSON document on one storage server."
+    },
+    "noSelection": {
+      "title": "Pick a policy",
+      "description": "Select one on the left to see and edit its document."
+    },
+    "create": {
+      "title": "New policy",
+      "description": "Create a policy document on one server, then attach it to users or groups.",
+      "name": "Name",
+      "nameHint": "Used verbatim on the server; it cannot be renamed after creation.",
+      "nameInvalid": "3–128 characters, letters, digits, dots, dashes and underscores.",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "What this policy is for",
+      "template": "Template",
+      "bucket": "Bucket",
+      "bucketHint": "The template's resources are written for this bucket."
+    },
+    "statement": {
+      "addTitle": "Add statement",
+      "editTitle": "Edit statement",
+      "description": "Actions and resources accept anything — the suggestions cover the common S3 namespace and your own buckets.",
+      "sid": "Statement ID",
+      "sidHint": "Shown in the simulator when this statement decides the request.",
+      "effect": "Effect",
+      "actions": "Actions",
+      "actionsHint": "What the request is trying to do, e.g. s3:GetObject",
+      "resources": "Resources",
+      "resourcesHint": "ARNs this statement covers, e.g. arn:aws:s3:::bucket/*",
+      "conditions": "Conditions",
+      "noConditions": "No conditions — the statement always applies",
+      "addCondition": "Add condition",
+      "removeCondition": "Remove this condition",
+      "conditionOperator": "Operator",
+      "conditionKey": "Condition key",
+      "conditionValue": "Value",
+      "add": "Add",
+      "suggestions": "Suggestions",
+      "removeValue": "Remove {{value}}",
+      "edit": "Edit statement",
+      "duplicate": "Duplicate statement",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "remove": "Remove statement"
+    },
+    "attached": {
+      "title": "Attached to",
+      "description": "Users and groups using this policy",
+      "user": "User",
+      "group": "Group",
+      "emptyTitle": "Not attached to anything",
+      "emptyDescription": "This policy has no effect until a user or group uses it."
+    },
+    "simulate": {
+      "title": "Simulate",
+      "description": "Evaluate one request against this document",
+      "action": "Action",
+      "resource": "Resource",
+      "run": "Run simulation",
+      "result": "Result",
+      "matched": "Matched statement",
+      "noMatch": "No matching statement",
+      "note": "The simulation uses this document only — group policies and bucket policies are evaluated separately."
+    },
+    "versions": {
+      "title": "Version history",
+      "empty": "No earlier versions",
+      "emptyHint": "storage-io snapshots a policy every time it is saved here.",
+      "noNote": "No note",
+      "documentOf": "Document saved at {{at}}",
+      "restore": "Restore",
+      "restoreTitle": "Restore this version?",
+      "restoreDescription": "The current document is snapshotted first, so this can be undone the same way.",
+      "scopeNote": "Only versions saved through storage-io are listed; a policy changed on the server directly does not appear here."
+    },
+    "import": {
+      "title": "Import a policy document",
+      "description": "Reads a JSON file and loads it into the editor. Nothing is saved until you save.",
+      "intoEditor": "The document replaces what is in the editor; the policy on the server is unchanged until you save.",
+      "dropHint": "One .json file",
+      "notJson": "That file is not valid JSON.",
+      "notObject": "A policy document must be a JSON object.",
+      "unreadable": "That file could not be read.",
+      "preview": "Imported document",
+      "apply": "Load into editor",
+      "loaded": "Document loaded into the editor"
+    },
+    "delete": {
+      "title": "Delete this policy?",
+      "description": "It is detached from every user and group that uses it. Their remaining policies stay in place.",
+      "attachedWarning_one": "{{count}} user or group loses the access this policy grants.",
+      "attachedWarning_other": "{{count}} users and groups lose the access this policy grants."
+    },
+    "toast": {
+      "created": "Policy created",
+      "createFailed": "The policy could not be created",
+      "saved": "Policy saved",
+      "saveFailed": "The policy could not be saved",
+      "deleted": "Policy deleted",
+      "deleteFailed": "The policy could not be deleted",
+      "duplicated": "Policy duplicated",
+      "duplicateFailed": "The policy could not be duplicated",
+      "valid": "Policy is valid",
+      "validWithWarnings": "Policy is valid, with warnings",
+      "invalid": "Policy is not valid",
+      "invalidJson": "Fix the JSON first",
+      "validateFailed": "The policy could not be validated",
+      "simulateFailed": "The simulation could not be run",
+      "restored": "Version restored",
+      "restoreFailed": "That version could not be restored"
+    }
   },
   "keys": {
     "title": "Access keys",
-    "description": "Keys, expiry and rotation across every server."
+    "description": "Programmatic credentials for S3 users, across every server.",
+    "searchPlaceholder": "Search by key, user or name…",
+    "allServers": "All servers",
+    "serverFilter": "Filter by server",
+    "rotateNow": "Rotate now",
+    "restricted": "Restricted",
+    "inherits": "Inherits user policy",
+    "copyId": "Copy access key ID",
+    "copyFailed": "The clipboard is not available",
+    "disable": "Disable",
+    "enable": "Enable",
+    "actionsFor": "Actions for {{id}}",
+    "expiringBanner": {
+      "title_one": "{{count}} key expires within {{days}} days",
+      "title_other": "{{count}} keys expire within {{days}} days"
+    },
+    "filter": {
+      "label": "Filter by status",
+      "all": "All",
+      "active": "Active",
+      "expiring": "Expiring soon",
+      "disabled": "Disabled",
+      "expired": "Expired"
+    },
+    "column": {
+      "accessKeyId": "Access key",
+      "name": "Name",
+      "user": "User",
+      "server": "Server",
+      "permissions": "Permissions",
+      "status": "Status",
+      "expires": "Expires",
+      "lastUsed": "Last used"
+    },
+    "empty": {
+      "title": "No access keys yet",
+      "description": "A key belongs to an S3 user and is created on the storage server."
+    },
+    "export": {
+      "nothing": "There is nothing to export."
+    },
+    "toast": {
+      "disabled": "Key disabled",
+      "enabled": "Key enabled",
+      "deleted": "Key deleted",
+      "updateFailed": "The key could not be changed",
+      "deleteFailed": "The key could not be deleted"
+    },
+    "delete": {
+      "title": "Delete this access key?",
+      "description": "Requests signed with it stop working immediately, and the key cannot be restored."
+    },
+    "create": {
+      "action": "Create access key",
+      "title": "Create access key",
+      "description": "The key is created on the storage server, for an existing S3 user.",
+      "server": "Server",
+      "pickServer": "Pick a server",
+      "user": "S3 user",
+      "pickUser": "Pick a user",
+      "noUsers": "This server has no S3 users yet.",
+      "name": "Name",
+      "nameHint": "Shown in lists and the activity log",
+      "namePlaceholder": "GitHub Actions — deploy",
+      "expires": "Expires",
+      "expiry": {
+        "30d": "30 days",
+        "90d": "90 days",
+        "1y": "1 year",
+        "never": "Never"
+      },
+      "noExpirySupport": "{{server}} has no key expiry, so this key never expires on its own.",
+      "restrict": "Restrict permissions",
+      "restrictHint": "Narrow this key below the user's own policy",
+      "sessionPolicy": "Session policy",
+      "sessionPolicyHint": "A session policy can only narrow the user's permissions, never widen them.",
+      "invalidJson": "That is not a JSON object.",
+      "submit": "Create key",
+      "failed": "The key could not be created",
+      "done": "Access key created"
+    },
+    "secret": {
+      "title": "Save your secret key",
+      "description": "This is the only time the secret is shown. Store it in your password manager or CI secrets now.",
+      "accessKeyId": "Access key ID",
+      "secretAccessKey": "Secret access key",
+      "snippets": "Configuration snippets",
+      "snippet": {
+        "env": ".env",
+        "awscli": "AWS CLI",
+        "rclone": "rclone",
+        "mc": "MinIO mc"
+      },
+      "copySnippet": "Copy the {{kind}} snippet",
+      "acknowledge": "I've stored the secret somewhere safe",
+      "downloadCsv": "Download CSV",
+      "downloaded": "credentials.csv downloaded",
+      "copyFailed": "The clipboard is not available"
+    },
+    "edit": {
+      "action": "Edit name & expiry",
+      "title": "Edit name & expiry",
+      "expiresAt": "Expires",
+      "expiresHint": "Leave empty for a key that never expires.",
+      "saved": "Key updated",
+      "failed": "The key could not be updated"
+    },
+    "rotate": {
+      "action": "Rotate",
+      "title": "Rotate access key",
+      "descriptionFor": "A new key is issued for {{user}}. Keep the old one working while you roll out the new secret.",
+      "pickPrompt": "Pick the key to rotate.",
+      "key": "Access key",
+      "pickKey": "Pick a key",
+      "graceLabel": "Old key stays active for",
+      "graceHint": "The old key keeps working until then, so nothing breaks mid-rollout.",
+      "grace": {
+        "1h": "1 hour",
+        "24h": "24 hours",
+        "7d": "7 days",
+        "now": "Disable immediately"
+      },
+      "expiryLabel": "New key expires",
+      "expiry": {
+        "90d": "90 days",
+        "1y": "1 year",
+        "never": "Never"
+      },
+      "immediateTitle": "The old key stops working at once",
+      "immediateBody": "Anything still signing with it starts failing as soon as you rotate.",
+      "submit": "Rotate key",
+      "failed": "The key could not be rotated",
+      "done": "Access key rotated"
+    }
   },
   "activity": {
     "title": "Activity log",
-    "description": "Every change, who made it and what happened."
+    "description": "Every administrative and data action across your connected servers.",
+    "forwardToSyslog": "Forward to syslog",
+    "searchPlaceholder": "Search events, targets or IP addresses…",
+    "rangeLabel": "Date range",
+    "customRange": "Custom range",
+    "allServers": "All servers",
+    "allCategories": "All categories",
+    "serverFilter": "Filter by server",
+    "categoryFilter": "Filter by category",
+    "resultFilter": "Filter by result",
+    "exportFailed": "The export could not be produced",
+    "retention": "Activity is kept for {{days}} days, then deleted.",
+    "retentionUnknown": "Activity is kept for the retention period set in Settings.",
+    "changeInSettings": "Change in Settings",
+    "range": {
+      "1h": "Last hour",
+      "24h": "Last 24 hours",
+      "7d": "Last 7 days",
+      "30d": "Last 30 days",
+      "custom": "Custom range…"
+    },
+    "result": {
+      "all": "All"
+    },
+    "column": {
+      "time": "Time",
+      "event": "Event",
+      "actor": "Actor",
+      "target": "Target",
+      "server": "Server",
+      "ip": "Source IP",
+      "result": "Result",
+      "category": "Category"
+    },
+    "empty": {
+      "title": "Nothing recorded yet",
+      "description": "Actions taken in storage-io and on your servers appear here."
+    },
+    "detail": {
+      "event": "Event",
+      "requestId": "Request ID",
+      "copyRequestId": "Copy the request ID",
+      "raw": "Raw event",
+      "copyJson": "Copy JSON",
+      "viewKeys": "View access keys",
+      "filterByActor": "Filter by this actor"
+    }
   },
   "settings": {
     "title": "Settings",
-    "description": "Profile, security, appearance, region, transfers, notifications and retention."
+    "description": "Your account, security and how storage-io looks and behaves.",
+    "navLabel": "Settings sections",
+    "saveChanges": "Save changes",
+    "section": {
+      "account": "Account",
+      "security": "Security",
+      "appearance": "Appearance",
+      "region": "Language & region",
+      "transfers": "Transfers",
+      "notifications": "Notifications",
+      "activity-forwarding": "Activity forwarding",
+      "backup-retention": "Backup & retention",
+      "about": "About"
+    },
+    "account": {
+      "title": "Account",
+      "description": "The single administrator of this storage-io instance.",
+      "profile": "Profile",
+      "profileHint": "Shown in the sidebar and in the activity log",
+      "username": "Username",
+      "email": "Email",
+      "emailHint": "For alerts and notification emails",
+      "saved": "Profile saved",
+      "failed": "The profile could not be saved"
+    },
+    "security": {
+      "title": "Security",
+      "description": "Sessions, CLI tokens and who can reach the console.",
+      "credentials": "Sign-in credentials",
+      "credentialsHint": "The administrator account itself",
+      "managedByEnv": "Managed by the environment",
+      "managedByEnvBody": "The username and password come from ADMIN_USERNAME and ADMIN_PASSWORD in the service's environment. Change them there and restart storage-io — there is no endpoint to change them from the console.",
+      "sessions": "Active sessions",
+      "sessionsHint": "Signed-in browsers",
+      "unknownDevice": "Unknown device",
+      "thisDevice": "This device",
+      "revoke": "Revoke",
+      "sessionRevoked": "Session revoked",
+      "revokeFailed": "That could not be revoked",
+      "signOutOthers": "Sign out all other sessions",
+      "signOutOthersTitle": "Sign out every other session?",
+      "signOutOthersDescription": "Other browsers are signed out immediately. This one stays signed in.",
+      "signedOutOthers": "Signed out everywhere else",
+      "tokens": "CLI tokens",
+      "tokensHint": "For scripts and CI that call the API directly",
+      "noTokens": "No CLI tokens yet.",
+      "neverUsed": "Never used",
+      "lastUsed": "Last used",
+      "newToken": "New CLI token",
+      "newTokenDescription": "A bearer token for the API. It is shown once and cannot be retrieved afterwards.",
+      "tokenName": "Name",
+      "tokenNameHint": "What uses this token — it appears in the activity log",
+      "tokenExpiry": "Expires",
+      "tokenCreated": "CLI token created",
+      "tokenOnce": "This is the only time the token is shown.",
+      "tokenWarningTitle": "Copy it now",
+      "tokenWarningBody": "Closing this dialog discards the value. A lost token can only be replaced, not recovered.",
+      "copyToken": "Copy the CLI token",
+      "tokenStored": "I've stored the token somewhere safe",
+      "tokenFailed": "The token could not be created",
+      "revokeTokenTitle": "Revoke this token?",
+      "revokeTokenDescription": "Anything using it starts getting 401s immediately.",
+      "tokenRevoked": "Token revoked",
+      "sessionTimeout": "Session timeout",
+      "sessionTimeoutHint": "Sign out after this long without activity",
+      "ttlOption_one": "{{count}} hour",
+      "ttlOption_other": "{{count}} hours",
+      "allowedNetworks": "Allowed networks",
+      "allowedNetworksHint": "Only these CIDR ranges can reach the console. Empty means anywhere.",
+      "anywhere": "Any address can reach the console.",
+      "removeNetwork": "Remove {{network}}",
+      "invalidCidr": "That is not a valid address or CIDR range.",
+      "saved": "Security settings saved",
+      "failed": "Security settings could not be saved"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "description": "Applies to this browser only.",
+      "densityHint": "Row height in tables and lists",
+      "reduceMotion": "Reduce motion",
+      "reduceMotionHint": "Turn off animated transitions",
+      "openObjects": "Open objects",
+      "openObjectsHint": "What a single click on a file does in the object browser",
+      "click": {
+        "details": "Show the details panel",
+        "preview": "Open the preview"
+      },
+      "clickSaved": "Saved for this browser",
+      "failed": "That could not be saved"
+    },
+    "region": {
+      "title": "Language & region",
+      "description": "Right-to-left layout switches automatically for Persian and Arabic.",
+      "languageHint": "This browser only — sizes and dates below are the installation's.",
+      "digitsLabel": "Digits",
+      "digits": {
+        "auto": "Automatic (from language)",
+        "latn": "Always Latin (0–9)"
+      },
+      "calendarLabel": "Calendar",
+      "calendar": {
+        "auto": "Automatic (from language)",
+        "gregory": "Gregorian",
+        "persian": "Solar Hijri",
+        "islamic": "Hijri"
+      },
+      "today": "Today",
+      "sizeUnits": "Size units",
+      "units": {
+        "decimal": "Decimal (TB)",
+        "binary": "Binary (TiB)"
+      },
+      "timezone": "Timezone",
+      "timezoneHint": "Every timestamp in the console and in exports uses it.",
+      "weekStartLabel": "First day of week",
+      "weekStart": {
+        "auto": "Automatic",
+        "0": "Sunday",
+        "1": "Monday",
+        "6": "Saturday"
+      },
+      "saved": "Region settings saved",
+      "failed": "Region settings could not be saved"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Where alerts go and which events trigger them.",
+      "channels": "Channels",
+      "channelsHint": "A channel has to be configured before it can be switched on.",
+      "notConfigured": "Not configured",
+      "configure": "Configure",
+      "connect": "Connect",
+      "enableChannel": "Enable {{channel}}",
+      "channelEnabled": "Channel enabled",
+      "channelDisabled": "Channel disabled",
+      "channelSaved": "Channel saved",
+      "sendTest": "Send test",
+      "testSent": "Test notification sent",
+      "testFailed": "The test did not go through",
+      "events": "Events",
+      "eventsHint": "A column is greyed out while its channel is off.",
+      "event": "Event",
+      "ruleLabel": "{{event}} via {{channel}}",
+      "saved": "Notification settings saved",
+      "failed": "Notification settings could not be saved",
+      "secretHint": "Leave empty to keep the stored value. Secrets are never shown again.",
+      "channel": {
+        "email": "Email (SMTP)",
+        "webhook": "Webhook",
+        "telegram": "Telegram"
+      },
+      "channelDescription": {
+        "email": "storage-io sends alerts through this SMTP server.",
+        "webhook": "Every alert is POSTed as JSON to this URL.",
+        "telegram": "Alerts are sent through a Telegram bot to one chat."
+      },
+      "column": {
+        "inApp": "In-app",
+        "email": "Email",
+        "webhook": "Webhook",
+        "telegram": "Telegram"
+      },
+      "rule": {
+        "server.offline": "Server offline or degraded",
+        "quota.threshold": "Bucket quota threshold",
+        "key.expiring": "Access key expiring",
+        "job.failed": "Bulk job failed",
+        "auth.new-device": "Sign-in from a new device"
+      },
+      "email": {
+        "host": "SMTP host",
+        "port": "Port",
+        "secure": "Use TLS",
+        "secureHint": "Implicit TLS on connect (port 465); off means STARTTLS",
+        "username": "Username",
+        "password": "Password",
+        "from": "From address",
+        "to": "Recipients",
+        "removeRecipient": "Remove {{recipient}}"
+      },
+      "webhook": {
+        "url": "Endpoint URL",
+        "invalidUrl": "That is not an http(s) URL.",
+        "secret": "Signing secret",
+        "secretHint": "Sent as an HMAC header so the receiver can verify the payload. Leave empty to keep the stored value."
+      },
+      "telegram": {
+        "howTo": "Create a bot with @BotFather, then add it to the chat and use that chat's ID.",
+        "botToken": "Bot token",
+        "chatId": "Chat ID",
+        "chatIdHint": "A group ID starts with a minus sign."
+      }
+    },
+    "syslog": {
+      "title": "Activity forwarding",
+      "description": "Send every activity event to a syslog collector as well as storing it here.",
+      "enabled": "Forward to syslog",
+      "enabledHint": "Every event, not only the ones the notification rules select",
+      "collector": "Collector",
+      "collectorHint": "Host and port of the syslog receiver",
+      "host": "Host",
+      "port": "Port",
+      "protocol": "Protocol",
+      "protocolHint": "TLS is the only one that encrypts the log in transit.",
+      "formatLabel": "Format",
+      "format": {
+        "rfc5424": "RFC 5424",
+        "json": "JSON"
+      },
+      "facility": "Facility",
+      "facilityHint": "Syslog facility number, 0–23",
+      "sendTest": "Send test event",
+      "testSent": "Test event sent",
+      "testFailed": "The test event did not go through",
+      "saved": "Forwarding settings saved",
+      "failed": "Forwarding settings could not be saved"
+    },
+    "backup": {
+      "title": "Backup & retention",
+      "description": "storage-io's own configuration — not the data on your servers.",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "export": "Export configuration",
+      "exportHint": "Servers, credentials and preferences, encrypted with a passphrase.",
+      "exportAction": "Export",
+      "exportTitle": "Export configuration",
+      "exportDescription": "The file contains your stored server credentials. It is encrypted with the passphrase you choose here.",
+      "exported": "Configuration exported",
+      "exportFailed": "The configuration could not be exported",
+      "importAction": "Import…",
+      "importTitle": "Import configuration",
+      "importDescription": "Restores servers and settings from an exported file.",
+      "importWarningTitle": "This replaces what is here",
+      "importWarningBody": "Servers and settings in the file overwrite the ones this installation has. Nothing on your storage servers is touched.",
+      "dropHint": "One .sioconf file, exported from storage-io",
+      "importPassphraseHint": "The passphrase the file was exported with.",
+      "imported": "Configuration imported",
+      "importedDetail": "{{servers}} servers restored",
+      "importFailed": "The configuration could not be imported",
+      "passphrase": "Passphrase",
+      "passphraseConfirm": "Confirm passphrase",
+      "passphraseHint": "At least {{min}} characters.",
+      "tooShort": "Too short.",
+      "mismatch": "The two passphrases do not match.",
+      "passphraseWarningTitle": "There is no way to recover this passphrase",
+      "passphraseWarningBody": "It is not stored anywhere. Without it the exported file cannot be read, by anyone, ever.",
+      "activityRetention": "Activity log retention",
+      "activityRetentionHint": "Events older than this are deleted.",
+      "metricsRetention": "Metrics retention",
+      "metricsRetentionHint": "Capacity and latency history behind the charts.",
+      "retentionSaved": "Retention saved",
+      "failed": "That could not be saved"
+    },
+    "about": {
+      "uptime": "up",
+      "apiUnreachable": "The API could not be reached.",
+      "checkForUpdates": "Check for updates",
+      "upToDate": "You're on the latest version",
+      "updateAvailable": "Version {{version}} is available",
+      "checkFailed": "The update check did not work",
+      "noUpdateUrl": "No update URL is configured for this deployment, so storage-io never calls out to the internet."
+    }
   },
   "notFound": {
     "title": "Page not found",
@@ -1381,5 +2469,11 @@
     "badge": "Not built yet",
     "body": "This screen's route, breadcrumbs and shell are in place. The page itself is built in a later task.",
     "kit": "Building blocks ready for it: {{components}}"
+  },
+  "iam": {
+    "unavailable": {
+      "title_one": "One server could not be reached",
+      "title_other": "{{count}} servers could not be reached"
+    }
   }
 }

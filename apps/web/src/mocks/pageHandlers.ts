@@ -105,6 +105,8 @@ function capabilitiesFor(provider: Provider): CapabilityMap {
           return [name, nativeQuota ? 'supported' : 'not_supported'];
         case 'nodes':
           return [name, provider === 'minio' ? 'supported' : 'not_supported'];
+        case 'traffic':
+          return [name, provider === 'minio' ? 'not_configured' : 'not_supported'];
       }
     }),
   ) as CapabilityMap;
@@ -345,6 +347,10 @@ function metricsFor(server: Server, range: string): ServerMetrics {
       usedBytes: used * (0.88 + (0.12 * index) / points),
       totalBytes: server.capacity.totalBytes,
     })),
+    // `traffic` is a Prometheus-style series the mock has no source for; `null`
+    // is the contract's "this server cannot report it", which is the truthful
+    // answer here rather than an invented rate.
+    traffic: null,
     latency: Array.from({ length: points }, (_unused, index) => ({
       t: isoAgo(spanMs - index * stepMs),
       // A deterministic wobble: a random series would jump on every refetch.

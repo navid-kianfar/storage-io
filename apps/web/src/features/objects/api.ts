@@ -1,12 +1,21 @@
 import {
+  ARCHIVE_ENTRY_LIMIT_DEFAULT,
+  OBJECT_BATCH_MAX_KEYS,
   OBJECT_LIST_LIMIT_DEFAULT,
+  type ArchiveEntriesResponse,
+  type CompleteMultipartUploadRequest,
   type CopyObjectsRequest,
   type CopyObjectsResponse,
+  type CreateMultipartUploadRequest,
+  type CreateMultipartUploadResponse,
   type DeleteObjectsRequest,
   type DeleteObjectsResponse,
   type DownloadZipRequest,
   type ImportObjectFromUrlRequest,
   type ListObjectsResponse,
+  type MultipartPartList,
+  type ObjectBatchRequest,
+  type ObjectBatchResponse,
   type ObjectItem,
   type ObjectMeta,
   type ObjectMetadataBody,
@@ -94,7 +103,12 @@ export function useObjectListing(scope: ObjectScope, filters: ObjectListFilters,
         objectsPath(scope),
         {
           prefix: filters.prefix,
-          delimiter: filters.showVersions ? '' : '/',
+          // Always delimited. "Show versions" is a filter *within* the current
+          // folder — the API answers with this level's sub-prefixes plus every
+          // version of the objects in it — so a flat listing would lose the
+          // folders the operator is standing in. (An empty `delimiter` would in
+          // any case be dropped by `buildUrl`, which treats '' as absent.)
+          delimiter: '/',
           cursor: pageParam,
           limit: filters.limit ?? OBJECT_LIST_LIMIT_DEFAULT,
           q: filters.q,
@@ -308,6 +322,117 @@ export function usePutObjectContent(scope: ObjectScope) {
       }),
     onSuccess: () => invalidateObjects(client, scope),
   });
+}
+
+/**
+ * One metadata-only action over an explicit selection, applied in the request.
+ *
+ * Bounded by the API at {@link OBJECT_BATCH_MAX_KEYS}: above that the operator is
+ * no longer waiting for it and the work belongs to a job. Call sites check
+ * {@link fitsInOneBatch} before offering this path.
+ *
+ * The response is per-key: `updated` plus an `errors` array. A provider that lacks
+ * the feature altogether answers 409 `NOT_SUPPORTED` instead, which arrives here as
+ * an `ApiError`.
+ */
+export function useObjectBatch(scope: ObjectScope) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ObjectBatchRequest) =>
+      api.post<ObjectBatchResponse>(objectsPath(scope, 'batch'), body),
+    onSuccess: () => invalidateObjects(client, scope),
+  });
+}
+
+export function fitsInOneBatch(keyCount: number): boolean {
+  return keyCount > 0 && keyCount <= OBJECT_BATCH_MAX_KEYS;
+}
+
+/**
+ * What is inside an archive object, for the preview pane.
+ *
+ * `format: 'unsupported'` is a normal answer, not an error, so this never retries:
+ * asking twice about an object that is not an archive gets the same answer.
+ */
+export function useArchiveEntries(
+  scope: ObjectScope,
+  key: string | null,
+  versionId?: string,
+  enabled = true,
+): UseQueryResult<ArchiveEntriesResponse> {
+  return useQuery({
+    queryKey: queryKeys.objects.archiveEntries(scope.serverId, scope.bucket, key ?? '', versionId),
+    queryFn: ({ signal }) =>
+      api.get<ArchiveEntriesResponse>(
+        objectsPath(scope, 'archive-entries'),
+        { key: key ?? '', versionId, limit: ARCHIVE_ENTRY_LIMIT_DEFAULT },
+        signal,
+      ),
+    enabled: enabled && key !== null && key !== '' && !key.endsWith('/'),
+    retry: false,
+  });
+}
+
+/* --------------------------- multipart upload ---------------------------- */
+
+/**
+ * The multipart endpoints, as plain functions rather than hooks: the transfer
+ * engine is a module singleton that outlives the object browser, so it cannot use
+ * React Query. They live here anyway, because this file is the only place in the
+ * app that knows the object URLs.
+ *
+ * `uploadId` is opaque and provider-generated — MinIO's is base64, which contains
+ * characters that mean something in a path — so every route below encodes it.
+ */
+function multipartPath(scope: ObjectScope, uploadId: string, section = ''): string {
+  const suffix = section === '' ? '' : `/${section}`;
+  return `${objectsPath(scope, 'multipart')}/${encodeURIComponent(uploadId)}${suffix}`;
+}
+
+export function createMultipartUpload(
+  scope: ObjectScope,
+  body: CreateMultipartUploadRequest,
+): Promise<CreateMultipartUploadResponse> {
+  return api.post<CreateMultipartUploadResponse>(objectsPath(scope, 'multipart'), body);
+}
+
+/** The parts the server already holds — what makes a resume a resume. */
+export function listMultipartParts(
+  scope: ObjectScope,
+  uploadId: string,
+  key: string,
+): Promise<MultipartPartList> {
+  return api.get<MultipartPartList>(multipartPath(scope, uploadId), { key });
+}
+
+export function completeMultipartUpload(
+  scope: ObjectScope,
+  uploadId: string,
+  key: string,
+  body: CompleteMultipartUploadRequest,
+): Promise<ObjectItem> {
+  return api.post<ObjectItem>(multipartPath(scope, uploadId, 'complete'), body, { key });
+}
+
+export function abortMultipartUpload(
+  scope: ObjectScope,
+  uploadId: string,
+  key: string,
+): Promise<void> {
+  return api.delete<void>(multipartPath(scope, uploadId), { key });
+}
+
+/**
+ * The URL one part is PUT to. The engine sends the part itself with XHR, because
+ * `fetch` still cannot report upload progress.
+ */
+export function multipartPartUrl(
+  scope: ObjectScope,
+  uploadId: string,
+  partNumber: number,
+  key: string,
+): string {
+  return buildUrl(multipartPath(scope, uploadId, `parts/${String(partNumber)}`), { key });
 }
 
 /**

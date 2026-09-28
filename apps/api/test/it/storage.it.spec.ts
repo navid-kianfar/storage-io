@@ -1049,6 +1049,40 @@ describe.skipIf(!IT_ENABLED)('storage against live containers', () => {
       expect(await download.text()).toBe('seaweed body');
     });
 
+    /**
+     * A restore copies a version over its own key. SeaweedFS rejects a self-copy
+     * that changes nothing — the 409 "copy an object to itself" — even when the
+     * source names an older version, so the restore has to replace the metadata
+     * rather than copy it. MinIO never showed this; SeaweedFS is the regression.
+     */
+    it('restores an older version over the current one', async () => {
+      const key = 'sw/restore.txt';
+      expect((await upload(SEAWEEDFS.name, seaweedBucket, key, 'first')).status).toBe(200);
+      expect((await upload(SEAWEEDFS.name, seaweedBucket, key, 'second')).status).toBe(200);
+
+      const versions = await harness
+        .http()
+        .get(`${objectsPath(SEAWEEDFS.name, seaweedBucket)}/versions?key=${encodeURIComponent(key)}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const items = versions.body.items as { versionId: string }[];
+      const oldest = items[items.length - 1];
+      expect(oldest).toBeDefined();
+
+      await harness
+        .http()
+        .post(`${objectsPath(SEAWEEDFS.name, seaweedBucket)}/restore-version`)
+        .set(auth())
+        .send({ key, versionId: oldest?.versionId })
+        .expect(201);
+
+      const download = await fetch(
+        `${harness.origin}${objectsPath(SEAWEEDFS.name, seaweedBucket)}/download?key=${encodeURIComponent(key)}`,
+        { headers: { Cookie: cookie } },
+      );
+      expect(await download.text()).toBe('first');
+    });
+
     it('round-trips CORS rules, which it does implement', async () => {
       const rules = [
         {

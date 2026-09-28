@@ -6,6 +6,7 @@ import {
 } from '@storage-io/contracts';
 import type { ColumnDef } from '@tanstack/react-table';
 import {
+  ActivityIcon,
   ArchiveIcon,
   BanIcon,
   CheckIcon,
@@ -69,6 +70,7 @@ const CAPABILITY_ICONS: Readonly<Record<Capability, typeof DatabaseIcon>> = {
   bucketQuota: GaugeIcon,
   usageStats: GaugeIcon,
   nodes: ServerIcon,
+  traffic: ActivityIcon,
 };
 
 const STATE_BADGES: Readonly<

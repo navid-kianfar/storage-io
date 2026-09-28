@@ -106,22 +106,19 @@ export function useBuckets(filters: BucketListFilters): UseQueryResult<BucketLis
 }
 
 /**
- * The same list without pagination, for the CSV export. There is no
- * `/buckets/export.csv` endpoint (docs/API.md has one for activity and IAM only),
- * so the file is built in the browser from one full page.
+ * The CSV export. `GET /buckets/export.csv` takes the same filters as the list and
+ * streams every matching row, so the file is the whole filtered set rather than the
+ * page the operator happens to be looking at — and rebuilding it in the browser
+ * would have been capped by whatever page size it asked for.
  */
-export const BUCKET_EXPORT_PAGE_SIZE = 500;
-
-export async function fetchAllBuckets(
+export function fetchBucketsCsv(
   filters: Omit<BucketListFilters, 'page' | 'pageSize'>,
-): Promise<BucketList> {
-  return api.get<BucketList>('/buckets', {
+): Promise<Blob> {
+  return api.blob('/buckets/export.csv', {
     q: filters.q,
     serverId: filters.serverId,
     access: filters.access,
     sort: filters.sort,
-    page: 1,
-    pageSize: BUCKET_EXPORT_PAGE_SIZE,
   });
 }
 

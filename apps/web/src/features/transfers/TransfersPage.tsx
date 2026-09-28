@@ -20,7 +20,7 @@ import {
   UploadIcon,
   XIcon,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/app/Alert';
@@ -60,7 +60,6 @@ import {
 import {
   cancelTransfer,
   clearCompletedTransfers,
-  configureEngine,
   pauseAllTransfers,
   pauseTransfer,
   removeTransfer,
@@ -97,6 +96,9 @@ const PART_SIZES = [8, 16, 64] as const;
 const PARALLEL_MIN = 1;
 const PARALLEL_MAX = 16;
 const KEEP_DAYS_CHOICES = [1, 3, 7, 14, 30] as const;
+/** `Settings.transfers.retries` is bounded 0..10 by the contract; 0 means "try once". */
+const RETRIES_MIN = 0;
+const RETRIES_MAX = 10;
 
 export function TransfersPage() {
   const { t } = useTranslation('pages');
@@ -130,15 +132,9 @@ export function TransfersPage() {
     [navigate],
   );
 
-  // The engine's concurrency and bandwidth come from Settings; keep them in step.
+  // The engine itself is configured from the shell (`useEngineSettings`), so this
+  // page only reads the settings it displays.
   const transferSettings = settings.data?.transfers;
-  useEffect(() => {
-    if (transferSettings === undefined) return;
-    configureEngine({
-      parallel: transferSettings.parallel,
-      bandwidthLimitMbps: transferSettings.bandwidthLimitMbps,
-    });
-  }, [transferSettings]);
 
   const counts = useMemo(() => transferCounts(transfers), [transfers]);
   const speed = useMemo(() => currentSpeed(transfers), [transfers]);
@@ -639,7 +635,11 @@ function StatusCell({
 
 /* ---------------------------- the settings card -------------------------- */
 
-function TransferSettingsCard({
+/**
+ * Exported so Settings → Transfers renders the same card rather than a second
+ * form against the same `Settings.transfers` section. One card, two places.
+ */
+export function TransferSettingsCard({
   settings,
   loading,
   saving,
@@ -745,6 +745,28 @@ function SettingsForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <Label htmlFor="transfers-retries">{t('transfers.settings.retries')}</Label>
+          <div className="flex items-center gap-3">
+            <Slider
+              id="transfers-retries"
+              min={RETRIES_MIN}
+              max={RETRIES_MAX}
+              step={1}
+              value={[draft.retries]}
+              onValueChange={([value]) => patch({ retries: value ?? RETRIES_MIN })}
+              aria-label={t('transfers.settings.retries')}
+              className="grow"
+            />
+            <Badge variant="secondary">
+              <Num value={draft.retries} />
+            </Badge>
+          </div>
+          <p className="text-[0.8125rem] text-muted-foreground">
+            {t('transfers.settings.retriesHint')}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{t('transfers.settings.keepIncomplete')}</span>
           <Combobox
             options={KEEP_DAYS_CHOICES.map((days) => ({
@@ -805,6 +827,7 @@ function SettingsForm({
                 partSizeMb: draft.partSizeMb,
                 verifyChecksums: draft.verifyChecksums,
                 keepIncompleteDays: draft.keepIncompleteDays,
+                retries: draft.retries,
               },
               () => setDraft(draft),
             )

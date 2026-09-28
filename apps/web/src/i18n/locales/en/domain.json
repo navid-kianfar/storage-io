@@ -76,7 +76,8 @@
     "accessKeyExpiry": "Key expiry",
     "bucketQuota": "Bucket quotas",
     "usageStats": "Usage statistics",
-    "nodes": "Nodes & drives"
+    "nodes": "Nodes & drives",
+    "traffic": "Traffic metrics"
   },
   "capabilityState": {
     "supported": "Supported",

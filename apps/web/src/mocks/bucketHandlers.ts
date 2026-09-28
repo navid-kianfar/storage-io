@@ -111,6 +111,7 @@ function emptyJob(entry: BucketRecord, includeVersions: boolean): Job {
         glob: null,
         tags: {},
       },
+      keyCount: null,
     },
     target: null,
     params: { includeVersions },

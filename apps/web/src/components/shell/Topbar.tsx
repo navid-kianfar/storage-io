@@ -21,6 +21,7 @@ export function Topbar({
   unread,
   notificationsLoading,
   onMarkAllRead,
+  onMarkNotificationRead,
   markingAllRead,
   onOpenCommandPalette,
 }: {
@@ -28,6 +29,7 @@ export function Topbar({
   readonly unread: number;
   readonly notificationsLoading: boolean;
   readonly onMarkAllRead: () => void;
+  readonly onMarkNotificationRead: (id: string) => void;
   readonly markingAllRead: boolean;
   readonly onOpenCommandPalette: () => void;
 }) {
@@ -65,6 +67,7 @@ export function Topbar({
         unread={unread}
         loading={notificationsLoading}
         onMarkAllRead={onMarkAllRead}
+        onMarkRead={onMarkNotificationRead}
         markingAllRead={markingAllRead}
       />
       {/*

@@ -89,7 +89,11 @@ export function EditContentsSheet({
       {
         onSuccess: () => {
           setOriginal(text);
-          toast.success(t('browse.edit.saved'), { description: objectKey });
+          // On a bucket without versioning the object was replaced, not versioned;
+          // saying otherwise would promise the operator a rollback they do not have.
+          toast.success(t(versioned ? 'browse.edit.saved' : 'browse.edit.savedReplaced'), {
+            description: objectKey,
+          });
           onOpenChange(false);
         },
         onError: (error) => toastProblem(error, tCommon),
