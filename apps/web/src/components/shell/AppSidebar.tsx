@@ -55,12 +55,11 @@ function countsFrom(dashboard: Dashboard | undefined): Readonly<Record<NavCount,
   return {
     servers: dashboard.totals.servers.total,
     buckets: dashboard.totals.buckets,
-    // `GET /dashboard` carries no S3-user or access-key totals, so these badges
-    // stay empty rather than showing something that is not the total. (The
-    // concept draws "38" and "61" there — reported as a contract gap; do not
-    // substitute `expiringKeys.length`, which means something else entirely.)
-    users: null,
-    keys: null,
+    // `totals.users` / `totals.accessKeys` are the counts across every server
+    // whose driver reports them. Never `expiringKeys.length`, which is the next
+    // 30 days only and means something else entirely.
+    users: dashboard.totals.users,
+    keys: dashboard.totals.accessKeys,
     activeJobs: dashboard.jobs.length === 0 ? null : dashboard.jobs.length,
   };
 }

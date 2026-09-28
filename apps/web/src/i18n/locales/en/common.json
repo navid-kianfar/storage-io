@@ -41,7 +41,8 @@
     "chooseFiles": "Choose files",
     "removeFile": "Remove file",
     "showMore": "Show more",
-    "showLess": "Show less"
+    "showLess": "Show less",
+    "chooseFolder": "Choose a folder"
   },
   "state": {
     "loading": "Loading…",
@@ -61,7 +62,6 @@
     "toggleColumns": "Toggle columns",
     "selectRow": "Select row",
     "selectAllRows": "Select all rows",
-    "rowsSelected": "{{count}} selected",
     "clearSelection": "Clear selection",
     "sortAscending": "Sort ascending",
     "sortDescending": "Sort descending",
@@ -74,7 +74,9 @@
     "nextPage": "Next page",
     "lastPage": "Last page",
     "rowActions": "Row actions",
-    "exportCsv": "Export CSV"
+    "exportCsv": "Export CSV",
+    "rowsSelected_one": "1 selected",
+    "rowsSelected_other": "{{count}} selected"
   },
   "form": {
     "optional": "optional",

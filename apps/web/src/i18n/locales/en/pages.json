@@ -1,7 +1,100 @@
 {
   "overview": {
     "title": "Overview",
-    "description": "Everything across your connected storage servers."
+    "description": "Everything across your connected storage servers.",
+    "greeting": {
+      "morning": "Good morning, {{name}}",
+      "afternoon": "Good afternoon, {{name}}",
+      "evening": "Good evening, {{name}}"
+    },
+    "incident": {
+      "noDetail": "The server did not say why."
+    },
+    "kpi": {
+      "storageUsed": "Storage used",
+      "thisWeek": "this week",
+      "objects": "Objects",
+      "today": "today",
+      "noDeltaToday": "No change recorded today",
+      "growthTrendLabel": "Storage grew from {{from}} to {{to}} over the last 30 days",
+      "buckets": "Buckets",
+      "nearQuota": "near quota",
+      "noneNearQuota": "None near a quota",
+      "withinQuota": "Within quota",
+      "healthyServers": "Healthy servers",
+      "healthy": "healthy",
+      "degraded": "degraded",
+      "offline": "offline"
+    },
+    "growth": {
+      "title": "Storage growth",
+      "description": "Last 30 days · all servers",
+      "used": "Used",
+      "projected": "Projected",
+      "emptyTitle": "Not enough history yet",
+      "emptyDescription": "A capacity snapshot is taken every hour. The chart appears once there are two days of them."
+    },
+    "jobs": {
+      "title": "Bulk jobs",
+      "summary": "{{running}} running · {{paused}} paused",
+      "emptyTitle": "Nothing running",
+      "emptyDescription": "Copy, move, delete and tag work you start appears here while it runs.",
+      "progress": "Progress of {{name}}",
+      "eta": "ETA",
+      "waitingFor": "Waiting for"
+    },
+    "breakdown": {
+      "title": "Storage by server",
+      "description": "Used bytes as each server reports them",
+      "other": "{{count}} more servers",
+      "total": "Total",
+      "emptyTitle": "No usage reported yet"
+    },
+    "quick": {
+      "title": "Quick actions",
+      "description": "Or press",
+      "upload": "Upload files",
+      "createBucket": "Create bucket",
+      "createKey": "Create access key",
+      "startJob": "Start bulk job"
+    },
+    "keys": {
+      "title": "Expiring access keys",
+      "description": "Next 30 days",
+      "allKeys": "All keys",
+      "emptyTitle": "Nothing expiring",
+      "emptyDescription": "No access key expires in the next 30 days."
+    },
+    "activity": {
+      "title": "Recent activity",
+      "description": "Across all servers",
+      "viewLog": "View log",
+      "emptyTitle": "Nothing has happened yet"
+    },
+    "servers": {
+      "title": "Servers",
+      "description": "Health is checked every {{seconds}} seconds",
+      "server": "Server",
+      "status": "Status",
+      "capacity": "Capacity",
+      "capacityMeter": "Capacity used on {{name}}",
+      "buckets": "Buckets",
+      "latency": "Latency"
+    },
+    "buckets": {
+      "title": "Largest buckets",
+      "description": "Sorted by size, with quota usage",
+      "allBuckets": "All buckets",
+      "bucket": "Bucket",
+      "server": "Server",
+      "objects": "Objects",
+      "size": "Size",
+      "quota": "Quota",
+      "quotaMeter": "Quota usage of {{name}}",
+      "versioning": "Versioning",
+      "lastStats": "Stats read",
+      "emptyTitle": "No buckets yet"
+    }
   },
   "welcome": {
     "title": "Let's get your storage connected",
@@ -12,31 +105,1149 @@
       "verify": "Verify",
       "preferences": "Preferences",
       "done": "Done"
+    },
+    "continue": "Continue",
+    "openOverview": "Open the overview",
+    "connect": {
+      "title": "Connect your first storage server",
+      "description": "Any S3-compatible endpoint. Credentials are encrypted at rest and never leave this host."
+    },
+    "verify": {
+      "title": "Verifying connection"
+    },
+    "preferences": {
+      "title": "Make it yours",
+      "description": "Language, units, calendar and theme. All of it is changeable later in Settings.",
+      "sizeUnits": "Size units",
+      "sizeUnitsHint": "Decimal matches what storage providers bill and report.",
+      "units": {
+        "decimal": "Decimal (GB, TB)",
+        "binary": "Binary (GiB, TiB)"
+      },
+      "calendar": "Calendar",
+      "calendars": {
+        "auto": "Automatic (from language)",
+        "gregory": "Gregorian",
+        "persian": "Solar Hijri",
+        "islamic": "Hijri"
+      },
+      "timezone": "Timezone"
+    },
+    "done": {
+      "title": "You're all set",
+      "body": "{{name}} is connected with {{count}} buckets. Add more servers any time from the sidebar.",
+      "generic": "Your server is connected. Add more any time from the sidebar.",
+      "addAnother": "Add another server",
+      "browse": "Browse objects",
+      "createKey": "Create access key"
     }
   },
   "servers": {
     "title": "Servers",
-    "description": "Every storage endpoint storage-io manages."
+    "description": "Every storage endpoint storage-io manages.",
+    "add": "Add server",
+    "addHint": "MinIO, SeaweedFS, AWS S3, Ceph, Garage, R2, Wasabi or any S3 endpoint",
+    "checkAll": "Check all",
+    "searchPlaceholder": "Search servers…",
+    "allProviders": "All providers",
+    "providerFilter": "Filter by provider",
+    "usedAcross": "used across all servers",
+    "tab": {
+      "label": "Health filter",
+      "all": "All",
+      "healthy": "Healthy",
+      "attention": "Needs attention"
+    },
+    "providerHint": {
+      "minio": "Admin API: users, policies, quotas",
+      "seaweedfs": "S3 gateway + IAM, collection quotas",
+      "aws": "IAM users, keys and policies",
+      "ceph": "RGW admin ops: users, quotas",
+      "garage": "Admin API v1: keys, bucket quotas",
+      "r2": "Buckets and objects, API tokens",
+      "wasabi": "Sub-users and policies",
+      "generic": "Buckets and objects only"
+    },
+    "wizard": {
+      "title": "Add a storage server",
+      "description": "Credentials are encrypted at rest and never leave this host.",
+      "providerStep": "Provider",
+      "connectionStep": "Connection",
+      "verifyStep": "Verify",
+      "runAgain": "Run again",
+      "finish": "Add server"
+    },
+    "connection": {
+      "name": "Display name",
+      "nameHint": "Lowercase letters, digits and dashes. Used in paths and the command palette.",
+      "region": "Region",
+      "endpoint": "Endpoint URL",
+      "endpointHint": "The S3 API address, including the port if it is not the default.",
+      "accessKeyId": "Access key ID",
+      "secret": "Secret access key",
+      "secretKeepHint": "Leave empty to keep the stored secret.",
+      "advanced": "Advanced options",
+      "pathStyle": "Path-style addressing",
+      "pathStyleHint": "Use endpoint/bucket instead of bucket.endpoint",
+      "tlsVerify": "Verify TLS certificate",
+      "tlsVerifyHint": "Turn off only for self-signed lab servers.",
+      "caBundle": "Custom CA bundle",
+      "caBundleHint": "PEM file for an internal certificate authority",
+      "caBundleDrop": "PEM, CRT or CER, up to 32 kB",
+      "caBundleStored": "Stored certificate",
+      "caTooLarge": "That certificate bundle is larger than 32 kB.",
+      "adminEndpoint": "Admin API endpoint",
+      "adminEndpointHint": "Needed for users, policies and quotas",
+      "iamEndpoint": "IAM endpoint",
+      "iamEndpointHint": "Where the IAM-compatible API lives, when it is not the S3 endpoint",
+      "adminToken": "Admin token",
+      "adminTokenHint": "Garage authenticates its admin API with a bearer token",
+      "healthInterval": "Health check interval",
+      "healthIntervalHint": "How often storage-io asks this server how it is",
+      "interval": {
+        "30": "30 seconds",
+        "60": "1 minute",
+        "300": "5 minutes",
+        "900": "15 minutes",
+        "3600": "1 hour"
+      }
+    },
+    "checks": {
+      "failedTitle": "The connection test could not run",
+      "none": "This provider has no checks to run.",
+      "capabilitiesTitle": "Capabilities detected",
+      "bucketCount": "{{count}} bucket",
+      "bucketCount_plural": "{{count}} buckets",
+      "status": {
+        "ok": "passed",
+        "warn": "warning",
+        "fail": "failed",
+        "skipped": "skipped"
+      }
+    },
+    "incident": {
+      "degraded": "is degraded",
+      "offline": "is unreachable",
+      "maintenance": "is in maintenance mode",
+      "lastSeen": "Last seen"
+    },
+    "card": {
+      "actions": "Server actions",
+      "open": "Open",
+      "test": "Test connection",
+      "editConnection": "Edit connection",
+      "rotate": "Rotate admin credentials",
+      "maintenanceOn": "Turn on maintenance mode",
+      "maintenanceOff": "Turn off maintenance mode",
+      "remove": "Remove server",
+      "copyEndpoint": "Copy endpoint",
+      "readOnlyNote": "{{count}} buckets are read-only until it recovers.",
+      "capacity": "Capacity",
+      "budget": "Budget",
+      "capacityMeter": "Capacity used on {{name}}",
+      "buckets": "Buckets",
+      "users": "S3 users",
+      "latency": "Latency",
+      "uptime": "Uptime",
+      "plainHttp": "Plain HTTP — traffic is not encrypted",
+      "retrying": "Retrying every {{seconds}} s",
+      "checked": "Checked",
+      "retryNow": "Retry now"
+    },
+    "edit": {
+      "title": "Edit connection",
+      "description": "Credentials are encrypted at rest. Leave the secret empty to keep the stored one.",
+      "testBeforeSaving": "Test before saving"
+    },
+    "rotate": {
+      "title": "Rotate admin credentials",
+      "description": "storage-io switches to a new key pair for this server and stops using the old one.",
+      "modeLabel": "Rotation mode",
+      "auto": "Automatic",
+      "autoHint": "storage-io creates a new key on the server, verifies it, then disables the old one.",
+      "autoUnavailable": "This provider has no IAM driver, so a key cannot be created for you.",
+      "manual": "Paste a key",
+      "manualHint": "Use a key pair you created on the server yourself.",
+      "warnTitle": "Running jobs keep the old key until they finish",
+      "warnBody": "Rotation waits for bulk jobs on this server so a transfer in flight is not interrupted.",
+      "confirm": "Rotate"
+    },
+    "remove": {
+      "title": "Remove this server?",
+      "description": "storage-io forgets the endpoint and its saved credentials. No data on the server is touched.",
+      "confirmLabel": "Server name"
+    },
+    "empty": {
+      "title": "No servers connected",
+      "description": "Connect an S3-compatible endpoint and storage-io starts managing its buckets, users and keys.",
+      "filtered": "No server matches these filters."
+    },
+    "toast": {
+      "added": "Server added",
+      "addedDetail": "{{name}} · {{count}} buckets imported",
+      "addFailed": "The server could not be added",
+      "updated": "Server updated",
+      "updatedDetail": "{{name}} · reconnected in {{ms}} ms",
+      "updateFailed": "The changes could not be saved",
+      "removed": "Server removed",
+      "removeFailed": "The server could not be removed",
+      "testOk": "Connection successful",
+      "testOkDetail": "{{name}} · {{ms}} ms",
+      "testFailed": "Connection failed",
+      "backOnline": "Server is back",
+      "stillDown": "Still unreachable",
+      "maintenanceOn": "Maintenance mode is on",
+      "maintenanceOff": "Maintenance mode is off",
+      "checkingAll": "Checking every server — results appear as each one answers.",
+      "rotated": "Credentials rotated",
+      "rotatedDetail": "{{name}} now uses {{keyId}}",
+      "rotateFailed": "The credentials could not be rotated"
+    },
+    "validation": {
+      "nameRequired": "A display name is required.",
+      "nameTooLong": "A display name can be at most 63 characters.",
+      "nameFormat": "Lowercase letters, digits and dashes only, starting and ending with a letter or digit.",
+      "endpointInvalid": "Enter the full URL, including http:// or https://.",
+      "regionRequired": "A region is required. Use us-east-1 if the server does not care.",
+      "accessKeyIdRequired": "An access key ID is required.",
+      "secretRequired": "A secret access key is required."
+    }
   },
   "server": {
     "title": "Server",
-    "description": "Health, capacity, buckets, users and connection settings."
+    "description": "Health, capacity, buckets, users and connection settings.",
+    "notFoundTitle": "That server is not here",
+    "maintenanceBadge": "Maintenance",
+    "testConnection": "Test connection",
+    "moreActions": "More actions",
+    "tab": {
+      "overview": "Overview",
+      "buckets": "Buckets",
+      "users": "Users & keys",
+      "connection": "Connection",
+      "capabilities": "Capabilities"
+    },
+    "kpi": {
+      "capacityUsed": "Capacity used",
+      "budgetUsed": "Budget used",
+      "capacityUnknown": "This provider does not report total capacity",
+      "ofUsable": "of usable capacity",
+      "objects": "Objects",
+      "objectsUnknown": "This provider does not report an object count",
+      "acrossBuckets": "across {{count}} buckets",
+      "capacityTrendLabel": "Used capacity went from {{from}} to {{to}}",
+      "buckets": "Buckets",
+      "bucketsFooter": "Capacity headroom on this server",
+      "used": "Used",
+      "free": "Free",
+      "users": "S3 users",
+      "keysSupported": "Access keys are managed here",
+      "keysUnsupported": "This provider manages keys elsewhere"
+    },
+    "nodes": {
+      "title": "Nodes & drives",
+      "description": "Reported by the server's own admin API",
+      "node": "Node",
+      "drives": "Drives",
+      "uptime": "Uptime",
+      "cpu": "CPU",
+      "memory": "RAM",
+      "storage": "Storage",
+      "summary": "{{nodes}} nodes",
+      "drivesOnline": "drives online",
+      "unsupported": "This provider does not expose a node topology, so there is nothing to show here.",
+      "emptyTitle": "No nodes reported"
+    },
+    "drives": {
+      "description": "Drives on this node, with their state and usage",
+      "healing": "Healing",
+      "usage": "Usage of {{path}}",
+      "state": {
+        "ok": "Online",
+        "offline": "Offline",
+        "healing": "Healing",
+        "unformatted": "Unformatted",
+        "unknown": "Unknown"
+      }
+    },
+    "health": {
+      "title": "Health checks",
+      "every": "Every {{seconds}} seconds",
+      "runNow": "Run a health check now",
+      "uptime24h": "Uptime, last 24 hours",
+      "responseTime": "Response time",
+      "noLatency": "No latency samples yet.",
+      "latencyChartLabel": "Response time between {{min}} and {{max}}",
+      "now": "now",
+      "noEvents": "No health events recorded yet.",
+      "checked": "Health check finished",
+      "event": {
+        "up": "Server came back",
+        "down": "Server went offline",
+        "degraded": "Server degraded",
+        "latency": "Latency above threshold",
+        "check": "Health check passed"
+      }
+    },
+    "metrics": {
+      "title": "Metrics",
+      "description": "Recorded by storage-io's own health checker",
+      "seriesLabel": "Metric",
+      "rangeLabel": "Range",
+      "series": {
+        "latency": "Response time",
+        "capacity": "Used capacity"
+      },
+      "range": {
+        "24h": "24h",
+        "7d": "7d",
+        "30d": "30d"
+      },
+      "emptyTitle": "Not enough samples yet",
+      "emptyDescription": "The chart appears once the health checker has recorded two or more samples in this range."
+    },
+    "buckets": {
+      "title": "Buckets on this server",
+      "description": "{{shown}} of {{total}} buckets, largest first",
+      "bucket": "Bucket",
+      "size": "Size",
+      "objects": "Objects",
+      "quota": "Quota",
+      "quotaMeter": "Quota usage of {{name}}",
+      "versioning": "Versioning",
+      "lastStats": "Stats read",
+      "filterPlaceholder": "Filter buckets…",
+      "allBuckets": "All buckets",
+      "browse": "Browse objects",
+      "settings": "Bucket settings",
+      "editQuota": "Edit quota",
+      "copyUri": "Copy S3 URI",
+      "emptyTitle": "No buckets on this server",
+      "emptyDescription": "Create one from the Buckets page and it appears here."
+    },
+    "users": {
+      "title": "S3 users on this server",
+      "description": "Users and keys are created through this server's own admin API",
+      "user": "User",
+      "policies": "Policies",
+      "accessKeys": "Access keys",
+      "status": "Status",
+      "lastUsed": "Last used",
+      "openUser": "Open user",
+      "manageUsers": "Manage users",
+      "manageKeys": "Manage keys",
+      "newUser": "New S3 user",
+      "unsupported": "This provider has no IAM driver, so storage-io cannot list or create users on it.",
+      "emptyTitle": "No S3 users yet",
+      "emptyDescription": "Create one to hand out scoped access keys instead of sharing the admin credentials.",
+      "secretNoteTitle": "Keys are never stored in plain text",
+      "secretNoteBody": "A secret is shown once at creation and kept encrypted with the master key afterwards."
+    },
+    "connection": {
+      "title": "Connection",
+      "description": "Credentials are encrypted at rest with the master key"
+    },
+    "verification": {
+      "title": "Verification",
+      "description": "Checks run against the saved connection",
+      "draftDescription": "Checks run against the edited values, not the saved ones"
+    },
+    "danger": {
+      "title": "Danger zone",
+      "description": "Removing a server does not touch any data on it",
+      "removeTitle": "Remove this server",
+      "removeHint": "storage-io forgets the endpoint, its credentials and its cached metadata. Buckets and objects stay where they are.",
+      "confirmTitle": "Remove this server?",
+      "confirmDescription": "These disappear from storage-io. Nothing is deleted on the server itself.",
+      "buckets": "buckets",
+      "users": "S3 users"
+    },
+    "capabilities": {
+      "title": "Capabilities",
+      "description": "Detected from the endpoint — features that are unavailable stay hidden in the UI",
+      "feature": "Feature",
+      "status": "Status",
+      "note": "Note",
+      "note_supported": "Available through {{provider}}'s API.",
+      "note_not_configured": "{{provider}} supports this, but nothing is configured for it yet.",
+      "note_not_supported": "{{provider}} does not expose this, so the UI hides it.",
+      "redetect": "Re-detect",
+      "noteTitle": "Capabilities are re-checked on every reconnect",
+      "noteBody": "An upgrade that adds a feature makes it appear here without any configuration change."
+    }
   },
   "buckets": {
     "title": "Buckets",
-    "description": "Every bucket across every connected server."
+    "description": "Every bucket across every connected server.",
+    "summary": {
+      "buckets": "Buckets",
+      "stored": "Stored",
+      "objects": "Objects",
+      "withQuota": "With quota",
+      "nearQuota": "Near quota",
+      "public": "Public"
+    },
+    "toolbar": {
+      "search": "Search buckets…",
+      "allServers": "All servers",
+      "anyAccess": "Any access",
+      "sort": "Sort",
+      "sortLabel": "Sort order"
+    },
+    "sort": {
+      "size": "Size — largest first",
+      "name": "Name A → Z",
+      "quota": "Quota usage",
+      "written": "Recently written"
+    },
+    "column": {
+      "bucket": "Bucket",
+      "server": "Server",
+      "objects": "Objects",
+      "size": "Size",
+      "quota": "Quota",
+      "access": "Access",
+      "created": "Created",
+      "region": "Region",
+      "versioning": "Versioning"
+    },
+    "flag": {
+      "versioning": "Versioning",
+      "objectLock": "Object lock",
+      "unavailable": "Unavailable"
+    },
+    "bulk": {
+      "setQuota": "Set quota",
+      "applyLifecycleRule": "Apply lifecycle rule",
+      "editTags": "Edit tags",
+      "delete": "Delete",
+      "deleteDescription": "Only empty buckets can be deleted. Each one is checked on the server; the rest are left alone.",
+      "partial": "{{ok}} of {{total}} buckets updated",
+      "noneApplied": "No bucket could be updated",
+      "applied_one": "1 bucket updated",
+      "applied_other": "{{count}} buckets updated",
+      "deleteTitle_one": "Delete this bucket?",
+      "deleteTitle_other": "Delete {{count}} buckets?"
+    },
+    "row": {
+      "actions": "Bucket actions",
+      "browse": "Browse objects",
+      "settings": "Settings",
+      "copyUri": "Copy S3 URI",
+      "editQuota": "Edit quota",
+      "accessPolicy": "Access policy",
+      "empty": "Empty bucket",
+      "delete": "Delete bucket"
+    },
+    "empty": {
+      "title": "No buckets match",
+      "description": "Clear the filters, or create the first bucket on one of your servers.",
+      "reset": "Reset filters"
+    },
+    "export": {
+      "action": "Export",
+      "started": "Preparing the inventory export",
+      "failed": "The inventory could not be exported",
+      "done_one": "Exported 1 bucket",
+      "done_other": "Exported {{count}} buckets"
+    },
+    "create": {
+      "title": "Create bucket",
+      "description": "Names are global per server and cannot be changed later.",
+      "server": "Server",
+      "serverOffline": "offline",
+      "region": "Region",
+      "name": "Bucket name",
+      "nameHint": "3–63 characters: lowercase letters, numbers, dots and hyphens",
+      "versioning": "Versioning",
+      "versioningHint": "Keep every version of every object; protects against overwrites and deletes",
+      "objectLock": "Object lock",
+      "objectLockHint": "WORM retention. Can only be enabled now, at creation — requires versioning",
+      "objectLockNeedsVersioning": "Object lock requires versioning.",
+      "quota": "Quota",
+      "quotaHint": "Hard limit enforced by the server",
+      "quotaNotSupported": "This provider has no native quota, so storage-io will only raise alerts.",
+      "access": "Access",
+      "accessPrivate": "Private",
+      "accessPrivateHint": "Only signed requests",
+      "accessPublic": "Public read",
+      "accessPublicHint": "Anyone can download",
+      "accessCustom": "Custom policy",
+      "accessCustomHint": "Edit JSON after creating",
+      "submit": "Create bucket",
+      "created": "Bucket created",
+      "failed": "The bucket could not be created"
+    },
+    "delete": {
+      "title": "Delete bucket?",
+      "description": "Only empty buckets can be deleted. Use “Empty bucket” first, or start a bulk delete job.",
+      "stillHasObjects": "<1>{{bucket}}</1> still contains <2></2> objects",
+      "emptyFirst": "Empty the bucket first, including all versions",
+      "submit": "Delete bucket",
+      "deleted": "Bucket deleted",
+      "failed": "The bucket could not be deleted"
+    },
+    "empties": {
+      "title": "Empty this bucket?",
+      "description": "Every object and every version is deleted. The bucket, its policy and its rules stay.",
+      "includeVersions": "Delete every version too",
+      "submit": "Empty bucket",
+      "started": "Emptying bucket",
+      "startedDetail": "Running as a bulk job — follow it under Bulk jobs.",
+      "failed": "The bucket could not be emptied"
+    },
+    "quotaDialog": {
+      "title": "Edit quota",
+      "enforce": "Enforce a quota",
+      "enforceHint": "When off, the bucket grows until the server runs out of space",
+      "limit": "Limit",
+      "mode": "Mode",
+      "threshold": "Alert threshold",
+      "thresholdHint": "A notification is raised once usage crosses this share of the limit.",
+      "saved": "Quota saved",
+      "failed": "The quota could not be saved",
+      "titleMany_one": "Set quota on 1 bucket",
+      "titleMany_other": "Set quota on {{count}} buckets"
+    },
+    "tagsDialog": {
+      "title": "Edit tags",
+      "replaceWarning": "The tags below replace every existing tag on each selected bucket.",
+      "saved": "Tags saved",
+      "failed": "The tags could not be saved",
+      "titleMany_one": "Set tags on 1 bucket",
+      "titleMany_other": "Set tags on {{count}} buckets"
+    },
+    "accessDialog": {
+      "title": "Access policy",
+      "description": "Choose a preset, or edit the policy JSON on the bucket's settings page.",
+      "openSettings": "Open the full editor",
+      "saved": "Access saved",
+      "failed": "The access level could not be saved"
+    }
   },
   "bucket": {
     "title": "Bucket settings",
-    "description": "Access, quota, versioning, lifecycle, replication, events and CORS."
+    "description": "Access, quota, versioning, lifecycle, replication, events and CORS.",
+    "browse": "Browse objects",
+    "copyUri": "Copy S3 URI",
+    "notSupported": {
+      "title": "Not supported by {{provider}}",
+      "description": "This storage server's driver has no API for it, so there is nothing to configure here."
+    },
+    "offline": {
+      "title": "This server is offline",
+      "description": "Settings cannot be read or changed until it answers again."
+    },
+    "nav": {
+      "label": "Bucket settings sections",
+      "general": "General",
+      "access": "Access policy",
+      "quota": "Quota",
+      "versioning": "Versioning & lock",
+      "lifecycle": "Lifecycle",
+      "replication": "Replication",
+      "events": "Events",
+      "cors": "CORS",
+      "danger": "Danger zone"
+    },
+    "general": {
+      "title": "General",
+      "description": "Identity and totals for this bucket",
+      "name": "Bucket name",
+      "server": "Server",
+      "region": "Region",
+      "created": "Created",
+      "objects": "Objects",
+      "size": "Size",
+      "noncurrent": "Noncurrent versions",
+      "storageClass": "Default storage class",
+      "owner": "Owner",
+      "renameHint": "A bucket cannot be renamed. Copy its objects into a new bucket instead.",
+      "tags": "Tags",
+      "tagsHint": "Free-form key/value pairs used by lifecycle rules, replication filters and cost reports.",
+      "tagKey": "key",
+      "tagValue": "value",
+      "addTag": "Add tag",
+      "removeTag": "Remove tag",
+      "duplicateTag": "That key is already used.",
+      "saved": "Bucket updated",
+      "tagsLimit_one": "One tag per bucket.",
+      "tagsLimit_other": "Up to {{count}} tags per bucket."
+    },
+    "access": {
+      "title": "Access policy",
+      "description": "Who can read and write objects in this bucket",
+      "preset": "Policy preset",
+      "private": "Private",
+      "publicRead": "Public read",
+      "custom": "Custom",
+      "publicWarning": "Public read makes every object downloadable without a signature",
+      "publicWarningDetail": "Anyone with the object key can fetch it. Use a pre-signed link for one-off sharing instead.",
+      "editorLabel": "Bucket policy JSON",
+      "validate": "Validate",
+      "valid": "Policy is valid",
+      "invalid": "That is not a valid policy",
+      "invalidJson": "The document is not valid JSON.",
+      "notAnObject": "A policy document must be a JSON object.",
+      "missingStatement": "A policy needs a Statement array.",
+      "saved": "Policy saved",
+      "failed": "The policy could not be saved",
+      "validDetail_one": "1 statement",
+      "validDetail_other": "{{count}} statements"
+    },
+    "quota": {
+      "title": "Quota",
+      "description": "Cap the total size this bucket may reach",
+      "enforce": "Enforce a quota",
+      "enforceHint": "When off, the bucket grows until the server runs out of space",
+      "limit": "Limit",
+      "limitHint": "Counted from the bucket's total size, including noncurrent versions.",
+      "usage": "Current usage",
+      "usageHint": "Recalculated from the server's own accounting.",
+      "free": "free",
+      "threshold": "Alert threshold",
+      "thresholdHint": "A notification is raised once usage crosses this share of the limit.",
+      "providerTitle": "Enforcement depends on the provider",
+      "providerDetail": "MinIO rejects writes past the limit. AWS S3 has no native bucket quota, so storage-io only raises alerts there.",
+      "alertOnly": "Alert only on this provider",
+      "saved": "Quota saved",
+      "failed": "The quota could not be saved"
+    },
+    "versioning": {
+      "title": "Versioning & lock",
+      "description": "Protection against overwrites and deletes",
+      "label": "Versioning",
+      "hint": "Suspending keeps existing versions but stops creating new ones.",
+      "enabled": "Enabled",
+      "enabledHint": "Every overwrite and delete keeps the previous version",
+      "suspended": "Suspended",
+      "suspendedHint": "New writes replace the object in place",
+      "lockMode": "Object lock mode",
+      "lockModeHint": "Write-once-read-many retention applied to new object versions.",
+      "governance": "Governance",
+      "governanceHint": "Users with the bypass permission can still delete",
+      "compliance": "Compliance",
+      "complianceHint": "Nobody can delete before retention expires",
+      "retention": "Default retention",
+      "days": "days",
+      "lockOnlyAtCreation": "Object lock can only be turned on when a bucket is created",
+      "lockOnlyAtCreationDetail": "It is off for this bucket and cannot be added now. Create a new bucket with object lock and copy the objects across.",
+      "lockOnDetail": "It is already on for this bucket. The mode and retention can change, but lock itself cannot be removed.",
+      "saved": "Versioning saved"
+    },
+    "lifecycle": {
+      "title": "Lifecycle",
+      "description": "Rules the server applies once a day",
+      "addRule": "Add rule",
+      "column": {
+        "rule": "Rule",
+        "scope": "Scope",
+        "action": "Action",
+        "enabled": "Enabled"
+      },
+      "wholeBucket": "Whole bucket",
+      "expire": "Expire current versions",
+      "noncurrent": "Delete noncurrent versions",
+      "abort": "Abort incomplete multipart uploads",
+      "transition": "Transition to {{storageClass}}",
+      "expiredDeleteMarkers": "Remove expired delete markers",
+      "noAction": "No action — the rule does nothing",
+      "empty": {
+        "title": "No lifecycle rules",
+        "description": "A rule expires objects, cleans up old versions or aborts abandoned uploads on a schedule."
+      },
+      "menu": {
+        "edit": "Edit rule",
+        "duplicate": "Duplicate",
+        "delete": "Delete rule"
+      },
+      "dialog": {
+        "addTitle": "Add lifecycle rule",
+        "editTitle": "Edit lifecycle rule",
+        "description": "The server evaluates every rule once a day and reports what it changed.",
+        "name": "Rule name",
+        "nameHint": "Lowercase letters, digits and dashes",
+        "scope": "Applies to",
+        "scopeAll": "Whole bucket",
+        "scopePrefix": "Objects under a prefix",
+        "scopeTag": "Objects with a tag",
+        "prefix": "Prefix",
+        "tagFilter": "Tag filter",
+        "expire": "Expire current versions",
+        "expireHint": "Objects are deleted once they reach this age",
+        "noncurrent": "Delete noncurrent versions",
+        "noncurrentHint": "Counted from the moment a newer version replaced them",
+        "abort": "Abort incomplete multipart uploads",
+        "abortHint": "Frees the space taken by parts that were never completed",
+        "transition": "Transition to another storage class",
+        "transitionHint": "Moved once the object reaches this age",
+        "deleteMarkers": "Remove expired delete markers",
+        "needsOneAction": "A rule needs at least one action.",
+        "duplicateId": "A rule with that name already exists.",
+        "complianceWarning": "Objects under compliance retention are never expired",
+        "complianceWarningDetail": "They are skipped until their retention date passes."
+      },
+      "saved": "Lifecycle rules saved",
+      "deleted": "Rule deleted"
+    },
+    "replication": {
+      "title": "Replication",
+      "description": "Copy new object versions to another server",
+      "addRule": "Add rule",
+      "column": {
+        "destination": "Destination",
+        "scope": "Scope",
+        "status": "Status",
+        "priority": "Priority"
+      },
+      "enabled": "Active",
+      "disabled": "Paused",
+      "deleteMarkers": "Delete markers replicated",
+      "empty": {
+        "title": "No replication rules",
+        "description": "A rule copies new versions of matching objects to a bucket on another server."
+      },
+      "dialog": {
+        "addTitle": "Add replication rule",
+        "editTitle": "Edit replication rule",
+        "description": "Only versions written after the rule exists are replicated.",
+        "name": "Rule name",
+        "destinationServer": "Destination server",
+        "destinationBucket": "Destination bucket",
+        "destinationArn": "Destination bucket ARN",
+        "destinationArnHint": "arn:aws:s3:::bucket-name",
+        "storageClass": "Storage class",
+        "prefix": "Prefix",
+        "priority": "Priority",
+        "priorityHint": "Lower numbers are evaluated first.",
+        "deleteMarkers": "Replicate delete markers",
+        "enabled": "Enabled"
+      },
+      "onlyNewTitle": "Only new versions are replicated",
+      "onlyNewDetail": "Objects written before a rule exists need a bulk copy job to catch up.",
+      "saved": "Replication saved"
+    },
+    "events": {
+      "title": "Events",
+      "description": "Where object notifications are delivered",
+      "add": "Add destination",
+      "kind": {
+        "queue": "Queue",
+        "topic": "Topic",
+        "lambda": "Function"
+      },
+      "state": {
+        "online": "Active",
+        "offline": "Failing",
+        "unknown": "Unknown"
+      },
+      "refreshStatus": "Refresh delivery status",
+      "statusUnsupported": "This provider does not report delivery status.",
+      "empty": {
+        "title": "No event destinations",
+        "description": "A destination receives a message whenever a matching object is created or removed."
+      },
+      "menu": {
+        "edit": "Edit destination",
+        "remove": "Remove destination"
+      },
+      "dialog": {
+        "addTitle": "Add event destination",
+        "editTitle": "Edit event destination",
+        "description": "The destination has to already exist on the storage server.",
+        "arn": "Destination ARN",
+        "arnHint": "arn:minio:sqs::webhook:webhook",
+        "kind": "Kind",
+        "events": "Events",
+        "eventsHint": "At least one event type is required.",
+        "prefix": "Prefix filter",
+        "suffix": "Suffix filter"
+      },
+      "saved": "Event destinations saved",
+      "removed": "Destination removed"
+    },
+    "cors": {
+      "title": "CORS",
+      "description": "Browser origins allowed to call this bucket directly",
+      "editorLabel": "CORS rules JSON",
+      "hint": "Direct browser uploads also need PUT in the allowed methods.",
+      "invalidJson": "The document is not valid JSON.",
+      "notAnArray": "CORS rules must be a JSON array.",
+      "saved": "CORS saved",
+      "failed": "The CORS rules could not be saved"
+    },
+    "danger": {
+      "title": "Danger zone",
+      "description": "These actions cannot be undone",
+      "emptyTitle": "Empty bucket",
+      "emptyHint": "Deletes every object and every version, and keeps the bucket itself with its settings.",
+      "deleteTitle": "Delete bucket",
+      "deleteHint": "Removes the bucket, its objects, its policy and its lifecycle rules from the server."
+    },
+    "notFound": {
+      "title": "That bucket is not there",
+      "description": "It may have been deleted, or the address may be wrong."
+    },
+    "discard": "Changes discarded",
+    "unsaved": "Unsaved changes"
   },
   "browse": {
     "title": "Object browser",
-    "description": "Browse, upload, preview and act on objects."
+    "description": "Browse, upload, preview and act on objects.",
+    "path": {
+      "label": "Prefix",
+      "root": "Bucket root",
+      "copyUri": "Copy S3 URI"
+    },
+    "toolbar": {
+      "filter": "Filter in this folder…",
+      "filterMenu": "Filter",
+      "listView": "List view",
+      "gridView": "Grid view",
+      "newFolder": "New folder",
+      "bucketSettings": "Bucket settings",
+      "uploadMore": "More upload options",
+      "uploadFiles": "Upload files",
+      "uploadFolder": "Upload folder",
+      "importUrl": "Import from URL"
+    },
+    "filter": {
+      "types": "Type",
+      "image": "Images",
+      "video": "Video",
+      "audio": "Audio",
+      "document": "Documents",
+      "archive": "Archives",
+      "other": "Other",
+      "showVersions": "Show every version"
+    },
+    "column": {
+      "name": "Name",
+      "size": "Size",
+      "type": "Type",
+      "modified": "Last modified",
+      "storageClass": "Storage class"
+    },
+    "folder": "Folder",
+    "dropHint": "Drop files or folders anywhere to upload to {{prefix}}",
+    "dropActive": "Release to upload here",
+    "foot": {
+      "allLoaded": "Everything in this folder is loaded",
+      "loadMore": "Load more",
+      "loading": "Loading more…",
+      "items_one": "1 item",
+      "items_other": "{{count}} items"
+    },
+    "empty": {
+      "title": "This folder is empty",
+      "description": "Upload files, or create a folder to organise them.",
+      "filtered": "Nothing here matches the filter"
+    },
+    "bulk": {
+      "download": "Download",
+      "downloadPreparing": "Preparing a ZIP archive",
+      "copyTo": "Copy to…",
+      "moveTo": "Move to…",
+      "more": "More actions",
+      "editTags": "Edit tags",
+      "storageClass": "Change storage class",
+      "retention": "Set retention",
+      "shareLinks": "Copy share links",
+      "asJob": "Run as bulk job…",
+      "delete": "Delete"
+    },
+    "row": {
+      "actions": "Object actions",
+      "preview": "Preview",
+      "download": "Download",
+      "shareLink": "Share link",
+      "editContents": "Edit contents",
+      "rename": "Rename",
+      "copyTo": "Copy to…",
+      "moveTo": "Move to…",
+      "editMetadata": "Edit metadata",
+      "delete": "Delete"
+    },
+    "inspector": {
+      "label": "Object details",
+      "close": "Close details",
+      "open": "Show details",
+      "tabs": {
+        "details": "Details",
+        "versions": "Versions",
+        "tags": "Tags",
+        "share": "Share"
+      },
+      "key": "Key",
+      "size": "Size",
+      "contentType": "Content-Type",
+      "modified": "Last modified",
+      "storageClass": "Storage class",
+      "etag": "ETag",
+      "versionId": "Version ID",
+      "retention": "Retention",
+      "legalHold": "Legal hold",
+      "metadata": "Metadata",
+      "noMetadata": "No metadata",
+      "editMetadata": "Edit metadata",
+      "noPreview": "No preview for this type",
+      "previewTooLarge": "Too large to preview ({{size}})",
+      "openInTab": "Open in a new tab",
+      "archiveEntries": "Archives are listed after download",
+      "current": "Current",
+      "deleteMarker": "Delete marker",
+      "restore": "Restore",
+      "restored": "Version restored",
+      "downloadVersion": "Download this version",
+      "deleteVersion": "Delete this version",
+      "noVersions": "Only one version",
+      "versioningOff": "Versioning is off for this bucket",
+      "tagsSaved": "Tags saved",
+      "expiresAfter": "Link expires after",
+      "hour": "1 hour",
+      "day": "24 hours",
+      "week": "7 days",
+      "forceDownload": "Force download",
+      "forceDownloadHint": "Sets Content-Disposition: attachment",
+      "createLink": "Create link",
+      "linkHint": "Pre-signed URL · signed with the server's admin credentials.",
+      "linkCopied": "Share link copied",
+      "linkExpires": "Expires",
+      "objectsInFolder_one": "1 object",
+      "objectsInFolder_other": "{{count}} objects",
+      "tagsLimit_one": "One tag per object.",
+      "tagsLimit_other": "Up to {{count}} tags per object. Tags drive lifecycle rules and policies."
+    },
+    "metadataDialog": {
+      "title": "Edit metadata",
+      "contentType": "Content-Type",
+      "cacheControl": "Cache-Control",
+      "contentDisposition": "Content-Disposition",
+      "custom": "Custom metadata",
+      "customHint": "Sent as x-amz-meta-… headers.",
+      "saved": "Metadata saved"
+    },
+    "renameDialog": {
+      "title": "Rename object",
+      "description": "S3 has no rename: the object is copied to the new key and the old one is deleted.",
+      "newName": "New name",
+      "renamed": "Object renamed"
+    },
+    "newFolder": {
+      "title": "New folder",
+      "description": "S3 has no real folders — this creates an empty prefix marker.",
+      "name": "Name",
+      "invalid": "A folder name cannot contain a slash.",
+      "created": "Folder created"
+    },
+    "upload": {
+      "title": "Upload to {{bucket}}",
+      "description": "Large files are sent as parallel uploads and are retried after network drops.",
+      "prefix": "Destination prefix",
+      "storageClass": "Storage class",
+      "overwrite": "Overwrite existing objects",
+      "overwriteHint": "When off, an upload that would replace an object fails instead",
+      "detectType": "Detect Content-Type",
+      "detectTypeHint": "From the file extension",
+      "extras": "Add metadata & tags",
+      "extrasHint": "Applied to every file in this upload",
+      "quotaAfter": "Bucket quota after upload: {{ratio}}",
+      "overQuota": "This upload would take the bucket past its quota.",
+      "submit": "Start upload",
+      "started": "Upload started",
+      "noFiles": "Add at least one file.",
+      "selected_one": "1 file · {{size}} selected",
+      "selected_other": "{{count}} files · {{size}} selected"
+    },
+    "importUrl": {
+      "title": "Import from URL",
+      "description": "The API downloads the URL and streams it into the bucket, so nothing passes through this browser.",
+      "url": "Source URL",
+      "key": "Destination key",
+      "overwrite": "Overwrite if the key exists",
+      "maxSize": "Up to {{size}} — raise it under Settings › Transfers.",
+      "submit": "Import",
+      "started": "Import started",
+      "done": "Imported {{key}}"
+    },
+    "edit": {
+      "title": "Edit {{name}}",
+      "description": "Saving creates a new version; the current one stays restorable.",
+      "noVersioning": "Versioning is off for this bucket, so saving replaces the object in place.",
+      "discard": "Discard",
+      "save": "Save",
+      "saved": "Saved as a new version",
+      "tooLarge": "This object is too large to edit in the browser ({{size}}).",
+      "binary": "This object does not look like text."
+    },
+    "delete": {
+      "titleOne": "Delete this object?",
+      "versioned": "Versioning is on for this bucket, so a delete marker is added and earlier versions stay recoverable.",
+      "unversioned": "Versioning is off for this bucket. This cannot be undone.",
+      "allVersions": "Also delete all previous versions",
+      "allVersionsHint": "Permanent. Objects under governance retention are skipped.",
+      "folderWarning": "A selected folder is deleted with everything under it, as a bulk job.",
+      "partial": "{{deleted}} deleted, {{failed}} failed",
+      "asJob": "Deleting as a bulk job",
+      "deleted_one": "1 object deleted",
+      "deleted_other": "{{count}} objects deleted",
+      "title_one": "Delete this object?",
+      "title_other": "Delete {{count}} objects?"
+    },
+    "copy": {
+      "copyTitle": "Copy to…",
+      "moveTitle": "Move to…",
+      "server": "Destination server",
+      "bucket": "Destination bucket",
+      "prefix": "Destination prefix",
+      "browsePrefix": "Browse",
+      "sameTarget": "The destination is the same as the source.",
+      "conflict": "If an object already exists",
+      "conflictSkip": "Skip it",
+      "conflictOverwrite": "Overwrite it",
+      "conflictRename": "Keep both (add a suffix)",
+      "copySubmit": "Copy",
+      "moveSubmit": "Move",
+      "asJob": "Running as a bulk job",
+      "copied_one": "1 object copied",
+      "copied_other": "{{count}} objects copied",
+      "moved_one": "1 object moved",
+      "moved_other": "{{count}} objects moved",
+      "description_one": "Pick where the selected item goes.",
+      "description_other": "Pick where the {{count}} selected items go."
+    },
+    "storageClassDialog": {
+      "title": "Change storage class",
+      "storageClass": "Storage class",
+      "saved": "Storage class changed",
+      "description_one": "Applied to 1 object. The object is rewritten in place.",
+      "description_other": "Applied to {{count}} objects. The object is rewritten in place."
+    },
+    "retentionDialog": {
+      "title": "Set retention",
+      "mode": "Mode",
+      "until": "Retain until",
+      "legalHold": "Legal hold",
+      "legalHoldHint": "Independent of a retention date; it blocks deletion until it is lifted.",
+      "saved": "Retention set",
+      "description_one": "Applied to 1 object.",
+      "description_other": "Applied to {{count}} objects."
+    },
+    "tagsDialog": {
+      "title": "Edit tags",
+      "saved": "Tags saved",
+      "description_one": "The tags below replace every existing tag on the selected object.",
+      "description_other": "The tags below replace every existing tag on the {{count}} selected objects."
+    },
+    "uploadPanel": {
+      "label": "Uploads",
+      "uploading": "Uploading {{done}} / {{total}}",
+      "collapse": "Collapse the upload panel",
+      "expand": "Expand the upload panel",
+      "close": "Hide the upload panel",
+      "pause": "Pause",
+      "resume": "Resume",
+      "cancel": "Cancel",
+      "retry": "Retry",
+      "queued": "Queued",
+      "finished_one": "1 upload finished",
+      "finished_other": "{{count}} uploads finished"
+    }
   },
   "quotas": {
     "title": "Quotas",
-    "description": "Bucket limits and how close each one is."
+    "description": "Bucket limits and how close each one is.",
+    "setAQuota": "Set a quota",
+    "searchPlaceholder": "Search buckets…",
+    "allServers": "All servers",
+    "serverFilter": "Filter by server",
+    "noLimit": "No limit",
+    "set": "Set",
+    "editQuota": "Edit quota",
+    "editQuotaFor": "Edit the quota of {{name}}",
+    "usageMeter": "Quota usage of {{name}}",
+    "trendLabel": "{{name}} grew from {{from}} to {{to}} over the last 7 days",
+    "unavailableHint": "{{server}} is offline, so this is the last known size.",
+    "alertOnlyHint": "This provider has no native bucket quota, so storage-io only raises alerts.",
+    "filter": {
+      "label": "Quota filter",
+      "all": "All",
+      "near": "Near limit",
+      "unlimited": "Unlimited"
+    },
+    "kpi": {
+      "withQuota": "Buckets with a quota",
+      "ofAllBuckets": "of all buckets",
+      "over90": "Over 90%",
+      "writesAtRisk": "Writes at risk",
+      "allClear": "Nothing over 90%",
+      "over80": "Over 80%",
+      "alertsRaised": "Alerts already raised",
+      "unlimited": "Unlimited",
+      "unlimitedHint": "Grow until the server is full"
+    },
+    "column": {
+      "bucket": "Bucket",
+      "server": "Server",
+      "usage": "Usage",
+      "used": "Used",
+      "enforcement": "Enforcement",
+      "alertAt": "Alert at",
+      "trend": "Trend",
+      "usedBytes": "Used bytes",
+      "limitBytes": "Limit bytes",
+      "usageRatio": "Usage ratio",
+      "support": "Support"
+    },
+    "banner": {
+      "nearHard": "is close to its hard limit",
+      "nearAlert": "is close to its alert threshold",
+      "writesRejected": "Writes are rejected once the limit is reached.",
+      "writesContinue": "Writes keep being accepted; only a notification is raised."
+    },
+    "table": {
+      "title": "Quotas",
+      "description": "{{shown}} of {{total}} buckets"
+    },
+    "empty": {
+      "title": "No quotas yet",
+      "description": "Set a limit on a bucket and it appears here with its usage and trend."
+    },
+    "note": {
+      "title": "Usage is read from each server, not recalculated by storage-io",
+      "body": "A server that is offline keeps its last known size until it comes back."
+    },
+    "export": {
+      "done": "Export ready",
+      "nothing": "There is nothing to export."
+    },
+    "edit": {
+      "title": "Edit quota",
+      "setTitle": "Set a quota",
+      "on": "on",
+      "limit": "Limit",
+      "unit": "Unit",
+      "currentlyUsed": "Currently used",
+      "belowUsage": "That limit is below what the bucket already holds.",
+      "enforcement": "Enforcement",
+      "hardHint": "Rejects writes once the limit is reached.",
+      "hardUnavailable": "{{provider}} has no native bucket quota, so a hard limit cannot be enforced.",
+      "alertHint": "Notifies at the threshold and keeps accepting writes.",
+      "threshold": "Alert threshold",
+      "thresholdHint": "A notification is raised once usage crosses this share of the limit.",
+      "providerNoteTitle": "Enforcement depends on the provider",
+      "providerNoteBody": "MinIO, SeaweedFS, Ceph RGW and Garage enforce quotas server-side. AWS S3, R2 and Wasabi have no native bucket quota, so storage-io only raises alerts there.",
+      "removeQuota": "Remove quota",
+      "notFound": "That bucket is not in the quota list.",
+      "bucket": "Bucket",
+      "pickPrompt": "Choose the bucket whose limit you want to set.",
+      "pickPlaceholder": "Search buckets…"
+    },
+    "toast": {
+      "saved": "Quota saved",
+      "removed": "Quota removed",
+      "saveFailed": "The quota could not be saved"
+    }
   },
   "jobs": {
     "title": "Bulk jobs",
@@ -44,7 +1255,102 @@
   },
   "transfers": {
     "title": "Transfers",
-    "description": "Uploads and downloads running in this browser."
+    "description": "Uploads and downloads running in this browser.",
+    "heading": "Transfer manager",
+    "subheading": "Uploads and downloads running through this browser session.",
+    "metric": {
+      "uploadSpeed": "Upload speed",
+      "downloadSpeed": "Download speed",
+      "active": "Active",
+      "queued": "Queued",
+      "completed": "Completed",
+      "failed": "Failed",
+      "sessionTotal": "Session total",
+      "uploaded": "Uploaded",
+      "downloaded": "Downloaded"
+    },
+    "tab": {
+      "all": "All",
+      "uploads": "Uploads",
+      "downloads": "Downloads",
+      "failed": "Failed"
+    },
+    "bandwidth": {
+      "label": "Bandwidth limit",
+      "none": "No bandwidth limit",
+      "limit": "Limit to {{mbps}} MB/s",
+      "saved": "Bandwidth limit saved",
+      "hint": "Applied to downloads streamed by this browser and to the API's own transfer endpoints."
+    },
+    "action": {
+      "pauseAll": "Pause all",
+      "resumeAll": "Resume all",
+      "clearCompleted": "Clear completed",
+      "pausedAll": "All transfers paused",
+      "cleared": "Completed transfers cleared"
+    },
+    "column": {
+      "direction": "Direction",
+      "file": "File",
+      "size": "Size",
+      "progress": "Progress",
+      "speed": "Speed",
+      "status": "Status"
+    },
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "paused": "Paused",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "left": "left"
+    },
+    "row": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "cancel": "Cancel",
+      "retry": "Retry",
+      "openLocation": "Open location",
+      "copyUri": "Copy S3 URI",
+      "remove": "Remove from the list",
+      "more": "More actions"
+    },
+    "empty": {
+      "title": "Nothing here right now",
+      "description": "No transfer matches this filter.",
+      "none": "Nothing has been uploaded or downloaded in this session yet."
+    },
+    "settings": {
+      "title": "Transfer settings",
+      "description": "Applies to new transfers in this browser.",
+      "parallel": "Parallel transfers",
+      "parallelHint": "Files sent at the same time.",
+      "partSize": "Multipart part size",
+      "partSizeHint": "Larger parts are faster on stable links, slower to retry.",
+      "verifyChecksums": "Verify checksums",
+      "verifyChecksumsHint": "Compare the server's ETag with the bytes that were sent",
+      "keepIncomplete": "Keep interrupted uploads",
+      "keepIncompleteHint": "How long the API keeps the parts of an unfinished upload",
+      "importUrlMax": "Import-from-URL size limit",
+      "days": "days",
+      "megabytes": "MB",
+      "reset": "Reset to defaults",
+      "saved": "Transfer settings saved",
+      "failed": "The settings could not be saved"
+    },
+    "chart": {
+      "title": "Throughput",
+      "description": "Last 10 minutes",
+      "upload": "Upload",
+      "download": "Download",
+      "peakUpload": "Peak upload",
+      "peakDownload": "Peak download",
+      "empty": "No throughput yet in this session."
+    },
+    "jobsNote": "Transfers run in this browser tab. Work that must survive a closed window belongs in a bulk job.",
+    "jobsLink": "Bulk jobs",
+    "uploadAction": "Upload"
   },
   "users": {
     "title": "S3 users",

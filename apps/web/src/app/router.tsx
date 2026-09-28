@@ -5,6 +5,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   redirect,
 } from '@tanstack/react-router';
 import { z } from 'zod';
@@ -113,82 +114,54 @@ const overviewRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/',
   staticData: { crumb: 'overview.title' },
-  component: placeholder('overview', [
-    'KpiCard',
-    'Sparkline',
-    'Meter',
-    'DataTable',
-    'ProviderMark',
-    'ServerStatusBadge',
-  ]),
+  component: lazyRouteComponent(
+    () => import('@/features/dashboard/OverviewPage'),
+    'OverviewPage',
+  ),
 });
 
 const welcomeRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/welcome',
   staticData: { crumb: 'welcome.title' },
-  component: placeholder('welcome', [
-    'useStepper',
-    'StepList',
-    'StepperNav',
-    'ChoiceCards',
-    'ProviderMark',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/welcome/WelcomePage'), 'WelcomePage'),
 });
 
 const serversRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/servers',
   staticData: { crumb: 'servers.title' },
-  component: placeholder('servers', [
-    'DataTable',
-    'ProviderMark',
-    'ServerStatusBadge',
-    'Meter',
-    'ConfirmDialog',
-    'useStepper',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/servers/ServersPage'), 'ServersPage'),
 });
 
 const serverDetailRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/servers/$server',
   staticData: { crumbFromParams: (params) => params.server ?? '' },
-  component: placeholder('server', [
-    'KpiCard',
-    'DataTable',
-    'Meter',
-    'CopyField',
-    'SegmentedControl',
-    'ConfirmDialog',
-  ]),
+  component: lazyRouteComponent(
+    () => import('@/features/servers/ServerDetailPage'),
+    'ServerDetailPage',
+  ),
 });
 
 const bucketsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/buckets',
   staticData: { crumb: 'buckets.title' },
-  component: placeholder('buckets', [
-    'DataTable',
-    'Meter',
-    'Combobox',
-    'ConfirmDialog',
-    'EmptyState',
-  ]),
+  component: lazyRouteComponent(
+    () => import('@/features/buckets/BucketsPage'),
+    'BucketsPage',
+  ),
 });
 
 const bucketDetailRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/buckets/$server/$bucket',
   staticData: { crumbFromParams: (params) => params.bucket ?? '' },
-  component: placeholder('bucket', [
-    'CodeEditor',
-    'Meter',
-    'ConfirmDialog',
-    'DatePicker',
-    'Combobox',
-    'SegmentedControl',
-  ]),
+  component: lazyRouteComponent(
+    () => import('@/features/buckets/BucketSettingsPage'),
+    'BucketSettingsPage',
+  ),
 });
 
 const browseRoute = createRoute({
@@ -204,26 +177,17 @@ const browsePrefixRoute = createRoute({
   // /browse/minio-prod-01/media-prod/2026/09/
   path: '/browse/$server/$bucket/$',
   staticData: { crumbFromParams: (params) => params.bucket ?? '' },
-  component: placeholder('browse', [
-    'DataTable',
-    'FileDropzone',
-    'CodeEditor',
-    'ConfirmDialog',
-    'CopyField',
-  ]),
+  component: lazyRouteComponent(
+    () => import('@/features/objects/ObjectBrowserPage'),
+    'ObjectBrowserPage',
+  ),
 });
 
 const quotasRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/quotas',
   staticData: { crumb: 'quotas.title' },
-  component: placeholder('quotas', [
-    'DataTable',
-    'Meter',
-    'Sparkline',
-    'SegmentedControl',
-    'Combobox',
-  ]),
+  component: lazyRouteComponent(() => import('@/features/quotas/QuotasPage'), 'QuotasPage'),
 });
 
 const jobsRoute = createRoute({
@@ -244,7 +208,10 @@ const transfersRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/transfers',
   staticData: { crumb: 'transfers.title' },
-  component: placeholder('transfers', ['DataTable', 'Meter', 'Sparkline', 'useTransfers']),
+  component: lazyRouteComponent(
+    () => import('@/features/transfers/TransfersPage'),
+    'TransfersPage',
+  ),
 });
 
 const usersRoute = createRoute({

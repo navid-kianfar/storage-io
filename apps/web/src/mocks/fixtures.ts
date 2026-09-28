@@ -264,6 +264,8 @@ export const mockDashboard: Dashboard = {
     buckets: 126,
     usedDelta7dBytes: 1.2e12,
     objectsDeltaToday: 312_000,
+    users: 38,
+    accessKeys: 61,
     servers: { total: 5, healthy: 3, degraded: 1, offline: 1 },
     nearQuotaBuckets: 2,
   },

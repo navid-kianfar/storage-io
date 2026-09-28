@@ -75,6 +75,25 @@ export type BucketSummary = z.infer<typeof bucketSummarySchema>;
 export const bucketListSchema = listOf(bucketSchema).extend({ summary: bucketSummarySchema });
 export type BucketList = z.infer<typeof bucketListSchema>;
 
+/** Column order for `GET /buckets/export.csv`; the API writes cells in this order. */
+export const BUCKET_CSV_COLUMNS = [
+  'server',
+  'provider',
+  'bucket',
+  'region',
+  'createdAt',
+  'objects',
+  'sizeBytes',
+  'statsAt',
+  'versioning',
+  'objectLock',
+  'access',
+  'quotaLimitBytes',
+  'quotaMode',
+  'quotaNative',
+  'unavailable',
+] as const;
+
 export const createBucketRequestSchema = z.object({
   name: bucketNameSchema,
   region: z.string().min(1).max(64).optional(),
@@ -211,13 +230,7 @@ export type BucketQuotaResponse = z.infer<typeof bucketQuotaResponseSchema>;
 
 /* ---------------------------- bulk actions ------------------------ */
 
-export const BUCKET_BULK_ACTIONS = [
-  'quota',
-  'lifecycle-rule',
-  'tags',
-  'access',
-  'delete',
-] as const;
+export const BUCKET_BULK_ACTIONS = ['quota', 'lifecycle-rule', 'tags', 'access', 'delete'] as const;
 export const bucketBulkActionSchema = z.enum(BUCKET_BULK_ACTIONS);
 export type BucketBulkAction = z.infer<typeof bucketBulkActionSchema>;
 

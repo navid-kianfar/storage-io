@@ -49,6 +49,13 @@
     "title": "Transfers",
     "summary": "{{uploading}} uploading · {{downloading}} downloading",
     "empty": "No transfers in progress",
-    "openManager": "Open transfer manager"
+    "openManager": "Open transfer manager",
+    "pause": "Pause",
+    "resume": "Resume",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "pauseAll": "Pause all",
+    "resumeAll": "Resume all",
+    "clearCompleted": "Clear completed"
   }
 }

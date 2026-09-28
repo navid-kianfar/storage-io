@@ -11,6 +11,10 @@ import {
   mockServers,
   mockSettings,
 } from './fixtures';
+import { bucketHandlers } from './bucketHandlers';
+import { objectHandlers } from './objectHandlers';
+import { pageHandlers } from './pageHandlers';
+import { settingsHandlers } from './settingsHandlers';
 
 /**
  * Dev-only mock API, so the shell and every page render before apps/api exists.
@@ -49,6 +53,18 @@ function unauthorized() {
 }
 
 export const handlers = [
+  // The buckets / bucket-settings / object-browser endpoints. First in the array
+  // because MSW answers with the first match, and these are the stateful versions
+  // of `/buckets`, every bucket sub-resource and every object endpoint
+  // (src/mocks/bucketState.ts holds the inventory they mutate).
+  ...bucketHandlers,
+  ...objectHandlers,
+  ...settingsHandlers,
+
+  // The overview / first-run / servers / quotas pages' endpoints. These are the
+  // stateful versions of `/servers` and `/dashboard`.
+  ...pageHandlers,
+
   http.get(`${base}/auth/me`, () => (signedIn ? HttpResponse.json(mockMe) : unauthorized())),
 
   http.post(`${base}/auth/login`, async ({ request }) => {

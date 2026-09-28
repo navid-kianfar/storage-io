@@ -1,5 +1,13 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-react';
+import {
+  ArrowDownIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  PauseIcon,
+  PlayIcon,
+  RotateCwIcon,
+  XIcon,
+} from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Bytes, Pct } from '@/components/app/Format';
@@ -8,6 +16,15 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  cancelTransfer,
+  clearCompletedTransfers,
+  pauseAllTransfers,
+  pauseTransfer,
+  resumeAllTransfers,
+  resumeTransfer,
+  retryTransfer,
+} from '@/features/transfers/engine';
 import { sortedTransfers, transferCounts, transferRatio, useTransfers } from '@/stores/transfers';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +34,10 @@ const MAX_VISIBLE = 6;
  * The topbar's transfers popover. It reads the real browser-side transfer queue
  * (src/stores/transfers.ts) — the object browser pushes uploads and downloads into
  * that store, and the /transfers page renders the same data in full.
+ *
+ * Its per-row and footer controls call `src/features/transfers/engine.ts`, the same
+ * functions the /transfers page and the browser's upload panel call, so pausing a
+ * transfer here and pausing it there are one code path.
  */
 export function TransfersPopover() {
   const { t } = useTranslation('nav');
@@ -89,13 +110,68 @@ export function TransfersPopover() {
                       <Meter
                         value={ratio}
                         striped={transfer.status === 'running'}
-                        tone={transfer.status === 'failed' ? 'crit' : undefined}
+                        // Progress, not a quota: full means finished, not "over".
+                        tone={
+                          transfer.status === 'failed'
+                            ? 'crit'
+                            : transfer.status === 'completed'
+                              ? 'ok'
+                              : 'default'
+                        }
                         label={transfer.name}
                       />
                       <span className="text-xs text-muted-foreground">
-                        <Bytes value={transfer.transferredBytes} /> /{' '}
-                        <Bytes value={transfer.totalBytes} />
+                        {transfer.status === 'failed' && transfer.error !== null ? (
+                          <span className="text-destructive-foreground">{transfer.error}</span>
+                        ) : (
+                          <>
+                            <Bytes value={transfer.transferredBytes} /> /{' '}
+                            <Bytes value={transfer.totalBytes} />
+                          </>
+                        )}
                       </span>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {transfer.status === 'running' ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('transfers.pause')}
+                          onClick={() => pauseTransfer(transfer.id)}
+                        >
+                          <PauseIcon />
+                        </Button>
+                      ) : transfer.status === 'paused' ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('transfers.resume')}
+                          onClick={() => resumeTransfer(transfer.id)}
+                        >
+                          <PlayIcon />
+                        </Button>
+                      ) : transfer.status === 'failed' ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('transfers.retry')}
+                          onClick={() => retryTransfer(transfer.id)}
+                        >
+                          <RotateCwIcon />
+                        </Button>
+                      ) : null}
+                      {transfer.status === 'completed' ||
+                      transfer.status === 'cancelled' ? null : (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('transfers.cancel')}
+                          onClick={() => cancelTransfer(transfer.id)}
+                        >
+                          <XIcon />
+                        </Button>
+                      )}
                     </div>
                   </li>
                 );
@@ -104,8 +180,22 @@ export function TransfersPopover() {
           )}
         </ScrollArea>
 
-        <div className="border-t p-2">
-          <Button variant="ghost" size="sm" className="w-full" asChild>
+        <div className="flex items-center gap-1 border-t p-2">
+          {counts.active > 0 ? (
+            <Button variant="ghost" size="sm" onClick={() => pauseAllTransfers()}>
+              <PauseIcon />
+              {t('transfers.pauseAll')}
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => resumeAllTransfers()}>
+              <PlayIcon />
+              {t('transfers.resumeAll')}
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => clearCompletedTransfers()}>
+            {t('transfers.clearCompleted')}
+          </Button>
+          <Button variant="ghost" size="sm" className="ms-auto" asChild>
             <Link to="/transfers">{t('transfers.openManager')}</Link>
           </Button>
         </div>
