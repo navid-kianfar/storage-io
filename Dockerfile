@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # storage-io — single image: NestJS API serving the built React app.
 
-FROM node:24-slim AS base
+FROM node:26-slim AS base
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true
 RUN corepack enable
 WORKDIR /repo
@@ -32,7 +32,7 @@ RUN pnpm --filter @storage-io/contracts build \
  && cp -r apps/web/dist /out/public \
  && mkdir -p /out/drizzle && cp -r apps/api/drizzle/. /out/drizzle/
 
-FROM node:24-slim AS runtime
+FROM node:26-slim AS runtime
 ENV NODE_ENV=production PORT=3000 DATABASE_PATH=/data/storage-io.sqlite WEB_DIST=/app/public
 WORKDIR /app
 RUN groupadd -r sio && useradd -r -g sio sio && mkdir -p /data && chown sio:sio /data
