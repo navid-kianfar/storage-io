@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
 import { SEAWEEDFS } from './containers';
 
@@ -40,8 +42,28 @@ const REQUEST_TIMEOUT_MS = 5_000;
 
 export const RESTART_HINT = 'docker compose -f docker/docker-compose.dev.yml restart seaweedfs';
 
-/** The filer's identity config, or null when it could not be read. */
+/** The identities the dev compose file starts SeaweedFS with (`-s3.config`). */
+const SEED_CONFIG_PATH = resolve(__dirname, '../../../../docker/seaweedfs/s3.json');
+
+/**
+ * The filer's identity config, seeding it first when the container is fresh.
+ *
+ * On a new container the seeded admin lives only in the static `-s3.config`;
+ * the filer holds no `identity.json` yet. The first IAM `CreateUser` then writes
+ * one containing just the new user, the gateway switches to it, and the admin
+ * key stops authenticating mid-suite (what CI hit on a fresh container). Writing
+ * the seed into the filer before any IAM call makes the IAM API extend it rather
+ * than replace it.
+ */
 export async function snapshotIdentities(): Promise<string | null> {
+  const current = await readIdentities();
+  if (current !== null) return current;
+  const seed = readFileSync(SEED_CONFIG_PATH, 'utf8');
+  await writeIdentities(seed);
+  return (await readIdentities()) ?? seed;
+}
+
+async function readIdentities(): Promise<string | null> {
   try {
     const response = await fetch(`${FILER_ENDPOINT}${IDENTITY_PATH}`, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

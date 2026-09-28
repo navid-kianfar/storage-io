@@ -96,6 +96,8 @@ docker compose up -d
 | Native bucket quotas | ✓ | alert-only | alert-only | ✓ | ✓ | alert-only | alert-only |
 | Nodes & drives, traffic metrics | ✓ | — | — | — | — | — | — |
 
+> **SeaweedFS and IAM:** keep your admin identity in the filer's identity store (`weed shell` → `s3.configure`), not only in the static `-s3.config` file. SeaweedFS's IAM API replaces the whole store on its first write, so an admin that exists only in `-s3.config` stops authenticating as soon as the first S3 user is created.
+
 Capabilities are detected per server. Anything unsupported is shown as such in the UI instead of failing. MinIO and SeaweedFS are tested end to end in CI; the other drivers are covered by protocol-level tests.
 
 ## Configuration
