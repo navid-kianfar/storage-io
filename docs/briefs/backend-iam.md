@@ -14,3 +14,5 @@ Scope (`apps/api/src/providers/iam/*`, `apps/api/src/modules/{iam-users,iam-grou
 - Tests: unit (policy mapping, key-meta scheduler), integration against MinIO (users, groups, policies attach, service accounts with expiry + session policy, secret works for S3 calls) and SeaweedFS (IAM users/keys/policies). Ceph/Garage: unit tests with recorded HTTP fixtures (nock/msw) verifying request signing and mapping.
 
 Report: short; what you ran and results; any contract changes.
+
+Note: an API instance may already be running on :3000 (admin/dev-password-123, apps/api/.env) with MinIO + SeaweedFS containers up; restart it after rebuilding when you need your changes live. Another backend agent (storage) works in parallel under src/modules/{buckets,objects,quotas,inventory}; keep app.module/registry edits small and additive. The dashboard needs `totals.users`/`totals.accessKeys`: expose a cheap cached count from your module (e.g. `IamStatsService.counts()`) for wave 2c.

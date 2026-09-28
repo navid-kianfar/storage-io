@@ -3,6 +3,7 @@ import {
   isoDateTime,
   jsonObject,
   listOf,
+  paginationQuerySchema,
   problemFieldErrorSchema,
   providerSchema,
 } from './common.js';
@@ -41,7 +42,12 @@ export const s3UserSchema = z.object({
 });
 export type S3User = z.infer<typeof s3UserSchema>;
 
-export const listIamUsersQuerySchema = z.object({
+/**
+ * `page`/`pageSize` come from `paginationQuerySchema` and default rather than
+ * being required, so `GET /iam/users` with no query is still valid — docs/API.md
+ * documents both on this endpoint.
+ */
+export const listIamUsersQuerySchema = paginationQuerySchema.extend({
   serverId: z.string().optional(),
   q: z.string().max(200).optional(),
   status: s3UserStatusSchema.optional(),
@@ -114,11 +120,18 @@ export const createS3UserResponseSchema = z.object({
 });
 export type CreateS3UserResponse = z.infer<typeof createS3UserResponseSchema>;
 
+/**
+ * What `status=expiring` means, and the window the expiring-key notification
+ * uses. Shared so the UI's "expires in N days" wording cannot drift from the
+ * filter the API applies.
+ */
+export const ACCESS_KEY_EXPIRING_DAYS = 7;
+
 export const ACCESS_KEY_FILTERS = ['active', 'expiring', 'disabled', 'expired'] as const;
 export const accessKeyFilterSchema = z.enum(ACCESS_KEY_FILTERS);
 export type AccessKeyFilter = z.infer<typeof accessKeyFilterSchema>;
 
-export const listAccessKeysQuerySchema = z.object({
+export const listAccessKeysQuerySchema = paginationQuerySchema.extend({
   serverId: z.string().optional(),
   userName: z.string().optional(),
   status: accessKeyFilterSchema.optional(),

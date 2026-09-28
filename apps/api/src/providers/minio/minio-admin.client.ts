@@ -56,6 +56,28 @@ export interface AdminResponse {
   readonly wasEncrypted: boolean;
 }
 
+/**
+ * A failed admin call, carrying MinIO's own error code so a caller can tell
+ * "no such user" from "the admin API is unreachable" without parsing prose. It
+ * extends `ProviderError`, so anything that only catches that still behaves as
+ * it did.
+ *
+ * The codes storage-io branches on, verified against MinIO
+ * DEVELOPMENT.2025-05-24T17-08-30Z: `XMinioAdminNoSuchUser`,
+ * `XMinioAdminNoSuchGroup`, `XMinioAdminNoSuchPolicy`,
+ * `XMinioInvalidIAMCredentials`, `XMinioIAMPolicyInUse` and
+ * `XMinioAdminPolicyChangeAlreadyApplied`.
+ */
+export class MinioAdminError extends ProviderError {
+  constructor(
+    detail: string,
+    readonly httpStatus: number,
+    readonly minioCode: string | null,
+  ) {
+    super(detail);
+  }
+}
+
 interface CachedAgent {
   readonly key: string;
   readonly agent: HttpAgent | HttpsAgent;
@@ -98,7 +120,7 @@ export class MinioAdminClient {
       timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     });
 
-    if (status >= 400) throw new ProviderError(this.describeFailure(status, raw));
+    if (status >= 400) throw this.describeFailure(status, raw);
 
     if (isMadminEncrypted(raw)) {
       const body = await madminDecrypt(connection.secretAccessKey, raw);
@@ -280,16 +302,25 @@ export class MinioAdminClient {
   }
 
   /** Keeps MinIO's XML/JSON error body out of the response we hand a client. */
-  private describeFailure(status: number, raw: Buffer): string {
+  private describeFailure(status: number, raw: Buffer): MinioAdminError {
     const text = raw.toString('utf8');
     const code = /<Code>([^<]+)<\/Code>/.exec(text)?.[1] ?? extractJsonCode(text);
     this.logger.warn({ status, code, body: text.slice(0, 500) }, 'MinIO admin API error');
 
-    if (status === 403) return "MinIO rejected storage-io's admin credentials.";
-    if (status === 404) return 'The MinIO admin API does not offer this operation.';
-    if (code !== null && code !== undefined) return `MinIO admin API error: ${code}.`;
-    return `MinIO admin API returned HTTP ${status}.`;
+    return new MinioAdminError(describe(status, code ?? null), status, code ?? null);
   }
+}
+
+/**
+ * The code decides before the status: a 404 carrying `XMinioAdminNoSuchUser` is
+ * "no such user", not "the admin API does not offer this operation", and the
+ * caller that turns it into a `NOT_FOUND` needs the difference.
+ */
+function describe(status: number, code: string | null): string {
+  if (code !== null) return `MinIO admin API error: ${code}.`;
+  if (status === 403) return "MinIO rejected storage-io's admin credentials.";
+  if (status === 404) return 'The MinIO admin API does not offer this operation.';
+  return `MinIO admin API returned HTTP ${status}.`;
 }
 
 function extractJsonCode(text: string): string | null {
