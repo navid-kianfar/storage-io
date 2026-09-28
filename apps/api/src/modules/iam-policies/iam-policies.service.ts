@@ -18,6 +18,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../common/errors/domain.exception';
+import type { RawIamPolicyDetail } from '../../providers/iam/iam-driver';
 import { IamEntityRepository, requireId } from '../iam-core/iam-entity.repository';
 import { matchesQuery } from '../iam-core/iam-page';
 import { IamTargetService, type IamTarget } from '../iam-core/iam-target.service';
@@ -118,10 +119,22 @@ export class IamPoliciesService {
 
     await policies.put(target.connection, name, request.document, request.description ?? null);
 
-    // The new document, which is also what carries the description and the
-    // `updatedAt` the list shows — MinIO stores neither for a canned policy.
-    this.versions.record(target.row.id, name, request.document, request.description ?? null);
-    return this.detailOf(target, name);
+    // Read back and record what the provider actually stored, not what was
+    // sent. A provider may normalise a document as it accepts it — MinIO merges
+    // statements that differ only by their Sid — and a history of submitted
+    // documents then offers, to restore, a version the server never held. Worse,
+    // the state the operator is actually on never reaches the history at all, so
+    // the promise the restore dialog makes ("the current document is snapshotted
+    // first, so this can be undone the same way") is not kept.
+    const stored = await policies.get(target.connection, name);
+    if (stored === null) {
+      throw new NotFoundError(`No policy "${name}" on ${target.row.name} after writing it.`);
+    }
+
+    // This snapshot also carries the description and the `updatedAt` the list
+    // shows — MinIO stores neither for a canned policy.
+    this.versions.record(target.row.id, name, stored.document, request.description ?? null);
+    return this.detailFrom(target, stored);
   }
 
   async delete(serverIdOrName: string, name: string): Promise<void> {
@@ -235,6 +248,12 @@ export class IamPoliciesService {
     const policy = await policies.get(target.connection, name);
     if (policy === null) throw new NotFoundError(`No policy "${name}" on ${target.row.name}.`);
 
+    return this.detailFrom(target, policy);
+  }
+
+  /** The detail for a policy already read from the provider — one fetch, not two. */
+  private detailFrom(target: IamTarget, policy: RawIamPolicyDetail): PolicyDetail {
+    const name = policy.name;
     const note = this.versions.latestNote(target.row.id, name);
     const writtenAt = this.versions.lastWrittenAt(target.row.id, name);
     const id = this.entities.idFor(target.row.id, 'policy', policy.name);

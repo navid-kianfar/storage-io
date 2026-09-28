@@ -15,7 +15,7 @@ import {
 import { Spinner } from '@/components/app/Spinner';
 import { TagEditor } from '@/components/app/TagEditor';
 import { toastProblem } from '@/lib/api/problems';
-import { useBucketBulkAction, useSaveBucketTags } from '../api';
+import { useBucketBulkAction, useBucketTags, useSaveBucketTags } from '../api';
 import { reportBulkResult } from './bulkResult';
 
 /**
@@ -39,9 +39,9 @@ export function BucketTagsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
-        <BucketTagsDialogBody
+        <BucketTagsDialogLoader
           buckets={buckets}
-          initial={initial ?? {}}
+          initial={initial}
           onDone={() => {
             onOpenChange(false);
             onSaved?.();
@@ -50,6 +50,46 @@ export function BucketTagsDialog({
       ) : null}
     </Dialog>
   );
+}
+
+/**
+ * Seeds the editor with the bucket's own tags when there is exactly one target.
+ *
+ * `PUT …/tags` replaces the whole set, and the bucket rows the list renders carry
+ * no tags, so opening this straight from the list used to show an empty editor
+ * for a bucket that already had tags — and saving one new pair silently dropped
+ * every existing one. Editing many at once still starts empty, because there is
+ * no single "current" set to show and the replace warning covers it.
+ */
+function BucketTagsDialogLoader({
+  buckets,
+  initial,
+  onDone,
+}: {
+  readonly buckets: readonly BucketRef[];
+  readonly initial?: Readonly<Record<string, string>>;
+  readonly onDone: () => void;
+}) {
+  const only = buckets.length === 1 ? buckets[0] : undefined;
+  const needsFetch = only !== undefined && initial === undefined;
+  const ref = { serverId: only?.serverId ?? '', bucket: only?.bucket ?? '' };
+  const current = useBucketTags(ref, needsFetch);
+
+  if (needsFetch && current.isPending) {
+    return (
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="sr-only">Loading</DialogTitle>
+        </DialogHeader>
+        <div className="flex justify-center py-8">
+          <Spinner />
+        </div>
+      </DialogContent>
+    );
+  }
+
+  const loaded = needsFetch ? (current.data?.tags ?? {}) : (initial ?? {});
+  return <BucketTagsDialogBody buckets={buckets} initial={loaded} onDone={onDone} />;
 }
 
 function BucketTagsDialogBody({

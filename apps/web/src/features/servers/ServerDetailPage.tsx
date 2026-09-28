@@ -112,6 +112,16 @@ export function ServerDetailPage() {
     [navigate, serverParam],
   );
 
+  /** Drops `?dialog=` once the tab has opened it, so a close does not reopen it. */
+  const clearDialog = useCallback(() => {
+    void navigate({
+      to: '/servers/$serverId',
+      params: { serverId: serverParam },
+      search: ({ dialog: _dialog, ...rest }: Record<string, unknown>) => rest,
+      replace: true,
+    });
+  }, [navigate, serverParam]);
+
   const runTest = useCallback(() => {
     if (server.data === undefined) return;
     test.mutate(server.data.id, {
@@ -255,7 +265,10 @@ export function ServerDetailPage() {
                 {t('servers.card.rotate')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={() => setSearch({ tab: 'connection' })}>
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => setSearch({ tab: 'connection', dialog: 'remove' })}
+              >
                 <Trash2Icon />
                 {t('servers.card.remove')}
               </DropdownMenuItem>
@@ -338,7 +351,11 @@ export function ServerDetailPage() {
         </TabsContent>
 
         <TabsContent value="connection">
-          <ServerConnectionTab server={current} />
+          <ServerConnectionTab
+            server={current}
+            removeRequested={search.dialog === 'remove'}
+            onRemoveHandled={clearDialog}
+          />
         </TabsContent>
 
         <TabsContent value="capabilities">

@@ -15,7 +15,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/utils';
 
 /**
  * The only way this app asks "are you sure?". `window.confirm` is banned by an
@@ -129,9 +128,17 @@ function ConfirmDialogBody({
 
       <AlertDialogFooter>
         <AlertDialogCancel disabled={busy}>{cancelLabel ?? t('action.cancel')}</AlertDialogCancel>
+        {/*
+          The variant, not a className: AlertDialogAction renders its Button
+          with `asChild`, and Radix's Slot concatenates the two class strings
+          instead of running them through tailwind-merge. Appending
+          `bg-destructive` therefore left `bg-primary` in place too, and the
+          stylesheet's own order decided — which made every destructive
+          confirmation in the app render in the primary colour.
+        */}
         <AlertDialogAction
           disabled={!matches || busy}
-          className={cn(destructive && 'bg-destructive text-white hover:bg-destructive/90')}
+          variant={destructive ? 'destructive' : 'default'}
           onClick={(event) => {
             // Keep the dialog up while the request runs; the caller closes it.
             event.preventDefault();

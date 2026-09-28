@@ -1,5 +1,5 @@
 import type { NotificationSettings, TestableChannel, UpdateSettingsRequest } from '@storage-io/contracts';
-import { EyeIcon, EyeOffIcon, PlusIcon, XIcon } from 'lucide-react';
+import { EyeIcon, EyeOffIcon, PlugZapIcon, PlusIcon, XIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import {
   AlertDescription,
   Badge,
   Button,
+  ConfirmDialog,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -25,7 +26,7 @@ import {
   Spinner,
   Switch,
 } from '@/components/app';
-import { useUpdateSettings } from '@/features/settings/api';
+import { useRemoveNotificationChannel, useUpdateSettings } from '@/features/settings/api';
 import { useApiError } from '@/lib/api/useApiError';
 
 /**
@@ -56,8 +57,10 @@ export function ChannelDialog({
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
   const save = useUpdateSettings();
+  const disconnect = useRemoveNotificationChannel();
 
   const [showSecret, setShowSecret] = useState(false);
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
 
   // Email
   const [host, setHost] = useState(settings.email.host);
@@ -85,6 +88,16 @@ export function ChannelDialog({
 
   const canSave =
     kind === 'email' ? emailValid : kind === 'webhook' ? webhookValid : telegramValid;
+
+  // "Configured" is the one field that makes the channel addressable — the same
+  // test the channel list uses. Only a configured channel has anything to
+  // disconnect, and the saved settings are what counts here, not the draft.
+  const configured =
+    kind === 'email'
+      ? settings.email.host.length > 0
+      : kind === 'webhook'
+        ? settings.webhook.url.length > 0
+        : settings.telegram.chatId.length > 0;
 
   const addRecipient = () => {
     const value = recipientDraft.trim();
@@ -135,6 +148,22 @@ export function ChannelDialog({
         onClose();
       },
       onError: (error) => apiError.toastError(error, t('settings.notifications.failed')),
+    });
+  };
+
+  const removeChannel = () => {
+    disconnect.mutate(kind, {
+      onSuccess: () => {
+        toast.success(t('settings.notifications.disconnected'), {
+          description: t(`settings.notifications.channel.${kind}`),
+        });
+        setConfirmingDisconnect(false);
+        onClose();
+      },
+      onError: (error) => {
+        setConfirmingDisconnect(false);
+        apiError.toastError(error, t('settings.notifications.disconnectFailed'));
+      },
     });
   };
 
@@ -399,15 +428,29 @@ export function ChannelDialog({
         ) : null}
 
         <DialogFooter className="sm:justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onTest(kind)}
-            disabled={testing !== null}
-          >
-            {testing === kind ? <Spinner /> : null}
-            {t('settings.notifications.sendTest')}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onTest(kind)}
+              disabled={testing !== null}
+            >
+              {testing === kind ? <Spinner /> : null}
+              {t('settings.notifications.sendTest')}
+            </Button>
+            {configured ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setConfirmingDisconnect(true)}
+                disabled={disconnect.isPending}
+              >
+                {disconnect.isPending ? <Spinner /> : <PlugZapIcon />}
+                {t('settings.notifications.disconnect')}
+              </Button>
+            ) : null}
+          </div>
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" onClick={onClose}>
               {tCommon('action.cancel')}
@@ -419,6 +462,19 @@ export function ChannelDialog({
           </div>
         </DialogFooter>
       </DialogContent>
+
+      <ConfirmDialog
+        open={confirmingDisconnect}
+        onOpenChange={setConfirmingDisconnect}
+        destructive
+        busy={disconnect.isPending}
+        title={t('settings.notifications.disconnectTitle', {
+          channel: t(`settings.notifications.channel.${kind}`),
+        })}
+        description={t('settings.notifications.disconnectDescription')}
+        confirmLabel={t('settings.notifications.disconnect')}
+        onConfirm={removeChannel}
+      />
     </Dialog>
   );
 }

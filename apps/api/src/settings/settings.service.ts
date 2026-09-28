@@ -3,6 +3,10 @@ import { eq } from 'drizzle-orm';
 import {
   SETTINGS_DEFAULTS,
   settingsSchema,
+  type NotificationChannel,
+  type NotificationRule,
+  type NotificationRules,
+  type NotificationSettings,
   type Settings,
   type UpdateSettingsRequest,
 } from '@storage-io/contracts';
@@ -125,6 +129,60 @@ export class SettingsService implements OnApplicationBootstrap {
     });
 
     this.cached = parsed.data;
+    return stripWriteOnly(parsed.data);
+  }
+
+  /**
+   * Clears one delivery channel: its configuration, its write-only secret, and
+   * every rule that routed to it.
+   *
+   * A PATCH cannot express this. `deepMerge` keeps any key the caller leaves
+   * out — which is exactly what makes an omitted secret mean "leave the stored
+   * one alone" — so no request body can remove a saved password, and the
+   * channel's own form will not save an empty host or URL either. Hence a
+   * verb of its own rather than a flag on update().
+   *
+   * The rules column is cleared with it, deliberately: a tick left behind on a
+   * disconnected channel starts delivering again the moment someone connects a
+   * different URL under the same name, which is the one failure mode an
+   * operator would never think to check for.
+   */
+  removeNotificationChannel(channel: NotificationChannel): Settings {
+    const current = this.getInternal();
+
+    const clearedRuleEntries = Object.entries(current.notifications.rules).map(([key, rule]) => {
+      const withoutChannel: NotificationRule = { ...rule, [channel]: false };
+      return [key, withoutChannel] as const;
+    });
+    const rules = Object.fromEntries(clearedRuleEntries) as NotificationRules;
+
+    // The defaults carry no secret key at all, so the stored leaf goes away
+    // rather than becoming an empty string that still reads as "configured".
+    const blank = structuredClone(SETTINGS_DEFAULTS.notifications[channel]);
+    const notifications: NotificationSettings = {
+      ...current.notifications,
+      [channel]: blank,
+      rules,
+    };
+    const next: Settings = { ...current, notifications };
+
+    const parsed = settingsSchema.safeParse(next);
+    if (!parsed.success) {
+      throw new Error(`Clearing ${channel} produced an invalid document: ${parsed.error.message}`);
+    }
+
+    const updatedAt = new Date().toISOString();
+    const atRest = this.mapSecrets(parsed.data, (value) => this.crypto.encryptSecret(value));
+    const value = atRest.notifications as unknown as Record<string, unknown>;
+
+    this.db
+      .insert(settingsTable)
+      .values({ section: 'notifications', value, updatedAt })
+      .onConflictDoUpdate({ target: settingsTable.section, set: { value, updatedAt } })
+      .run();
+
+    this.cached = parsed.data;
+    this.logger.log({ channel }, 'Notification channel disconnected and its secret cleared');
     return stripWriteOnly(parsed.data);
   }
 

@@ -1,11 +1,15 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
+  NOTIFICATION_CHANNELS,
+  notificationChannelSchema,
   testNotificationRequestSchema,
   updateSettingsRequestSchema,
+  type NotificationChannel,
   type Settings,
   type TestNotificationResponse,
 } from '@storage-io/contracts';
+import { ValidationError } from '../common/errors/domain.exception';
 import { dtoFrom } from '../common/dto';
 import { LogActivity } from '../activity/activity.interceptor';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -38,6 +42,26 @@ export class SettingsController {
   @ApiOperation({ summary: 'Patch one or more settings sections' })
   update(@Body() body: UpdateSettingsDto): Settings {
     return this.settings.update(body);
+  }
+
+  @Delete('notifications/:channel')
+  @LogActivity({
+    category: 'system',
+    action: 'settings.notifications.remove',
+    title: 'Disconnected a notification channel',
+  })
+  @ApiParam({ name: 'channel', enum: NOTIFICATION_CHANNELS })
+  @ApiOperation({
+    summary: 'Disconnect one channel: clears its configuration, secret and rules',
+  })
+  removeChannel(@Param('channel') channel: string): Settings {
+    const parsed = notificationChannelSchema.safeParse(channel);
+    if (!parsed.success) {
+      const known = NOTIFICATION_CHANNELS.join(', ');
+      throw new ValidationError(`Unknown notification channel. Expected one of: ${known}.`);
+    }
+    const target: NotificationChannel = parsed.data;
+    return this.settings.removeNotificationChannel(target);
   }
 
   @Post('notifications/test')

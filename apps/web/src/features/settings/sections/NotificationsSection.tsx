@@ -218,8 +218,16 @@ function NotificationsForm({ saved }: { readonly saved: NotificationSettings }) 
                   className="flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2.5"
                 >
                   <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-[0.8125rem] font-medium">
+                  {/*
+                    A floor rather than `min-w-0`: the three controls are all
+                    `shrink-0`, so with a zero floor this column absorbs every
+                    pixel of shrinking and collapses to nothing at 375px — the
+                    name then overflows and paints across the buttons instead of
+                    the row wrapping. 8rem is enough for the longest channel name
+                    and forces the wrap at narrow widths.
+                  */}
+                  <div className="flex min-w-[8rem] flex-1 flex-col">
+                    <span className="truncate text-[0.8125rem] font-medium">
                       {t(`settings.notifications.channel.${channel.kind}`)}
                     </span>
                     <span className="truncate font-mono text-xs text-muted-foreground" dir="ltr">

@@ -48,7 +48,16 @@ import { useApiError } from '@/lib/api/useApiError';
  * different questions and the operator is asking whichever one matches what they
  * are looking at.
  */
-export function ServerConnectionTab({ server }: { readonly server: Server }) {
+export function ServerConnectionTab({
+  server,
+  removeRequested = false,
+  onRemoveHandled,
+}: {
+  readonly server: Server;
+  /** The "Remove server" menu item lives on the page header, not in this tab. */
+  readonly removeRequested?: boolean;
+  readonly onRemoveHandled?: () => void;
+}) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
@@ -66,6 +75,20 @@ export function ServerConnectionTab({ server }: { readonly server: Server }) {
   const remove = useDeleteServer();
 
   const [removing, setRemoving] = useState(false);
+
+  /**
+   * The header's "Remove server" item only brings the operator to this tab — the
+   * danger zone it wants sits below the fold, so on its own it looked like a
+   * destructive menu item that did nothing. It asks here instead, and the
+   * request is cleared as soon as it has been turned into dialog state so that
+   * closing the dialog does not immediately reopen it.
+   */
+  const askToRemove = removeRequested && !removing;
+  useEffect(() => {
+    if (!askToRemove) return;
+    setRemoving(true);
+    onRemoveHandled?.();
+  }, [askToRemove, onRemoveHandled]);
 
   /**
    * The check result is the mutation's own state rather than a copy in `useState`:

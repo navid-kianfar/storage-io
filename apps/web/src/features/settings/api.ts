@@ -6,6 +6,7 @@ import type {
   HealthResponse,
   ImportSettingsResponse,
   Me,
+  NotificationChannel,
   Settings,
   TestNotificationRequest,
   TestNotificationResponse,
@@ -128,6 +129,26 @@ export function useTestNotification(): UseMutationResult<
 > {
   return useMutation({
     mutationFn: (body) => api.post<TestNotificationResponse>('/settings/notifications/test', body),
+  });
+}
+
+/**
+ * Disconnect one channel. A PATCH cannot do this — an omitted secret means
+ * "keep the stored one" — so removing a channel is its own verb, and the
+ * response is the whole document, seeded back like every other settings write.
+ */
+export function useRemoveNotificationChannel(): UseMutationResult<
+  Settings,
+  Error,
+  NotificationChannel
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (channel) =>
+      api.delete<Settings>(`/settings/notifications/${encodeURIComponent(channel)}`),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.settings.current(), updated);
+    },
   });
 }
 

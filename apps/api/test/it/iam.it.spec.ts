@@ -387,8 +387,9 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
 
         // Newest first: the narrowed document, then the original.
         expect(versions.body.items.length).toBeGreaterThanOrEqual(2);
-        // The snapshot is storage-io's own row, so it is byte-for-byte what was sent.
-        expect(versions.body.items[0].document).toEqual(edited);
+        // The snapshot is what MinIO stored, which is the same policy but not
+        // necessarily the same list order.
+        expectSamePolicy(versions.body.items[0].document, edited);
 
         const original = versions.body.items.find(
           (version: { document: unknown }) =>
@@ -413,6 +414,48 @@ describe.skipIf(!IT_ENABLED)('iam against live containers', () => {
           .set('Cookie', cookie)
           .expect(200);
         expectSamePolicy(reread.body.document, READ_POLICY);
+      });
+
+      /**
+       * MinIO normalises a document as it accepts it: two statements that differ
+       * only by their `Sid` come back merged into one. If the history recorded
+       * what was *sent* rather than what was *stored*, it would offer a version
+       * to restore that the server never held — and the state the operator is
+       * actually on would never reach the history at all, which silently breaks
+       * the promise the restore dialog makes ("the current document is
+       * snapshotted first, so this can be undone the same way").
+       */
+      it('snapshots the document the server stored, not the one that was sent', async () => {
+        const withDuplicate = {
+          ...READ_POLICY,
+          Statement: [
+            READ_POLICY.Statement[0],
+            { ...READ_POLICY.Statement[0], Sid: 'ReadBucketCopy' },
+          ],
+        };
+
+        await harness
+          .http()
+          .put(`/api/v1/servers/${MINIO_SERVER}/iam/policies/${POLICY}`)
+          .set(auth())
+          .send({ document: withDuplicate })
+          .expect(200);
+
+        const stored = await harness
+          .http()
+          .get(`/api/v1/servers/${MINIO_SERVER}/iam/policies/${POLICY}`)
+          .set('Cookie', cookie)
+          .expect(200);
+
+        // MinIO merged them; if it ever stops doing so this test still holds,
+        // because the claim is "history matches the server", not "MinIO merges".
+        const versions = await harness
+          .http()
+          .get(`/api/v1/servers/${MINIO_SERVER}/iam/policies/${POLICY}/versions`)
+          .set('Cookie', cookie)
+          .expect(200);
+
+        expectSamePolicy(versions.body.items[0].document, stored.body.document);
       });
     });
 
