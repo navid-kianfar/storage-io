@@ -8,28 +8,40 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { Skeleton } from '@/components/app/Skeleton';
+import { useEntityName, type EntityKind } from '@/lib/entities/resolve';
 
 /**
  * Breadcrumbs, derived from the matched routes rather than declared per page.
  *
- * Each route carries `staticData.crumb`: either an i18n key in the `pages`
- * namespace, or a function of the route's params for a dynamic segment (a server
- * or bucket name). A route with no `crumb` contributes nothing, which is how
- * `/buckets/$server/$bucket` shows "Buckets › media-prod" and not the server id.
+ * Each route carries `staticData`: either `crumb`, an i18n key in the `pages`
+ * namespace, or `crumbEntity`, which names an id route param and the kind of
+ * entity it is. The URL carries opaque ids (docs/ROUTES.md rule 1) and a
+ * breadcrumb showing a UUID is useless, so `crumbEntity` resolves the id to the
+ * entity's *name* through the shared resolver — one cache entry per id, seeded by
+ * whichever list the operator came from, so arriving from a list costs nothing.
+ *
+ * While the name is still unknown the crumb is a skeleton, never the raw id: a
+ * UUID flashing into a name is worse than a placeholder that becomes one.
  */
 
 export interface RouteCrumbData {
   /** Key in the `pages` namespace, e.g. `servers.title`. */
   readonly crumb?: string;
-  /** For a dynamic segment: the literal text to show. */
-  readonly crumbFromParams?: (params: Readonly<Record<string, string>>) => string;
+  /** An id param to resolve to the entity's display name. */
+  readonly crumbEntity?: { readonly kind: EntityKind; readonly param: string };
   /** Renders in a monospace font — a server, bucket or object name. */
   readonly crumbMono?: boolean;
+  /** The object browser's mode; see `ObjectBrowserPage`. */
+  readonly browserMode?: 'browse' | 'object' | 'upload' | 'import';
+  /** Which overlay this route opens over its parent page; see `useRouteOverlay`. */
+  readonly overlay?: string;
 }
 
 interface Crumb {
   readonly key: string;
-  readonly label: string;
+  readonly label: string | null;
+  readonly entity: { readonly kind: EntityKind; readonly id: string } | null;
   readonly to: string;
   readonly mono: boolean;
 }
@@ -44,10 +56,13 @@ export function Breadcrumbs() {
     if (data === undefined) continue;
     const params = match.params as Readonly<Record<string, string>>;
 
-    if (data.crumbFromParams !== undefined) {
+    if (data.crumbEntity !== undefined) {
+      const id = params[data.crumbEntity.param];
+      if (id === undefined) continue;
       crumbs.push({
         key: match.id,
-        label: data.crumbFromParams(params),
+        label: null,
+        entity: { kind: data.crumbEntity.kind, id },
         to: match.pathname,
         mono: data.crumbMono ?? true,
       });
@@ -57,6 +72,7 @@ export function Breadcrumbs() {
       crumbs.push({
         key: match.id,
         label: t(data.crumb),
+        entity: null,
         to: match.pathname,
         mono: data.crumbMono ?? false,
       });
@@ -70,11 +86,6 @@ export function Breadcrumbs() {
       <BreadcrumbList className="flex-nowrap text-[0.8125rem] whitespace-nowrap">
         {crumbs.map((crumb, index) => {
           const last = index === crumbs.length - 1;
-          const label = crumb.mono ? (
-            <span className="ltr-isolate font-mono">{crumb.label}</span>
-          ) : (
-            crumb.label
-          );
           return (
             <BreadcrumbItem
               key={crumb.key}
@@ -82,11 +93,15 @@ export function Breadcrumbs() {
               className={last ? 'min-w-0 overflow-hidden' : 'hidden sm:flex'}
             >
               {last ? (
-                <BreadcrumbPage className="truncate font-medium">{label}</BreadcrumbPage>
+                <BreadcrumbPage className="truncate font-medium">
+                  <CrumbLabel crumb={crumb} />
+                </BreadcrumbPage>
               ) : (
                 <>
                   <BreadcrumbLink asChild>
-                    <Link to={crumb.to}>{label}</Link>
+                    <Link to={crumb.to}>
+                      <CrumbLabel crumb={crumb} />
+                    </Link>
                   </BreadcrumbLink>
                   <BreadcrumbSeparator className="[&>svg]:size-3.5 [&>svg]:opacity-60" />
                 </>
@@ -97,4 +112,17 @@ export function Breadcrumbs() {
       </BreadcrumbList>
     </Breadcrumb>
   );
+}
+
+/**
+ * One crumb's text. It is its own component because resolving an entity name is a
+ * hook, and a list of crumbs cannot call one per iteration.
+ */
+function CrumbLabel({ crumb }: { readonly crumb: Crumb }) {
+  const resolved = useEntityName(crumb.entity?.kind ?? 'bucket', crumb.entity?.id);
+  const text = crumb.entity === null ? crumb.label : resolved;
+
+  if (text === null) return <Skeleton className="inline-block h-4 w-24 align-middle" />;
+  if (!crumb.mono) return <>{text}</>;
+  return <span className="ltr-isolate font-mono">{text}</span>;
 }

@@ -15,7 +15,8 @@ export const RECENT_BUCKETS_STORAGE_KEY = 'sio.recent-buckets';
 export const RECENT_BUCKETS_LIMIT = 8;
 
 export interface RecentBucket {
-  /** The server's id, which is what the browse route resolves. */
+  /** The bucket's opaque id — what the browse route is addressed by. */
+  readonly bucketId: string;
   readonly serverId: string;
   readonly serverName: string;
   readonly bucket: string;

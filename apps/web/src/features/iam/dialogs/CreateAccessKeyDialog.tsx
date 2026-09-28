@@ -1,6 +1,6 @@
 import type { CreatedKey } from '@storage-io/contracts';
 import { KeyRoundIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -30,10 +30,12 @@ import { SecretRevealDialog } from '@/features/iam/components/SecretRevealDialog
 import { isoInDays } from '@/features/iam/expiry';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useNavigate } from '@tanstack/react-router';
+import { useRouteState } from '@/lib/dialogs/route';
 
 /**
- * Create an access key for an existing S3 user: `?dialog=create-access-key`, with
+ * Create an access key for an existing S3 user — the `/keys/new` route. The
+ * server and user may be pre-selected through router history state, with
  * `d_server` and `d_user` prefilled from the users page or a user's sheet.
  *
  * The key is created on the storage server, so the server list is filtered to the
@@ -67,7 +69,18 @@ const DEFAULT_SESSION_POLICY = `{
   ]
 }`;
 
-export function CreateAccessKeyDialog({ params, onClose }: DialogProps) {
+export interface CreateAccessKeyDialogProps {
+  /** Pre-fill from router history state; never from the URL. */
+  readonly initialServerId: string | null;
+  readonly initialUserName: string | null;
+  readonly onClose: () => void;
+}
+
+export function CreateAccessKeyDialog({
+  initialServerId,
+  initialUserName,
+  onClose,
+}: CreateAccessKeyDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
@@ -75,8 +88,8 @@ export function CreateAccessKeyDialog({ params, onClose }: DialogProps) {
   const servers = useServers();
   const createKey = useCreateAccessKey();
 
-  const [serverId, setServerId] = useState<string | null>(params.server ?? null);
-  const [userName, setUserName] = useState<string | null>(params.user ?? null);
+  const [serverId, setServerId] = useState<string | null>(initialServerId);
+  const [userName, setUserName] = useState<string | null>(initialUserName);
   const [name, setName] = useState('');
   const [expiry, setExpiry] = useState<ExpiryPreset>('90d');
   const [restricted, setRestricted] = useState(false);
@@ -298,4 +311,18 @@ export function CreateAccessKeyDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('create-access-key', CreateAccessKeyDialog);
+/** `/keys/new` — the create dialog over the access keys list. */
+export function CreateAccessKeyRoute() {
+  const navigate = useNavigate();
+  const state = useRouteState();
+  const close = useCallback(() => {
+    void navigate({ to: '/keys', search: true });
+  }, [navigate]);
+  return (
+    <CreateAccessKeyDialog
+      initialServerId={state.serverId ?? null}
+      initialUserName={state.userName ?? null}
+      onClose={close}
+    />
+  );
+}

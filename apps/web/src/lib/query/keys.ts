@@ -33,6 +33,7 @@ export const queryKeys = {
     list: (filters?: unknown) => [...queryKeys.buckets.all, 'list', filters ?? null] as const,
     detail: (serverId: string, bucket: string) =>
       [...queryKeys.buckets.all, 'detail', serverId, bucket] as const,
+
     /** `section` is the sub-resource: 'policy', 'lifecycle', 'cors', 'quota', … */
     section: (serverId: string, bucket: string, section: string) =>
       [...queryKeys.buckets.all, 'detail', serverId, bucket, section] as const,
@@ -68,6 +69,7 @@ export const queryKeys = {
       [...queryKeys.iam.all, 'policy', serverId, name, 'versions'] as const,
     accessKeys: (filters?: unknown) =>
       [...queryKeys.iam.all, 'access-keys', filters ?? null] as const,
+
   },
   quotas: {
     all: ['quotas'] as const,
@@ -106,6 +108,18 @@ export const queryKeys = {
   },
   health: {
     all: ['health'] as const,
+  },
+  /**
+   * The opaque ids the URLs carry, resolved to `{ id, serverId, name }`.
+   * Its own scope, because an id never changes meaning: nothing on the stream
+   * makes a ref stale, and invalidating `buckets` must not throw it away.
+   */
+  entities: {
+    all: ['entities'] as const,
+    /** `{ id, serverId, name }` — what a breadcrumb and a route need. */
+    ref: (kind: string, id: string) => [...queryKeys.entities.all, kind, id] as const,
+    /** The whole entity the resolve endpoint returns, for the page that renders it. */
+    byId: (kind: string, id: string) => [...queryKeys.entities.all, kind, id, 'full'] as const,
   },
 } as const;
 

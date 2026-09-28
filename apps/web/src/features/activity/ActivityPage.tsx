@@ -35,7 +35,7 @@ import {
   type SegmentedOption,
 } from '@/components/app';
 import { ActivityEventSheet } from '@/features/activity/ActivityEventSheet';
-import { fetchActivityCsv, useActivity } from '@/features/activity/api';
+import { fetchActivityCsv, useActivity, useActivityEvent } from '@/features/activity/api';
 import {
   ACTIVITY_RANGES,
   ACTIVITY_RESULT_BADGES,
@@ -49,6 +49,7 @@ import {
 import { useSettings } from '@/features/shell/api';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
+import { useRouteOverlay } from '@/lib/dialogs/route';
 import { csvFileName, downloadBlob } from '@/lib/csv/csv';
 import { useFormat } from '@/lib/format/FormatProvider';
 import { cn } from '@/lib/utils';
@@ -109,7 +110,25 @@ export function ActivityPage() {
     pageIndex: 0,
     pageSize: ACTIVITY_PAGE_SIZE,
   });
-  const [openEvent, setOpenEvent] = useState<ActivityEvent | null>(null);
+  /**
+   * The event sheet is the `/activity/$eventId` route, so an audit row is a link
+   * an operator can paste into a ticket. The page keeps ownership because closing
+   * it has to keep this list's filters.
+   */
+  const overlay = useRouteOverlay();
+  const openEventQuery = useActivityEvent(overlay.params.eventId ?? null);
+  const openEvent = openEventQuery.data ?? null;
+
+  const setOpenEvent = useCallback(
+    (event: ActivityEvent) => {
+      void navigate({ to: '/activity/$eventId', params: { eventId: event.id }, search: true });
+    },
+    [navigate],
+  );
+
+  const closeEvent = useCallback(() => {
+    void navigate({ to: '/activity', search: true });
+  }, [navigate]);
   const [exporting, setExporting] = useState(false);
 
   const servers = useServers();
@@ -342,7 +361,7 @@ export function ActivityPage() {
         actions={
           <>
             <Button variant="outline" asChild>
-              <Link to="/settings" hash="activity-forwarding">
+              <Link to="/settings/$section" params={{ section: 'forwarding' }}>
                 <WebhookIcon />
                 {t('activity.forwardToSyslog')}
               </Link>
@@ -495,7 +514,7 @@ export function ActivityPage() {
               : t('activity.retention', { days: format.number(retentionDays) })}
           </span>
           <Button variant="ghost" size="sm" asChild className="ms-auto">
-            <Link to="/settings" hash="backup-retention">
+            <Link to="/settings/$section" params={{ section: 'backup' }}>
               {t('activity.changeInSettings')}
             </Link>
           </Button>
@@ -505,10 +524,10 @@ export function ActivityPage() {
       {openEvent === null ? null : (
         <ActivityEventSheet
           event={openEvent}
-          onClose={() => setOpenEvent(null)}
+          onClose={closeEvent}
           onFilterByActor={(actorName) => {
             setSearch({ q: actorName });
-            setOpenEvent(null);
+            closeEvent();
           }}
         />
       )}

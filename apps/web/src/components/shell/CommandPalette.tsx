@@ -3,13 +3,12 @@ import {
   type SearchResult,
   type SearchResultType,
 } from '@storage-io/contracts';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, type NavigateOptions } from '@tanstack/react-router';
 import {
   DatabaseIcon,
   FolderPlusIcon,
   KeyRoundIcon,
   LayersIcon,
-  LinkIcon,
   MonitorIcon,
   MoonIcon,
   ServerCogIcon,
@@ -19,6 +18,7 @@ import {
   UploadIcon,
   UserPlusIcon,
   UsersIcon,
+  UsersRoundIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -37,8 +37,6 @@ import {
 import { Kbd } from '@/components/ui/kbd';
 import { Spinner } from '@/components/ui/spinner';
 import { useGlobalSearch } from '@/features/shell/api';
-import type { DialogKey } from '@/lib/dialogs/registry';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { LANGUAGES, THEMES, usePreferences, type Theme } from '@/stores/preferences';
 
 /**
@@ -46,65 +44,71 @@ import { LANGUAGES, THEMES, usePreferences, type Theme } from '@/stores/preferen
  *
  * Four groups, in the order the concept drew them:
  *   Navigation  — every sidebar destination, with its G-sequence hint.
- *   Actions     — every create action, each opening a real dialog by URL
- *                 (`?dialog=…`). None of them is a placeholder.
+ *   Actions     — every create action, each navigating to that dialog's own
+ *                 route. None of them is a placeholder.
  *   Results     — live `GET /search` across servers, buckets, users, keys,
  *                 policies and jobs, from two characters up.
  *   Preferences — theme and language.
  */
 
 interface PaletteAction {
-  readonly dialog: DialogKey;
+  /** A route from docs/ROUTES.md; typed against the real route tree. */
+  readonly to: NavigateOptions['to'];
   readonly labelKey: string;
   readonly icon: LucideIcon;
   readonly keywords: readonly string[];
   readonly shortcut?: string;
 }
 
+/**
+ * Every "New…" action is a route now (docs/ROUTES.md), so the palette navigates
+ * rather than asking a registry to open a dialog. `/browse` is the entry point for
+ * uploading: it is where a bucket is chosen, and an upload route needs one.
+ */
 const ACTIONS: readonly PaletteAction[] = [
   {
-    dialog: 'upload',
+    to: '/browse',
     labelKey: 'action.uploadFiles',
     icon: UploadIcon,
     keywords: ['put', 'send', 'objects'],
     shortcut: 'U',
   },
   {
-    dialog: 'create-bucket',
+    to: '/buckets/new',
     labelKey: 'action.createBucket',
     icon: FolderPlusIcon,
     keywords: ['new', 'make', 'bucket'],
     shortcut: 'C B',
   },
   {
-    dialog: 'add-server',
+    to: '/servers/new',
     labelKey: 'action.addServer',
     icon: ServerCogIcon,
     keywords: ['connect', 'endpoint', 'minio', 'seaweedfs', 'aws', 'ceph', 'garage'],
   },
   {
-    dialog: 'create-access-key',
+    to: '/keys/new',
     labelKey: 'action.createAccessKey',
     icon: KeyRoundIcon,
     keywords: ['token', 'secret', 'credential'],
   },
   {
-    dialog: 'create-s3-user',
+    to: '/users/new',
     labelKey: 'action.createS3User',
     icon: UserPlusIcon,
     keywords: ['iam', 'account'],
   },
   {
-    dialog: 'new-job',
+    to: '/policies/new',
+    labelKey: 'action.createPolicy',
+    icon: ShieldCheckIcon,
+    keywords: ['iam', 'permission', 'grant'],
+  },
+  {
+    to: '/jobs/new',
     labelKey: 'action.startBulkJob',
     icon: LayersIcon,
     keywords: ['copy', 'move', 'delete', 'batch', 'tag'],
-  },
-  {
-    dialog: 'share-link',
-    labelKey: 'action.shareLink',
-    icon: LinkIcon,
-    keywords: ['presign', 'url', 'share'],
   },
 ];
 
@@ -112,6 +116,7 @@ const RESULT_ICONS: Readonly<Record<SearchResultType, LucideIcon>> = {
   server: ServerIcon,
   bucket: DatabaseIcon,
   user: UsersIcon,
+  group: UsersRoundIcon,
   key: KeyRoundIcon,
   policy: ShieldCheckIcon,
   job: LayersIcon,
@@ -128,17 +133,6 @@ const RESULT_TYPE_ORDER = new Map(SEARCH_RESULT_TYPES.map((type, index) => [type
 function byTypeThenLabel(left: SearchResult, right: SearchResult): number {
   const byType = (RESULT_TYPE_ORDER.get(left.type) ?? 0) - (RESULT_TYPE_ORDER.get(right.type) ?? 0);
   return byType !== 0 ? byType : left.label.localeCompare(right.label);
-}
-
-/**
- * A bucket, user, key or policy result is identified by `"<serverId>/<name>"`.
- * The name can itself contain a slash for a bucket path, so only the first
- * separator is a separator.
- */
-function splitScopedId(id: string): { readonly serverId: string; readonly name: string } {
-  const separator = id.indexOf('/');
-  if (separator < 0) return { serverId: '', name: id };
-  return { serverId: id.slice(0, separator), name: id.slice(separator + 1) };
 }
 
 export function CommandPalette({
@@ -159,7 +153,6 @@ function CommandPaletteBody({ onOpenChange }: { readonly onOpenChange: (open: bo
   const { t: tNav } = useTranslation('nav');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const setTheme = usePreferences((state) => state.setTheme);
   const setLanguage = usePreferences((state) => state.setLanguage);
   const [term, setTerm] = useState('');
@@ -173,46 +166,18 @@ function CommandPaletteBody({ onOpenChange }: { readonly onOpenChange: (open: bo
   };
 
   /**
-   * Where a result goes. `SearchResult.href` is not used: the API builds it from
-   * a route plan this app does not have (`/access/users?…`, `/access/keys?…`,
-   * `/access/policies/:server/:name`, `/jobs/:id`, and `/browse/:server/:bucket`
-   * without the prefix splat), so following it 404s for four of the six types.
-   * Reported to the lead. Every target below is derived from `type` and `id`,
-   * which are stable, and typed against the real route tree.
+   * Where a result goes. `SearchResult.href` is the API's own answer and it now
+   * follows docs/ROUTES.md — an id route, never a name and never a query string —
+   * so it is followed directly rather than rebuilt here from `type` + `id`. The
+   * switch that used to do that is gone: two route tables that have to agree is
+   * one too many, and this one was already wrong for four of the six types.
    *
-   * Route params carry ids, never names (docs/ROUTES.md rule 1). The bucket
-   * segment is still a name because `/browse/$server/$bucket/$` has no bucket id
-   * in it yet; the routing refactor replaces that route with
-   * `/buckets/$bucketId/browse/$` and this switch with it.
+   * The href is data from the API, so it is navigated to as a plain string; a
+   * value that is not a route the app has lands on the 404 page, which is the
+   * honest outcome.
    */
   const openResult = (result: SearchResult): void => {
-    const { serverId, name } = splitScopedId(result.id);
-
-    switch (result.type) {
-      case 'server':
-        void navigate({ to: '/servers/$server', params: { server: result.id } });
-        return;
-      case 'bucket':
-        void navigate({
-          to: '/browse/$server/$bucket/$',
-          params: { server: serverId, bucket: name, _splat: '' },
-        });
-        return;
-      case 'user':
-        void navigate({ to: '/users', search: { serverId, q: name } });
-        return;
-      case 'key':
-        void navigate({ to: '/keys', search: { serverId, q: name } });
-        return;
-      case 'policy':
-        void navigate({ to: '/policies', search: { policyServer: serverId, policy: name } });
-        return;
-      case 'job':
-        // There is no per-job route or URL-addressable job sheet yet, so this is
-        // as precise as the palette can be. Reported to the lead.
-        void navigate({ to: '/jobs' });
-        return;
-    }
+    void navigate({ href: result.href });
   };
 
   return (
@@ -249,10 +214,10 @@ function CommandPaletteBody({ onOpenChange }: { readonly onOpenChange: (open: bo
         <CommandGroup heading={t('group.actions')}>
           {ACTIONS.map((action) => (
             <CommandItem
-              key={action.dialog}
-              value={`action-${action.dialog}`}
+              key={action.to}
+              value={`action-${action.to}`}
               keywords={[t(action.labelKey), ...action.keywords]}
-              onSelect={() => run(() => dialogs.open(action.dialog))}
+              onSelect={() => run(() => void navigate({ to: action.to }))}
             >
               <action.icon />
               <span>{t(action.labelKey)}</span>

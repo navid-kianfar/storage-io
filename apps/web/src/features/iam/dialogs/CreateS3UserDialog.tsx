@@ -1,6 +1,6 @@
 import type { CreatedKey } from '@storage-io/contracts';
 import { EyeIcon, EyeOffIcon, LockIcon, RefreshCwIcon, UserPlusIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -32,10 +32,12 @@ import { useCreateIamUser, useIamGroups, useIamPolicies } from '@/features/iam/a
 import { SecretRevealDialog } from '@/features/iam/components/SecretRevealDialog';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useNavigate } from '@tanstack/react-router';
+import { useRouteState } from '@/lib/dialogs/route';
 
 /**
- * Create an S3 user on one server: `?dialog=create-s3-user`, with `d_server`
+ * Create an S3 user on one server — the `/users/new` route. The server may be
+ * pre-selected through router history state
  * prefilled from the server detail page or the users filter.
  *
  * A secret is only offered where the driver needs one — MinIO's admin API takes the
@@ -63,7 +65,13 @@ function generateSecret(): string {
   return out;
 }
 
-export function CreateS3UserDialog({ params, onClose }: DialogProps) {
+export interface CreateS3UserDialogProps {
+  /** Pre-selected server, from router history state; never from the URL. */
+  readonly initialServerId: string | null;
+  readonly onClose: () => void;
+}
+
+export function CreateS3UserDialog({ initialServerId, onClose }: CreateS3UserDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
@@ -71,7 +79,7 @@ export function CreateS3UserDialog({ params, onClose }: DialogProps) {
   const servers = useServers();
   const createUser = useCreateIamUser();
 
-  const [serverId, setServerId] = useState<string | null>(params.server ?? null);
+  const [serverId, setServerId] = useState<string | null>(initialServerId);
   const [name, setName] = useState('');
   const [secret, setSecret] = useState(() => generateSecret());
   const [secretVisible, setSecretVisible] = useState(false);
@@ -335,4 +343,12 @@ export function CreateS3UserDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('create-s3-user', CreateS3UserDialog);
+/** `/users/new` — the create dialog over the S3 users list. */
+export function CreateS3UserRoute() {
+  const navigate = useNavigate();
+  const state = useRouteState();
+  const close = useCallback(() => {
+    void navigate({ to: '/users', search: true });
+  }, [navigate]);
+  return <CreateS3UserDialog initialServerId={state.serverId ?? null} onClose={close} />;
+}

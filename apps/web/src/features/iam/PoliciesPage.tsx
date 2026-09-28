@@ -3,7 +3,7 @@ import {
   type PolicyStatement,
   type PolicySummary,
 } from '@storage-io/contracts';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -80,6 +80,7 @@ import {
   useDeleteIamPolicy,
   useIamPolicies,
   useIamPolicy,
+  useIamPolicyById,
   usePutIamPolicy,
   useSimulatePolicy,
   useValidatePolicy,
@@ -99,11 +100,8 @@ import {
 } from '@/features/iam/policyTemplates';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
+import { routeState, useRouteOverlay } from '@/lib/dialogs/route';
 import { downloadText } from '@/lib/csv/csv';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
-
-/** Registers `?dialog=create-policy`; the palette and the users page open it by URL. */
-import '@/features/iam/dialogs/CreatePolicyDialog';
 
 /**
  * Policies: the list on the left, one document on the right.
@@ -141,13 +139,17 @@ export function PoliciesPage() {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const dialogs = useDialogs();
 
   const search = useSearch({ strict: false });
   const query = typeof search.q === 'string' ? search.q : '';
   const serverId = typeof search.serverId === 'string' ? search.serverId : null;
-  const selectedName = typeof search.policy === 'string' ? search.policy : null;
-  const selectedServer = typeof search.policyServer === 'string' ? search.policyServer : null;
+  /**
+   * Which policy the editor shows is identity, not view state, so it is the route
+   * `/policies/$policyId` — never `?policy=…&policyServer=…`, which put a name
+   * and a server id in the query string and was two ways to say one thing.
+   */
+  const overlay = useRouteOverlay();
+  const selected = useIamPolicyById(overlay.params.policyId);
 
   /** A document imported from a file, waiting to be reviewed and saved. */
   const [imported, setImported] = useState<string | null>(null);
@@ -164,37 +166,21 @@ export function PoliciesPage() {
   const custom = useMemo(() => items.filter((entry) => !entry.builtIn), [items]);
 
   /**
-   * The policy the URL asks for, falling back to the first in the list so the
-   * editor is never empty when there is something to show. Memoised because it is
-   * an object identity every downstream memo depends on.
+   * What the editor edits, addressed by server + name. It comes from the resolved
+   * route id; with no id in the URL the editor is the page's documented empty
+   * state rather than a policy nobody asked for.
    */
   const ref = useMemo<PolicyRef | null>(() => {
-    if (selectedName !== null && selectedServer !== null) {
-      return { serverId: selectedServer, name: selectedName };
-    }
-    // A link that names only the policy (`?policy=backup-writer`) resolves against
-    // the list: a policy name is per server, so the first match is the best a
-    // one-part link can mean, and it beats silently showing a different policy.
-    if (selectedName !== null) {
-      const named = items.find((entry) => entry.name === selectedName);
-      if (named !== undefined) return { serverId: named.serverId, name: named.name };
-    }
-    const firstItem = items[0];
-    return firstItem === undefined
-      ? null
-      : { serverId: firstItem.serverId, name: firstItem.name };
-  }, [items, selectedName, selectedServer]);
+    const entity = selected.data;
+    return entity === undefined ? null : { serverId: entity.serverId, name: entity.name };
+  }, [selected.data]);
 
   const select = useCallback(
     (entry: PolicySummary) => {
       void navigate({
-        to: '/policies',
-        search: (current: Record<string, unknown>) => ({
-          ...current,
-          policy: entry.name,
-          policyServer: entry.serverId,
-        }),
-        replace: true,
+        to: '/policies/$policyId',
+        params: { policyId: entry.id },
+        search: true,
       });
     },
     [navigate],
@@ -241,7 +227,7 @@ export function PoliciesPage() {
               }}
             />
             <ButtonGroup>
-              <Button onClick={() => dialogs.openHere('create-policy')}>
+              <Button onClick={() => void navigate({ to: '/policies/new', search: true })}>
                 <PlusIcon />
                 {t('policies.newPolicy')}
               </Button>
@@ -257,9 +243,13 @@ export function PoliciesPage() {
                     <DropdownMenuItem
                       key={template}
                       onSelect={() =>
-                        dialogs.openHere('create-policy', {
-                          template,
-                          ...(ref === null ? {} : { server: ref.serverId }),
+                        void navigate({
+                          to: '/policies/new',
+                          search: true,
+                          state: routeState({
+                            template,
+                            ...(ref === null ? {} : { serverId: ref.serverId }),
+                          }),
                         })
                       }
                     >
@@ -340,7 +330,11 @@ export function PoliciesPage() {
             <span>
               <Num value={items.length} /> {t('policies.countSuffix')}
             </span>
-            <Button variant="ghost" size="sm" onClick={() => dialogs.openHere('create-policy')}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void navigate({ to: '/policies/new', search: true })}
+            >
               <PlusIcon />
               {tCommon('action.create')}
             </Button>
@@ -366,6 +360,9 @@ export function PoliciesPage() {
           />
         )}
       </div>
+
+      {/* `/policies/new` renders here. */}
+      <Outlet />
     </>
   );
 }

@@ -1,5 +1,5 @@
 import type { ObjectMeta } from '@storage-io/contracts';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/app/Button';
@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/app/Dialog';
 import { Input } from '@/components/app/Input';
-import { Label } from '@/components/app/Label';
+import { FormField } from '@/components/app/FormField';
 import { Spinner } from '@/components/app/Spinner';
 import { TagEditor } from '@/components/app/TagEditor';
 import { toastProblem } from '@/lib/api/problems';
@@ -63,9 +63,6 @@ function Body({
 }) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
-  const typeId = useId();
-  const cacheId = useId();
-  const dispositionId = useId();
 
   const [contentType, setContentType] = useState(meta?.contentType ?? '');
   const [cacheControl, setCacheControl] = useState(meta?.cacheControl ?? '');
@@ -101,47 +98,54 @@ function Body({
         <DialogDescription className="ltr-isolate font-mono">{objectKey}</DialogDescription>
       </DialogHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={typeId}>{t('browse.metadataDialog.contentType')}</Label>
-          <Input
-            id={typeId}
-            value={contentType}
-            onChange={(event) => setContentType(event.target.value)}
-            placeholder="application/octet-stream"
-            className="ltr-isolate font-mono"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={cacheId}>{t('browse.metadataDialog.cacheControl')}</Label>
-          <Input
-            id={cacheId}
-            value={cacheControl}
-            onChange={(event) => setCacheControl(event.target.value)}
-            placeholder="max-age=3600"
-            className="ltr-isolate font-mono"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <Label htmlFor={dispositionId}>{t('browse.metadataDialog.contentDisposition')}</Label>
-          <Input
-            id={dispositionId}
-            value={disposition}
-            onChange={(event) => setDisposition(event.target.value)}
-            placeholder="inline"
-            className="ltr-isolate font-mono"
-          />
-        </div>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <FormField label={t('browse.metadataDialog.contentType')}>
+          {({ id }) => (
+            <Input
+              id={id}
+              value={contentType}
+              onChange={(event) => setContentType(event.target.value)}
+              placeholder="application/octet-stream"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
+        <FormField label={t('browse.metadataDialog.cacheControl')}>
+          {({ id }) => (
+            <Input
+              id={id}
+              value={cacheControl}
+              onChange={(event) => setCacheControl(event.target.value)}
+              placeholder="max-age=3600"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
+        <FormField
+          className="sm:col-span-2"
+          label={t('browse.metadataDialog.contentDisposition')}
+        >
+          {({ id }) => (
+            <Input
+              id={id}
+              value={disposition}
+              onChange={(event) => setDisposition(event.target.value)}
+              placeholder="inline"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">{t('browse.metadataDialog.custom')}</span>
-        <TagEditor
-          tags={metadata}
-          onTagsChange={setMetadata}
-          hint={t('browse.metadataDialog.customHint')}
-        />
-      </div>
+      <FormField label={t('browse.metadataDialog.custom')}>
+        {() => (
+          <TagEditor
+            tags={metadata}
+            onTagsChange={setMetadata}
+            hint={t('browse.metadataDialog.customHint')}
+          />
+        )}
+      </FormField>
 
       <DialogFooter>
         <Button variant="outline" onClick={onDone} disabled={save.isPending}>

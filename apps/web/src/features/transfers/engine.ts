@@ -67,6 +67,8 @@ export interface TransferScope {
   readonly serverId: string;
   readonly serverName: string;
   readonly bucket: string;
+  /** The bucket's opaque id, for the "open location" route. */
+  readonly bucketId: string;
 }
 
 export interface UploadItem {
@@ -177,6 +179,26 @@ export function configureEngine(options: {
 
 export function engineConcurrency(): number {
   return concurrency;
+}
+
+/* ------------------------- "an upload landed" -------------------------- */
+
+/**
+ * Called once per completed upload, with the bucket it wrote into.
+ *
+ * The engine is transport: it moves bytes and knows nothing about the query
+ * cache. But a finished upload does change what a listing would return, and
+ * nothing on the SSE stream reports an object write — so the app installs a
+ * handler here that invalidates what the upload made stale. It is the same seam
+ * as the API client's unauthorized handler, and for the same reason: keeping the
+ * dependency pointing one way.
+ */
+export type UploadCompletedHandler = (scope: TransferScope, key: string) => void;
+
+let onUploadCompleted: UploadCompletedHandler = () => {};
+
+export function setUploadCompletedHandler(handler: UploadCompletedHandler): void {
+  onUploadCompleted = handler;
 }
 
 /** Attempts per part, including the first. */
@@ -381,6 +403,7 @@ function newTransfer(
     serverId: scope.serverId,
     serverName: scope.serverName,
     bucket: scope.bucket,
+    bucketId: scope.bucketId,
     key,
     totalBytes,
     transferredBytes: 0,
@@ -456,6 +479,7 @@ function finish(task: Task): void {
   });
   store().countFinished(task.kind === 'upload' ? 'upload' : 'download', task.totalBytes);
   tasks.delete(task.id);
+  if (task.kind === 'upload') onUploadCompleted(task.scope, task.key);
   pump();
 }
 

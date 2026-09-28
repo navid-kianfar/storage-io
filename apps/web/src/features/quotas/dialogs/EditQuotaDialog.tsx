@@ -1,11 +1,11 @@
 import {
   PROVIDER_LABELS,
   QUOTA_THRESHOLD_DEFAULT,
-  type Bucket,
   type Provider,
   type QuotaMode,
   type QuotaRow,
 } from '@storage-io/contracts';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { BellIcon, InfoIcon, ShieldIcon } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -36,12 +36,17 @@ import {
 } from '@/components/app';
 import { useQuotas, useSetQuota } from '@/features/quotas/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useBucketScope } from '@/lib/entities/resolve';
 
 /**
- * Set or change a bucket's quota: `?dialog=edit-quota&d_server=…&d_bucket=…`.
- * Opened without a bucket — the page's "Set a quota" button, the command palette —
- * it asks which bucket first.
+ * Set or change a bucket's quota. It is reached by two routes, both of which name
+ * the bucket by its opaque id: `/quotas/$bucketId` over the quotas list, and
+ * `/buckets/$bucketId/quota` over that bucket's settings page.
+ *
+ * Opened without a bucket — the quotas page's "Set a quota" button, before any
+ * bucket is chosen — it asks which bucket first and then navigates to that
+ * bucket's own route, so the dialog that is actually editing something always has
+ * an address.
  *
  * Two facts shape it. First, a limit is a number *and* a unit, so the amount goes
  * through `ByteSizeInput`, which follows the installation's decimal or binary
@@ -64,29 +69,51 @@ const MIN_THRESHOLD_PERCENT = 1;
 const MAX_THRESHOLD_PERCENT = 100;
 const PICKER_PAGE_SIZE = 200;
 
-export function EditQuotaDialog({ params, onClose }: DialogProps) {
+export interface EditQuotaDialogProps {
+  /** The bucket's opaque id, or `null` to ask which bucket first. */
+  readonly bucketId: string | null;
+  readonly onClose: () => void;
+  /** Where picking a bucket goes, when this was opened without one. */
+  readonly onPick: (bucketId: string) => void;
+}
+
+export function EditQuotaDialog({ bucketId, onClose, onPick }: EditQuotaDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
 
-  const serverParam = params.server ?? '';
-  const bucketParam = params.bucket ?? '';
-  const [picked, setPicked] = useState<string | null>(null);
+  /**
+   * The quota row carries everything this dialog edits — the bucket, its usage,
+   * its current quota and whether the provider enforces one — so it is the one
+   * thing to fetch. Which rows to ask for depends on why the dialog is open:
+   *
+   * - **Addressed by id**: resolve the id to its server and name, then ask for
+   *   exactly that bucket. A page of the first two hundred buckets would answer
+   *   for a small installation and quietly fail for a large one.
+   * - **No id yet**: a page of rows, which is what the picker offers.
+   */
+  const resolved = useBucketScope(bucketId ?? undefined);
+  const addressed = bucketId !== null;
 
-  // One list request serves both jobs: finding the addressed row, and offering the
-  // picker its options. The row carries the bucket, its usage, its quota and the
-  // provider's support level, so nothing else has to be fetched.
-  const quotas = useQuotas({ filter: 'all', page: 1, pageSize: PICKER_PAGE_SIZE });
+  const quotas = useQuotas(
+    addressed && resolved.scope !== null
+      ? {
+          filter: 'all',
+          serverId: resolved.scope.serverId,
+          q: resolved.scope.bucket,
+          page: 1,
+          pageSize: PICKER_PAGE_SIZE,
+        }
+      : { filter: 'all', page: 1, pageSize: PICKER_PAGE_SIZE },
+  );
   const rows = useMemo(() => quotas.data?.items ?? [], [quotas.data]);
 
-  const addressedKey =
-    bucketParam.length > 0 ? `${serverParam}/${bucketParam}` : (picked ?? null);
-  const row = rows.find((entry) => keyOf(entry.bucket) === addressedKey);
+  const row = rows.find((entry) => entry.bucket.id === bucketId);
 
   const options = useMemo<readonly ComboboxOption<string>[]>(
     () =>
       rows.map((entry) => ({
-        value: keyOf(entry.bucket),
+        value: entry.bucket.id,
         label: entry.bucket.name,
         description: entry.bucket.serverName,
         disabled: entry.supported === 'unavailable',
@@ -119,7 +146,11 @@ export function EditQuotaDialog({ params, onClose }: DialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        {quotas.isLoading ? (
+        {/* A route that names a bucket must never flash the "which bucket?" picker
+            on its way to that bucket: while the id or the row is still in flight
+            the answer is "not yet", not "none". */}
+        {quotas.isLoading ||
+        (addressed && row === undefined && (resolved.isLoading || quotas.isFetching)) ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-20 w-full" />
@@ -134,14 +165,16 @@ export function EditQuotaDialog({ params, onClose }: DialogProps) {
                 <Combobox
                   id={id}
                   options={options}
-                  value={picked}
-                  onValueChange={setPicked}
+                  value={bucketId}
+                  onValueChange={(value) => {
+                    if (value !== null) onPick(value);
+                  }}
                   placeholder={t('quotas.edit.pickPlaceholder')}
                   aria-label={t('quotas.edit.bucket')}
                 />
               )}
             </FormField>
-            {bucketParam.length > 0 ? (
+            {bucketId !== null ? (
               <p className="text-sm text-muted-foreground">{t('quotas.edit.notFound')}</p>
             ) : null}
             <DialogFooter>
@@ -151,15 +184,11 @@ export function EditQuotaDialog({ params, onClose }: DialogProps) {
             </DialogFooter>
           </>
         ) : (
-          <QuotaForm key={keyOf(row.bucket)} row={row} onClose={onClose} />
+          <QuotaForm key={row.bucket.id} row={row} onClose={onClose} />
         )}
       </DialogContent>
     </Dialog>
   );
-}
-
-function keyOf(bucket: Bucket): string {
-  return `${bucket.serverName}/${bucket.name}`;
 }
 
 function QuotaForm({ row, onClose }: { readonly row: QuotaRow; readonly onClose: () => void }) {
@@ -338,4 +367,34 @@ function QuotaForm({ row, onClose }: { readonly row: QuotaRow; readonly onClose:
   );
 }
 
-registerDialog('edit-quota', EditQuotaDialog);
+/** `/quotas/$bucketId` — the edit dialog over the quotas list. */
+export function QuotaEditRoute() {
+  const navigate = useNavigate();
+  const { bucketId } = useParams({ from: '/protected/quotas/$bucketId' });
+  const close = useCallback(() => {
+    void navigate({ to: '/quotas' });
+  }, [navigate]);
+  const pick = useCallback(
+    (next: string) => {
+      void navigate({ to: '/quotas/$bucketId', params: { bucketId: next }, replace: true });
+    },
+    [navigate],
+  );
+  return <EditQuotaDialog bucketId={bucketId} onClose={close} onPick={pick} />;
+}
+
+/** `/buckets/$bucketId/quota` — the same dialog over the bucket's settings page. */
+export function BucketQuotaRoute() {
+  const navigate = useNavigate();
+  const { bucketId } = useParams({ from: '/protected/buckets/$bucketId/quota' });
+  const close = useCallback(() => {
+    void navigate({ to: '/buckets/$bucketId', params: { bucketId } });
+  }, [navigate, bucketId]);
+  const pick = useCallback(
+    (next: string) => {
+      void navigate({ to: '/buckets/$bucketId/quota', params: { bucketId: next }, replace: true });
+    },
+    [navigate],
+  );
+  return <EditQuotaDialog bucketId={bucketId} onClose={close} onPick={pick} />;
+}

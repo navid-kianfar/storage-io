@@ -1,5 +1,6 @@
 import type { S3User, Server } from '@storage-io/contracts';
 import { Link } from '@tanstack/react-router';
+import { routeState } from '@/lib/dialogs/route';
 import type { ColumnDef, PaginationState } from '@tanstack/react-table';
 import {
   ArrowRightIcon,
@@ -28,7 +29,6 @@ import {
 import { useServerIamUsers } from '@/features/servers/api';
 import { isApiError } from '@/lib/api/errors';
 import { useApiError } from '@/lib/api/useApiError';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 
 const USERS_PAGE_SIZE = 10;
 
@@ -44,7 +44,6 @@ const USERS_PAGE_SIZE = 10;
 export function ServerUsersTab({ server }: { readonly server: Server }) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
-  const dialogs = useDialogs();
   const apiError = useApiError();
 
   const supported = server.capabilities.iamUsers === 'supported';
@@ -121,7 +120,9 @@ export function ServerUsersTab({ server }: { readonly server: Server }) {
         header: () => <span className="sr-only">{tCommon('table.rowActions')}</span>,
         cell: ({ row }) => (
           <Button variant="ghost" size="icon-sm" asChild aria-label={t('server.users.openUser')}>
-            <Link to="/users" search={{ serverId: server.id, q: row.original.name }}>
+            {/* The user's own route: the list used to be filtered down to a name,
+                which is a search for one row rather than a link to it. */}
+            <Link to="/users/$userId" params={{ userId: row.original.id }}>
               <ArrowRightIcon className="flip-rtl" />
             </Link>
           </Button>
@@ -153,13 +154,11 @@ export function ServerUsersTab({ server }: { readonly server: Server }) {
                 {t('server.users.manageKeys')}
               </Link>
             </Button>
-            <Button
-              size="sm"
-              disabled={notSupported}
-              onClick={() => dialogs.open('create-s3-user', { server: server.name })}
-            >
-              <UserPlusIcon />
-              {t('server.users.newUser')}
+            <Button size="sm" disabled={notSupported} asChild>
+              <Link to="/users/new" state={routeState({ serverId: server.id })}>
+                <UserPlusIcon />
+                {t('server.users.newUser')}
+              </Link>
             </Button>
           </>
         }
@@ -193,9 +192,11 @@ export function ServerUsersTab({ server }: { readonly server: Server }) {
                 title={t('server.users.emptyTitle')}
                 description={t('server.users.emptyDescription')}
                 action={
-                  <Button onClick={() => dialogs.open('create-s3-user', { server: server.name })}>
-                    <UserPlusIcon />
-                    {t('server.users.newUser')}
+                  <Button asChild>
+                    <Link to="/users/new" state={routeState({ serverId: server.id })}>
+                      <UserPlusIcon />
+                      {t('server.users.newUser')}
+                    </Link>
                   </Button>
                 }
               />

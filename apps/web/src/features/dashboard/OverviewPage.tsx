@@ -45,7 +45,6 @@ import {
 import { useCheckServer, useServers } from '@/features/servers/api';
 import { useDashboard, useSettings } from '@/features/shell/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { useFormat } from '@/lib/format/FormatProvider';
 
 const GrowthChart = lazy(() => import('@/features/dashboard/components/GrowthChart'));
@@ -63,7 +62,6 @@ export function OverviewPage() {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
 
   // Read once: the greeting must not change between two renders of this page.
@@ -129,11 +127,11 @@ export function OverviewPage() {
         description={t('overview.description')}
         actions={
           <>
-            <Button variant="outline" onClick={() => dialogs.open('add-server')}>
+            <Button variant="outline" onClick={() => void navigate({ to: '/servers/new' })}>
               <PlusIcon />
               {t('servers.add')}
             </Button>
-            <Button onClick={() => dialogs.open('upload')}>
+            <Button onClick={() => void navigate({ to: '/browse' })}>
               <UploadIcon />
               {tCommon('action.upload')}
             </Button>
@@ -198,7 +196,10 @@ export function OverviewPage() {
       </div>
 
       <div className="mt-(--gap) grid gap-(--gap) xl:grid-cols-3">
-        <div className="xl:col-span-2">
+        {/* `min-w-0`: a grid track is min-content-sized by default, so the servers
+            table's five columns widened this one past the viewport and the page
+            scrolled sideways at 375px instead of the table scrolling inside it. */}
+        <div className="min-w-0 xl:col-span-2">
           <ServersOverviewTable
             servers={servers.data?.items ?? []}
             loading={servers.isLoading}
@@ -290,7 +291,7 @@ function IncidentBanner({
           {tCommon('action.retry')}
         </Button>
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/servers/$server" params={{ server: incident.serverId }}>
+          <Link to="/servers/$serverId" params={{ serverId: incident.serverId }}>
             {tCommon('action.details')}
             <ArrowRightIcon className="flip-rtl" />
           </Link>
@@ -312,19 +313,19 @@ function StorageKpi({
   const { t } = useTranslation('pages');
   if (loading || dashboard === undefined) return <KpiSkeleton />;
 
-  const { usedBytes, capacityBytes, usedDelta7dBytes } = dashboard.totals;
-  const ratio = capacityBytes === null || capacityBytes === 0 ? null : usedBytes / capacityBytes;
+  const { bucketsBytes, capacityBytes, bucketsDelta7dBytes } = dashboard.totals;
+  const ratio = capacityBytes === null || capacityBytes === 0 ? null : bucketsBytes / capacityBytes;
 
   return (
     <KpiCard
       label={t('overview.kpi.storageUsed')}
       icon={HardDriveIcon}
-      value={<Bytes value={usedBytes} />}
+      value={<Bytes value={bucketsBytes} />}
       suffix={capacityBytes === null ? undefined : <>/ <Bytes value={capacityBytes} /></>}
       footer={
         <>
-          <Delta direction={usedDelta7dBytes >= 0 ? 'up' : 'down'}>
-            <Bytes value={Math.abs(usedDelta7dBytes)} />
+          <Delta direction={bucketsDelta7dBytes >= 0 ? 'up' : 'down'}>
+            <Bytes value={Math.abs(bucketsDelta7dBytes)} />
           </Delta>
           <span>{t('overview.kpi.thisWeek')}</span>
         </>
@@ -346,7 +347,7 @@ function ObjectsKpi({
   const format = useFormat();
   if (loading || dashboard === undefined) return <KpiSkeleton />;
 
-  const trend = dashboard.growth.map((point) => point.usedBytes);
+  const trend = dashboard.growth.map((point) => point.bucketsBytes);
   const delta = dashboard.totals.objectsDeltaToday;
 
   return (

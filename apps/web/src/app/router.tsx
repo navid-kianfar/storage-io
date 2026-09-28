@@ -19,31 +19,41 @@ import { NotFoundPage } from '@/pages/NotFoundPage';
 
 /**
  * Code-based routes (not the file-based generator), as docs/ARCHITECTURE.md
- * settles. Every page in the concept has a route here.
+ * settles. The map is docs/ROUTES.md and that document is binding.
  *
- * Three conventions every page agent relies on:
+ * Four conventions the whole app relies on:
  *
- * 1. `staticData` carries the breadcrumb: `crumb` is a key in the `pages`
- *    namespace, `crumbFromParams` produces the text for a dynamic segment.
- * 2. The root route's search schema is *loose*, so a page may add its own filter
- *    params without declaring them here. `dialog` and anything starting with `d_`
- *    are reserved for the dialog host (src/lib/dialogs/registry.ts).
- * 3. Each route is written out in full rather than produced by a helper, because
- *    TanStack Router infers `Link`'s `to` types from the literal `path` — a helper
- *    that takes `path: string` collapses every route type to `string` and every
- *    `<Link to="/servers">` in the app stops type-checking.
+ * 1. **Every param is an opaque id.** `$serverId`, `$bucketId`, `$userId`,
+ *    `$groupId`, `$policyId`, `$keyId`, `$jobId`, `$eventId`. Never a name: a name
+ *    is unique only within one server, is not a safe path segment, and leaks what
+ *    the operator called something into every link they paste.
+ * 2. **Search params carry view state only** — filters, sort, page, tab, range.
+ *    Identity travels in the path; context that is neither identity nor view state
+ *    (the object selection that pre-fills the new-job wizard) travels in router
+ *    history state. The root schema is loose so a page may add its own filters.
+ * 3. **A dialog that creates or edits an entity is a child route.** It renders over
+ *    its parent page through the parent's `<Outlet/>`, and closing it navigates to
+ *    the parent. Small in-page confirmations (delete, rename, tag) stay component
+ *    state and have no URL. There is no `?dialog=` registry any more.
+ * 4. `staticData` carries the breadcrumb: `crumb` is a key in the `pages`
+ *    namespace, and `crumbEntity` names the id param and what kind of entity it
+ *    is, so the crumb shows the resolved *name* while the URL keeps the id.
  *
- * To build a page: replace that route's `component` with the real one, and leave
- * `path` and `staticData` alone.
+ * Each route is written out in full rather than produced by a helper, because
+ * TanStack Router infers `Link`'s `to` types from the literal `path` — a helper
+ * taking `path: string` collapses every route type in the app to `string`.
  */
 
 export interface RouterContext {
   readonly queryClient: QueryClient;
 }
 
-/** Reserved by the shell; unknown keys pass through so pages own their filters. */
+/**
+ * Reserved by the shell; unknown keys pass through so pages own their filters.
+ * Nothing here is data: `redirect` is where to return after signing in, and
+ * `theme`/`lang` are the two overrides a support link may carry.
+ */
 const rootSearchSchema = z.looseObject({
-  dialog: z.string().optional(),
   redirect: z.string().optional(),
   theme: z.string().optional(),
   lang: z.string().optional(),
@@ -136,6 +146,8 @@ const welcomeRoute = createRoute({
   component: lazyRouteComponent(() => import('@/features/welcome/WelcomePage'), 'WelcomePage'),
 });
 
+/* ------------------------------- servers -------------------------------- */
+
 const serversRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/servers',
@@ -143,37 +155,134 @@ const serversRoute = createRoute({
   component: lazyRouteComponent(() => import('@/features/servers/ServersPage'), 'ServersPage'),
 });
 
+const addServerRoute = createRoute({
+  getParentRoute: () => serversRoute,
+  path: '/new',
+  component: lazyRouteComponent(
+    () => import('@/features/servers/dialogs/AddServerDialog'),
+    'AddServerRoute',
+  ),
+});
+
 const serverDetailRoute = createRoute({
   getParentRoute: () => protectedRoute,
-  path: '/servers/$server',
-  staticData: { crumbFromParams: (params) => params.server ?? '' },
+  path: '/servers/$serverId',
+  staticData: { crumbEntity: { kind: 'server', param: 'serverId' } },
   component: lazyRouteComponent(
     () => import('@/features/servers/ServerDetailPage'),
     'ServerDetailPage',
   ),
 });
 
+const rotateServerCredentialsRoute = createRoute({
+  getParentRoute: () => serverDetailRoute,
+  path: '/rotate-credentials',
+  component: lazyRouteComponent(
+    () => import('@/features/servers/dialogs/RotateCredentialsDialog'),
+    'RotateCredentialsRoute',
+  ),
+});
+
+const editServerRoute = createRoute({
+  getParentRoute: () => serverDetailRoute,
+  path: '/edit',
+  component: lazyRouteComponent(
+    () => import('@/features/servers/dialogs/EditServerDialog'),
+    'EditServerRoute',
+  ),
+});
+
+/* ------------------------------- buckets -------------------------------- */
+
 const bucketsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/buckets',
   staticData: { crumb: 'buckets.title' },
+  component: lazyRouteComponent(() => import('@/features/buckets/BucketsPage'), 'BucketsPage'),
+});
+
+const createBucketRoute = createRoute({
+  getParentRoute: () => bucketsRoute,
+  path: '/new',
   component: lazyRouteComponent(
-    () => import('@/features/buckets/BucketsPage'),
-    'BucketsPage',
+    () => import('@/features/buckets/dialogs/CreateBucketDialog'),
+    'CreateBucketRoute',
   ),
 });
 
-const bucketDetailRoute = createRoute({
+const bucketSettingsRoute = createRoute({
   getParentRoute: () => protectedRoute,
-  path: '/buckets/$server/$bucket',
-  staticData: { crumbFromParams: (params) => params.bucket ?? '' },
+  path: '/buckets/$bucketId',
+  staticData: { crumbEntity: { kind: 'bucket', param: 'bucketId' } },
   component: lazyRouteComponent(
     () => import('@/features/buckets/BucketSettingsPage'),
     'BucketSettingsPage',
   ),
 });
 
+const bucketQuotaRoute = createRoute({
+  getParentRoute: () => bucketSettingsRoute,
+  path: '/quota',
+  component: lazyRouteComponent(
+    () => import('@/features/quotas/dialogs/EditQuotaDialog'),
+    'BucketQuotaRoute',
+  ),
+});
+
+/**
+ * The object browser. One pathless layout holds the listing, and the four paths
+ * below are its modes, so opening the inspector or the upload sheet is a
+ * navigation that does **not** remount the listing underneath it.
+ *
+ * The splat is the object's prefix on `browse`, `upload` and `import`, and the
+ * object's key on `object`. A key is the object's identity in S3 and it has no
+ * other id, which is why it is a path segment and never a query param.
+ */
+const objectBrowserRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  id: 'object-browser',
+  staticData: { crumbEntity: { kind: 'bucket', param: 'bucketId' } },
+  component: lazyRouteComponent(
+    () => import('@/features/objects/ObjectBrowserPage'),
+    'ObjectBrowserPage',
+  ),
+});
+
 const browseRoute = createRoute({
+  getParentRoute: () => objectBrowserRoute,
+  path: '/buckets/$bucketId/browse/$',
+  staticData: { browserMode: 'browse' },
+  component: Outlet,
+});
+
+const objectRoute = createRoute({
+  getParentRoute: () => objectBrowserRoute,
+  path: '/buckets/$bucketId/object/$',
+  staticData: { browserMode: 'object' },
+  component: Outlet,
+});
+
+const uploadRoute = createRoute({
+  getParentRoute: () => objectBrowserRoute,
+  path: '/buckets/$bucketId/upload/$',
+  staticData: { browserMode: 'upload' },
+  component: lazyRouteComponent(
+    () => import('@/features/objects/dialogs/UploadDialog'),
+    'UploadRoute',
+  ),
+});
+
+const importRoute = createRoute({
+  getParentRoute: () => objectBrowserRoute,
+  path: '/buckets/$bucketId/import/$',
+  staticData: { browserMode: 'import' },
+  component: lazyRouteComponent(
+    () => import('@/features/objects/dialogs/ImportUrlDialog'),
+    'ImportUrlRoute',
+  ),
+});
+
+const bucketPickerRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/browse',
   staticData: { crumb: 'browse.title' },
@@ -183,17 +292,7 @@ const browseRoute = createRoute({
   ),
 });
 
-const browsePrefixRoute = createRoute({
-  getParentRoute: () => protectedRoute,
-  // The trailing splat is the object prefix:
-  // /browse/minio-prod-01/media-prod/2026/09/
-  path: '/browse/$server/$bucket/$',
-  staticData: { crumbFromParams: (params) => params.bucket ?? '' },
-  component: lazyRouteComponent(
-    () => import('@/features/objects/ObjectBrowserPage'),
-    'ObjectBrowserPage',
-  ),
-});
+/* -------------------------------- quotas -------------------------------- */
 
 const quotasRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -202,11 +301,50 @@ const quotasRoute = createRoute({
   component: lazyRouteComponent(() => import('@/features/quotas/QuotasPage'), 'QuotasPage'),
 });
 
+const quotaEditRoute = createRoute({
+  getParentRoute: () => quotasRoute,
+  path: '/$bucketId',
+  component: lazyRouteComponent(
+    () => import('@/features/quotas/dialogs/EditQuotaDialog'),
+    'QuotaEditRoute',
+  ),
+});
+
+/* --------------------------------- jobs --------------------------------- */
+
 const jobsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/jobs',
   staticData: { crumb: 'jobs.title' },
   component: lazyRouteComponent(() => import('@/features/jobs/JobsPage'), 'JobsPage'),
+});
+
+const newJobRoute = createRoute({
+  getParentRoute: () => jobsRoute,
+  path: '/new',
+  component: lazyRouteComponent(
+    () => import('@/features/jobs/dialogs/NewJobDialog'),
+    'NewJobRoute',
+  ),
+});
+
+/**
+ * The sheets over the jobs list. They act on the row behind them — pause it,
+ * resume it, cancel it — so the page keeps ownership and these routes only say
+ * which overlay and which id (see `useRouteOverlay`).
+ */
+const jobDetailRoute = createRoute({
+  getParentRoute: () => jobsRoute,
+  path: '/$jobId',
+  staticData: { overlay: 'job-log' },
+  component: Outlet,
+});
+
+const jobRunsRoute = createRoute({
+  getParentRoute: () => jobsRoute,
+  path: '/$jobId/runs',
+  staticData: { overlay: 'job-runs' },
+  component: Outlet,
 });
 
 const transfersRoute = createRoute({
@@ -219,12 +357,48 @@ const transfersRoute = createRoute({
   ),
 });
 
+/* ------------------------------ IAM: users ------------------------------ */
+
 const usersRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/users',
   staticData: { crumb: 'users.title' },
   component: lazyRouteComponent(() => import('@/features/iam/UsersPage'), 'UsersPage'),
 });
+
+const newUserRoute = createRoute({
+  getParentRoute: () => usersRoute,
+  path: '/new',
+  component: lazyRouteComponent(
+    () => import('@/features/iam/dialogs/CreateS3UserDialog'),
+    'CreateS3UserRoute',
+  ),
+});
+
+const newGroupRoute = createRoute({
+  getParentRoute: () => usersRoute,
+  path: '/groups/new',
+  component: lazyRouteComponent(
+    () => import('@/features/iam/dialogs/CreateS3GroupDialog'),
+    'CreateS3GroupRoute',
+  ),
+});
+
+const groupDetailRoute = createRoute({
+  getParentRoute: () => usersRoute,
+  path: '/groups/$groupId',
+  staticData: { overlay: 'group-edit' },
+  component: Outlet,
+});
+
+const userDetailRoute = createRoute({
+  getParentRoute: () => usersRoute,
+  path: '/$userId',
+  staticData: { overlay: 'user-sheet' },
+  component: Outlet,
+});
+
+/* ----------------------------- IAM: policies ---------------------------- */
 
 const policiesRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -233,12 +407,56 @@ const policiesRoute = createRoute({
   component: lazyRouteComponent(() => import('@/features/iam/PoliciesPage'), 'PoliciesPage'),
 });
 
+const newPolicyRoute = createRoute({
+  getParentRoute: () => policiesRoute,
+  path: '/new',
+  component: lazyRouteComponent(
+    () => import('@/features/iam/dialogs/CreatePolicyDialog'),
+    'CreatePolicyRoute',
+  ),
+});
+
+/** The editor pane of the policies page, addressed by the policy's id. */
+const policyDetailRoute = createRoute({
+  getParentRoute: () => policiesRoute,
+  path: '/$policyId',
+  staticData: { overlay: 'policy-editor' },
+  component: Outlet,
+});
+
+/* ------------------------------- IAM: keys ------------------------------ */
+
 const keysRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/keys',
   staticData: { crumb: 'keys.title' },
   component: lazyRouteComponent(() => import('@/features/iam/KeysPage'), 'KeysPage'),
 });
+
+const newKeyRoute = createRoute({
+  getParentRoute: () => keysRoute,
+  path: '/new',
+  component: lazyRouteComponent(
+    () => import('@/features/iam/dialogs/CreateAccessKeyDialog'),
+    'CreateAccessKeyRoute',
+  ),
+});
+
+const editKeyRoute = createRoute({
+  getParentRoute: () => keysRoute,
+  path: '/$keyId/edit',
+  staticData: { overlay: 'key-edit' },
+  component: Outlet,
+});
+
+const rotateKeyRoute = createRoute({
+  getParentRoute: () => keysRoute,
+  path: '/$keyId/rotate',
+  staticData: { overlay: 'key-rotate' },
+  component: Outlet,
+});
+
+/* ------------------------------- activity ------------------------------- */
 
 const activityRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -247,11 +465,40 @@ const activityRoute = createRoute({
   component: lazyRouteComponent(() => import('@/features/activity/ActivityPage'), 'ActivityPage'),
 });
 
-const settingsRoute = createRoute({
+const activityEventRoute = createRoute({
+  getParentRoute: () => activityRoute,
+  path: '/$eventId',
+  staticData: { overlay: 'activity-event' },
+  component: Outlet,
+});
+
+/* ------------------------------- settings ------------------------------- */
+
+const settingsIndexRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/settings',
   staticData: { crumb: 'settings.title' },
+  beforeLoad: () => {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect({ to: '/settings/$section', params: { section: 'account' }, replace: true });
+  },
+  component: Outlet,
+});
+
+const settingsSectionRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/settings/$section',
+  staticData: { crumb: 'settings.title' },
   component: lazyRouteComponent(() => import('@/features/settings/SettingsPage'), 'SettingsPage'),
+});
+
+const createApiTokenRoute = createRoute({
+  getParentRoute: () => settingsSectionRoute,
+  path: '/new-token',
+  component: lazyRouteComponent(
+    () => import('@/features/settings/dialogs/CreateApiTokenDialog'),
+    'CreateApiTokenRoute',
+  ),
 });
 
 const routeTree = rootRoute.addChildren([
@@ -259,20 +506,21 @@ const routeTree = rootRoute.addChildren([
   setupRoute.addChildren([welcomeRoute]),
   protectedRoute.addChildren([
     overviewRoute,
-    serversRoute,
-    serverDetailRoute,
-    bucketsRoute,
-    bucketDetailRoute,
-    browseRoute,
-    browsePrefixRoute,
-    quotasRoute,
-    jobsRoute,
+    serversRoute.addChildren([addServerRoute]),
+    serverDetailRoute.addChildren([rotateServerCredentialsRoute, editServerRoute]),
+    bucketsRoute.addChildren([createBucketRoute]),
+    bucketSettingsRoute.addChildren([bucketQuotaRoute]),
+    objectBrowserRoute.addChildren([browseRoute, objectRoute, uploadRoute, importRoute]),
+    bucketPickerRoute,
+    quotasRoute.addChildren([quotaEditRoute]),
+    jobsRoute.addChildren([newJobRoute, jobDetailRoute, jobRunsRoute]),
     transfersRoute,
-    usersRoute,
-    policiesRoute,
-    keysRoute,
-    activityRoute,
-    settingsRoute,
+    usersRoute.addChildren([newUserRoute, newGroupRoute, groupDetailRoute, userDetailRoute]),
+    policiesRoute.addChildren([newPolicyRoute, policyDetailRoute]),
+    keysRoute.addChildren([newKeyRoute, editKeyRoute, rotateKeyRoute]),
+    activityRoute.addChildren([activityEventRoute]),
+    settingsIndexRoute,
+    settingsSectionRoute.addChildren([createApiTokenRoute]),
   ]),
 ]);
 

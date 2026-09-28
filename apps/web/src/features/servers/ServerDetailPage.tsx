@@ -1,5 +1,5 @@
 import { PROVIDER_LABELS, type MetricRange, type Server } from '@storage-io/contracts';
-import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import {
   ConstructionIcon,
   DatabaseIcon,
@@ -60,11 +60,7 @@ import {
   useTestServer,
 } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { useFormat } from '@/lib/format/FormatProvider';
-
-/** The route owns the rotate dialog too, so its key resolves on a deep link here. */
-import '@/features/servers/dialogs/RotateCredentialsDialog';
 
 /**
  * One server, in five tabs. The tab and the metric range live in the URL, so a
@@ -91,10 +87,9 @@ function isRange(value: unknown): value is MetricRange {
 export function ServerDetailPage() {
   const { t } = useTranslation('pages');
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
 
-  const { server: serverParam } = useParams({ from: '/protected/servers/$server' });
+  const { serverId: serverParam } = useParams({ from: '/protected/servers/$serverId' });
   const search = useSearch({ strict: false });
   const tab: ServerTab = isServerTab(search.tab) ? search.tab : 'overview';
   const range: MetricRange = isRange(search.range) ? search.range : '24h';
@@ -108,8 +103,8 @@ export function ServerDetailPage() {
   const setSearch = useCallback(
     (next: Record<string, string>) => {
       void navigate({
-        to: '/servers/$server',
-        params: { server: serverParam },
+        to: '/servers/$serverId',
+        params: { serverId: serverParam },
         search: (current: Record<string, unknown>) => ({ ...current, ...next }),
         replace: true,
       });
@@ -250,7 +245,10 @@ export function ServerDetailPage() {
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() =>
-                  dialogs.openHere('rotate-server-credentials', { server: current.name })
+                  void navigate({
+                    to: '/servers/$serverId/rotate-credentials',
+                    params: { serverId: current.id },
+                  })
                 }
               >
                 <KeyRoundIcon />
@@ -351,6 +349,9 @@ export function ServerDetailPage() {
           />
         </TabsContent>
       </Tabs>
+
+      {/* `/servers/$serverId/rotate-credentials` and `/edit` render here. */}
+      <Outlet />
     </>
   );
 }

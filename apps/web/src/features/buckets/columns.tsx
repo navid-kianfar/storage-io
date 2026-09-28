@@ -79,8 +79,8 @@ export function bucketColumns({
           <div className="flex min-w-0 items-center gap-2">
             <DatabaseIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <Link
-              to="/buckets/$server/$bucket"
-              params={{ server: bucket.serverName, bucket: bucket.name }}
+              to="/buckets/$bucketId"
+              params={{ bucketId: bucket.id }}
               onClick={(event) => event.stopPropagation()}
               className="ltr-isolate truncate font-mono text-sm font-medium hover:underline"
             >

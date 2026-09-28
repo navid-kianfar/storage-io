@@ -85,7 +85,7 @@ export function AppSidebar({
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const counts = countsFrom(dashboard);
 
-  const usedBytes = dashboard?.totals.usedBytes ?? null;
+  const usedBytes = dashboard?.totals.bucketsBytes ?? null;
   const capacityBytes = dashboard?.totals.capacityBytes ?? null;
   const usedRatio =
     usedBytes !== null && capacityBytes !== null && capacityBytes > 0
@@ -205,7 +205,7 @@ export function AppSidebar({
               <DropdownMenuShortcut>⌘K</DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link to="/settings" hash="shortcuts">
+              <Link to="/settings/$section" params={{ section: 'appearance' }}>
                 <KeyboardIcon />
                 {t('sidebar.keyboardShortcuts')}
                 <DropdownMenuShortcut>?</DropdownMenuShortcut>
@@ -229,10 +229,15 @@ export function isActivePath(pathname: string, to: string): boolean {
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 
-/** The server segment of /servers/$server, /buckets/$server/… and /browse/$server/…. */
+/**
+ * The server id in `/servers/$serverId`. Only that route names a server: every
+ * other id route names a bucket or an IAM entity, and guessing a server from one
+ * of those is how the switcher used to show the wrong name.
+ */
 function matchServerParam(pathname: string): string | null {
-  const match = /^\/(?:servers|buckets|browse)\/([^/]+)/.exec(pathname);
-  return match?.[1] ?? null;
+  const match = /^\/servers\/([^/]+)$/.exec(pathname);
+  const candidate = match?.[1] ?? null;
+  return candidate === 'new' ? null : candidate;
 }
 
 function initialsOf(name: string): string {

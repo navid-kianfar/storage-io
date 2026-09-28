@@ -14,7 +14,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { cn } from '@/lib/utils';
 
 /**
@@ -35,11 +34,8 @@ export function ServerSwitcher({
 }) {
   const { t } = useTranslation('nav');
   const navigate = useNavigate();
-  const dialogs = useDialogs();
 
-  const current = servers.find(
-    (server) => server.id === currentServerId || server.name === currentServerId,
-  );
+  const current = servers.find((server) => server.id === currentServerId);
 
   if (loading) {
     return (
@@ -101,7 +97,7 @@ export function ServerSwitcher({
             key={server.id}
             checked={server.id === current?.id}
             onCheckedChange={() =>
-              void navigate({ to: '/servers/$server', params: { server: server.name } })
+              void navigate({ to: '/servers/$serverId', params: { serverId: server.id } })
             }
           >
             <StatusDot tone={serverStatusTone(server.status)} />
@@ -112,7 +108,7 @@ export function ServerSwitcher({
           </DropdownMenuCheckboxItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => dialogs.open('add-server')}>
+        <DropdownMenuItem onSelect={() => void navigate({ to: '/servers/new' })}>
           <PlusIcon />
           {t('sidebar.addServer')}
         </DropdownMenuItem>

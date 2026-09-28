@@ -14,25 +14,30 @@ import { Input } from '@/components/app/Input';
 import { Label } from '@/components/app/Label';
 import { Spinner } from '@/components/app/Spinner';
 import { toastProblem } from '@/lib/api/problems';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import type { BucketScope } from '@/lib/entities/resolve';
 import { useCreateFolder } from '../api';
 
 /**
- * New folder — `?dialog=new-folder`, with `d_server`, `d_bucket` and `d_prefix`.
+ * New folder. It creates nothing addressable and is dismissed as soon as it is
+ * answered, so per docs/ROUTES.md it stays component state and has no URL.
  *
  * S3 has no folders; this writes an empty object whose key ends in `/`, which is
  * what every S3 console means by one. The dialog says so rather than pretending
  * otherwise, and it rejects a name with a slash in it: a nested folder is two
  * markers, and creating one silently would be a surprise.
  */
-function NewFolderDialog({ params, onClose }: DialogProps) {
+export interface NewFolderDialogProps {
+  readonly scope: BucketScope;
+  readonly prefix: string;
+  readonly onClose: () => void;
+}
+
+function NewFolderDialog({ scope, prefix, onClose }: NewFolderDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const nameId = useId();
   const [name, setName] = useState('');
 
-  const scope = { serverId: params.server ?? '', bucket: params.bucket ?? '' };
-  const prefix = params.prefix ?? '';
   const create = useCreateFolder(scope);
 
   const trimmed = name.trim();
@@ -95,7 +100,5 @@ function NewFolderDialog({ params, onClose }: DialogProps) {
     </Dialog>
   );
 }
-
-registerDialog('new-folder', NewFolderDialog);
 
 export { NewFolderDialog };

@@ -119,7 +119,8 @@
       "title": "Make it yours",
       "description": "Language, units, calendar and theme. All of it is changeable later in Settings.",
       "sizeUnits": "Size units",
-      "sizeUnitsHint": "Decimal matches what storage providers bill and report.",
+      "sizeUnitsHintDecimal": "Decimal (kB, MB, TB — powers of 1000) matches what storage providers bill and report.",
+      "sizeUnitsHintBinary": "Binary (KiB, MiB, TiB — powers of 1024) matches what the operating system reports.",
       "units": {
         "decimal": "Decimal (GB, TB)",
         "binary": "Binary (GiB, TiB)"
@@ -1062,6 +1063,7 @@
     },
     "upload": {
       "title": "Upload to {{bucket}}",
+      "titleNeutral": "Upload files",
       "description": "Large files are sent as parallel uploads and are retried after network drops.",
       "prefix": "Destination prefix",
       "storageClass": "Storage class",
@@ -1739,6 +1741,7 @@
       "enabled": "User enabled",
       "disabled": "User disabled",
       "deleted": "User deleted",
+      "deleteFailed": "The user could not be deleted",
       "statusFailed": "The user could not be changed",
       "policyAttached": "Policy attached",
       "policyDetached": "Policy detached",
@@ -2077,6 +2080,14 @@
       "title": "Delete this access key?",
       "description": "Requests signed with it stop working immediately, and the key cannot be restored."
     },
+    "bulk": {
+      "applied_one": "{{count}} key",
+      "applied_other": "{{count}} keys",
+      "partial": "{{failed}} of {{total}} did not work",
+      "deleteTitle_one": "Delete 1 access key?",
+      "deleteTitle_other": "Delete {{count}} access keys?",
+      "deleteDescription": "Anything still signing with these keys stops working immediately. This cannot be undone."
+    },
     "create": {
       "action": "Create access key",
       "title": "Create access key",
@@ -2222,8 +2233,8 @@
       "region": "Language & region",
       "transfers": "Transfers",
       "notifications": "Notifications",
-      "activity-forwarding": "Activity forwarding",
-      "backup-retention": "Backup & retention",
+      "forwarding": "Activity forwarding",
+      "backup": "Backup & retention",
       "about": "About"
     },
     "account": {

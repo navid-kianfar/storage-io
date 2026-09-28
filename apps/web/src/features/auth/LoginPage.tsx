@@ -13,6 +13,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import type { z } from 'zod';
 import { CopyField } from '@/components/app/CopyField';
+import { FormField } from '@/components/app/FormField';
 import { Meter } from '@/components/app/Meter';
 import { StatusDot } from '@/components/app/StatusBadge';
 import { Logo } from '@/components/shell/Logo';
@@ -107,20 +108,26 @@ export function LoginPage() {
           </div>
 
           <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="username">{t('signIn.username')}</Label>
-              <Input
-                id="username"
-                autoComplete="username"
-                autoCapitalize="none"
-                spellCheck={false}
-                aria-invalid={form.formState.errors.username !== undefined}
-                {...form.register('username')}
-              />
-              {form.formState.errors.username ? (
-                <p className="text-[0.8125rem] text-destructive">{tCommon('form.required')}</p>
-              ) : null}
-            </div>
+            <FormField
+              label={t('signIn.username')}
+              error={
+                form.formState.errors.username === undefined
+                  ? undefined
+                  : tCommon('form.required')
+              }
+            >
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  aria-describedby={describedBy}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  aria-invalid={invalid}
+                  {...form.register('username')}
+                />
+              )}
+            </FormField>
 
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between gap-2">

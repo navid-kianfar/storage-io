@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useParams } from '@tanstack/react-router';
 import {
   DatabaseIcon,
   EraserIcon,
@@ -26,7 +26,8 @@ import { Separator } from '@/components/app/Separator';
 import { useServerList } from '@/features/shell/api';
 import { isApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils';
-import { s3Uri, useBucketDetail } from './api';
+import { s3Uri, useBucketDetail, type BucketRefParams } from './api';
+import { useBucketScope } from '@/lib/entities/resolve';
 import { BucketHeader } from './components/BucketHeader';
 import { useScrollSpy } from './components/useScrollSpy';
 import { DeleteBucketDialog } from './dialogs/DeleteBucketDialog';
@@ -78,28 +79,29 @@ const SECTION_ICONS: Readonly<Record<SectionId, typeof InfoIcon>> = {
   danger: TriangleAlertIcon,
 };
 
+/** One stable placeholder while the bucket id resolves; the queries are disabled. */
+const EMPTY_SCOPE: BucketRefParams = { serverId: '', bucket: '' };
+
 export function BucketSettingsPage() {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const params = useParams({ from: '/protected/buckets/$server/$bucket' });
+  const { bucketId } = useParams({ from: '/protected/buckets/$bucketId' });
 
-  const bucketRef = useMemo(
-    () => ({ serverId: params.server, bucket: params.bucket }),
-    [params.server, params.bucket],
-  );
+  // The URL carries the bucket's opaque id; the per-server endpoints below are
+  // addressed by server + name, so the id is resolved once, here, and everything
+  // else on the page is keyed off the result.
+  const resolved = useBucketScope(bucketId);
+  const bucketRef = resolved.scope ?? EMPTY_SCOPE;
 
   const servers = useServerList();
-  const detail = useBucketDetail(bucketRef);
+  const detail = useBucketDetail(bucketRef, resolved.scope !== null);
   const server = useMemo(
-    () =>
-      servers.data?.items.find(
-        (item) => item.id === params.server || item.name === params.server,
-      ),
-    [servers.data, params.server],
+    () => servers.data?.items.find((item) => item.id === bucketRef.serverId),
+    [servers.data, bucketRef.serverId],
   );
 
-  const loading = detail.isLoading || servers.isLoading;
+  const loading = resolved.isLoading || detail.isLoading || servers.isLoading;
   const active = useScrollSpy(SECTION_IDS);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -122,7 +124,9 @@ export function BucketSettingsPage() {
     element?.scrollIntoView({ block: 'start' });
   }, [loading]);
 
-  const notFound = isApiError(detail.error) && detail.error.is('NOT_FOUND');
+  const notFound =
+    (isApiError(detail.error) && detail.error.is('NOT_FOUND')) ||
+    (isApiError(resolved.error) && resolved.error.status === 404);
   if (notFound) {
     return (
       <>
@@ -159,19 +163,10 @@ export function BucketSettingsPage() {
         actions={
           <>
             <Button variant="outline" asChild>
-              <a
-                href={`/browse/${encodeURIComponent(params.server)}/${encodeURIComponent(params.bucket)}/`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  void navigate({
-                    to: '/browse/$server/$bucket/$',
-                    params: { server: params.server, bucket: params.bucket, _splat: '' },
-                  });
-                }}
-              >
+              <Link to="/buckets/$bucketId/browse/$" params={{ bucketId, _splat: '' }}>
                 <FolderOpenIcon />
                 {t('bucket.browse')}
-              </a>
+              </Link>
             </Button>
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2Icon />
@@ -276,6 +271,9 @@ export function BucketSettingsPage() {
         objectCount={detail.data?.objects ?? null}
         sizeBytes={detail.data?.sizeBytes ?? null}
       />
+
+      {/* `/buckets/$bucketId/quota` renders here. */}
+      <Outlet />
     </>
   );
 }

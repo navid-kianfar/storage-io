@@ -44,7 +44,6 @@ import {
 } from '@/components/app';
 import { useServerBuckets } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 
 /**
  * The buckets that live on this server, largest first. It is deliberately a
@@ -60,7 +59,6 @@ export function ServerBucketsTab({ server }: { readonly server: Server }) {
   const { t: tCommon } = useTranslation();
   const { t: tDomain } = useTranslation('domain');
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
 
   const [query, setQuery] = useState('');
@@ -200,29 +198,24 @@ export function ServerBucketsTab({ server }: { readonly server: Server }) {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild>
                   <Link
-                    to="/browse/$server/$bucket/$"
-                    params={{ server: server.name, bucket: bucket.name, _splat: '' }}
+                    to="/buckets/$bucketId/browse/$"
+                    params={{ bucketId: bucket.id, _splat: '' }}
                   >
                     <FolderOpenIcon />
                     {t('server.buckets.browse')}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link
-                    to="/buckets/$server/$bucket"
-                    params={{ server: server.name, bucket: bucket.name }}
-                  >
+                  <Link to="/buckets/$bucketId" params={{ bucketId: bucket.id }}>
                     <Settings2Icon />
                     {t('server.buckets.settings')}
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    dialogs.open('edit-quota', { server: server.name, bucket: bucket.name })
-                  }
-                >
-                  <GaugeIcon />
-                  {t('server.buckets.editQuota')}
+                <DropdownMenuItem asChild>
+                  <Link to="/buckets/$bucketId/quota" params={{ bucketId: bucket.id }}>
+                    <GaugeIcon />
+                    {t('server.buckets.editQuota')}
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => copyUri(bucket)}>
@@ -235,7 +228,7 @@ export function ServerBucketsTab({ server }: { readonly server: Server }) {
         },
       },
     ],
-    [copyUri, dialogs, server.name, t, tCommon, tDomain],
+    [copyUri, t, tCommon, tDomain],
   );
 
   const items = buckets.data?.items ?? [];
@@ -284,16 +277,13 @@ export function ServerBucketsTab({ server }: { readonly server: Server }) {
           aria-label={t('server.buckets.title')}
           columns={columns}
           data={items}
-          getRowId={(bucket) => bucket.name}
+          getRowId={(bucket) => bucket.id}
           loading={buckets.isLoading}
           pagination={pagination}
           onPaginationChange={setPagination}
           total={buckets.data?.total}
           onRowClick={(bucket) =>
-            void navigate({
-              to: '/buckets/$server/$bucket',
-              params: { server: server.name, bucket: bucket.name },
-            })
+            void navigate({ to: '/buckets/$bucketId', params: { bucketId: bucket.id } })
           }
           emptyState={
             <EmptyState

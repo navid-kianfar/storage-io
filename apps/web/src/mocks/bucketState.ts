@@ -15,6 +15,7 @@ import {
   type Quota,
 } from '@storage-io/contracts';
 import { mockBuckets, mockServers } from './fixtures';
+import { bucketId } from './ids';
 
 /**
  * In-memory bucket and object state for the dev mock API.
@@ -48,6 +49,7 @@ export interface BucketRecord {
 /** The demo inventory, extended to the 10 buckets the concept's table draws. */
 const EXTRA_BUCKETS: readonly Bucket[] = [
   {
+    id: bucketId(mockServers[1]!.id, 'analytics-parquet'),
     serverId: mockServers[1]!.id,
     serverName: 'seaweed-archive',
     provider: 'seaweedfs',
@@ -64,6 +66,7 @@ const EXTRA_BUCKETS: readonly Bucket[] = [
     unavailable: false,
   },
   {
+    id: bucketId(mockServers[2]!.id, 'mail-archive'),
     serverId: mockServers[2]!.id,
     serverName: 'aws-eu-backup',
     provider: 'aws',
@@ -80,6 +83,7 @@ const EXTRA_BUCKETS: readonly Bucket[] = [
     unavailable: false,
   },
   {
+    id: bucketId(mockServers[0]!.id, 'ci-artifacts'),
     serverId: mockServers[0]!.id,
     serverName: 'minio-prod-01',
     provider: 'minio',
@@ -96,6 +100,7 @@ const EXTRA_BUCKETS: readonly Bucket[] = [
     unavailable: false,
   },
   {
+    id: bucketId(mockServers[4]!.id, 'edge-cache'),
     serverId: mockServers[4]!.id,
     serverName: 'garage-edge',
     provider: 'garage',
@@ -112,6 +117,7 @@ const EXTRA_BUCKETS: readonly Bucket[] = [
     unavailable: true,
   },
   {
+    id: bucketId(mockServers[0]!.id, 'public-assets'),
     serverId: mockServers[0]!.id,
     serverName: 'minio-prod-01',
     provider: 'minio',

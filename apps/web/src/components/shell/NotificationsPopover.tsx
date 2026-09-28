@@ -1,5 +1,5 @@
 import type { Notification, NotificationLevel } from '@storage-io/contracts';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { BellIcon, CircleXIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { RelativeTime } from '@/components/app/Format';
@@ -8,7 +8,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { SETTINGS_SECTION_IDS } from '@/features/settings/sections';
 import { cn } from '@/lib/utils';
 
 /** The unread count is a badge, not a number to read aloud; over 9 it becomes "9+". */
@@ -25,24 +24,6 @@ const LEVEL_COLORS: Readonly<Record<NotificationLevel, string>> = {
   warning: 'text-warning',
   error: 'text-destructive',
 };
-
-/**
- * The API deep-links a notification at `/settings/security`, but Settings is one
- * page with anchored sections — that path is a 404, which is the worst thing a
- * notification can be. Known section names are rewritten to the anchor they mean;
- * anything else is left alone so a new link the API adds still works.
- *
- * Reported to the API: the canonical link is `/settings#security`.
- */
-const SETTINGS_PREFIX = '/settings/';
-
-export function notificationHref(href: string): string {
-  if (!href.startsWith(SETTINGS_PREFIX)) return href;
-  const section = href.slice(SETTINGS_PREFIX.length);
-  return (SETTINGS_SECTION_IDS as readonly string[]).includes(section)
-    ? `/settings#${section}`
-    : href;
-}
 
 export function NotificationsPopover({
   notifications,
@@ -61,6 +42,7 @@ export function NotificationsPopover({
   readonly markingAllRead: boolean;
 }) {
   const { t } = useTranslation('nav');
+  const navigate = useNavigate();
 
   return (
     <Popover>
@@ -157,13 +139,23 @@ export function NotificationsPopover({
                         {body}
                       </button>
                     ) : (
-                      <Link
-                        to={notificationHref(notification.href)}
-                        onClick={() => onMarkRead(notification.id)}
+                      // The API's `href` follows docs/ROUTES.md. It is data, so it
+                      // is a real anchor navigated by the router rather than a
+                      // typed `<Link to>`: a link the app has no route for lands on
+                      // the 404 page, which is the honest outcome. It stays an
+                      // `<a>` so middle-click and "copy link" still work.
+                      <a
+                        href={notification.href}
+                        onClick={(event) => {
+                          if (event.defaultPrevented || event.metaKey || event.ctrlKey) return;
+                          event.preventDefault();
+                          onMarkRead(notification.id);
+                          void navigate({ href: notification.href ?? '/' });
+                        }}
                         className="flex items-start gap-3 px-4 py-3 hover:bg-accent"
                       >
                         {body}
-                      </Link>
+                      </a>
                     )}
                   </li>
                 );

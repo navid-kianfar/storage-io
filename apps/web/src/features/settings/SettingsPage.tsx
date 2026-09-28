@@ -1,8 +1,10 @@
+import { Outlet, useParams } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/app';
 import { useMe } from '@/features/auth/api';
 import { SettingsNav } from '@/features/settings/SettingsNav';
+import { isSettingsSection, type SettingsSectionId } from '@/features/settings/sections';
 import { useUpdateSettings } from '@/features/settings/api';
 import { AboutSection } from '@/features/settings/sections/AboutSection';
 import { AccountSection } from '@/features/settings/sections/AccountSection';
@@ -16,14 +18,15 @@ import { useSettings } from '@/features/shell/api';
 import { TransferSettingsCard } from '@/features/transfers/TransfersPage';
 import { useApiError } from '@/lib/api/useApiError';
 
-/** Registers `?dialog=create-api-token`; the palette opens it by URL. */
-import '@/features/settings/dialogs/CreateApiTokenDialog';
-
 /**
- * One long page with a sticky section nav, as the concept draws it — not a set of
- * tabs. Settings is read far more often than it is changed, and a page that can be
- * scrolled and searched with the browser's own find is worth more here than one
- * that hides eight of nine sections behind a click.
+ * Settings, one section per route (`/settings/$section`, docs/ROUTES.md), with a
+ * sticky section nav beside it.
+ *
+ * It was one long scrolling page with anchors; a section is now an address, which
+ * is what lets a notification, an alert or a colleague link to *this* setting
+ * rather than to the top of a page the reader then has to scan. On a phone the nav
+ * becomes a scrolling row of chips above the section, because a two-pane layout at
+ * 375 px is one pane and a memory of another.
  *
  * Each section owns its own save. `PATCH /settings` takes one section at a time, so
  * a single page-wide Save button would either send everything (overwriting what
@@ -39,6 +42,9 @@ export function SettingsPage() {
   const { t } = useTranslation('pages');
   const apiError = useApiError();
 
+  const { section } = useParams({ from: '/protected/settings/$section' });
+  const active: SettingsSectionId = isSettingsSection(section) ? section : 'account';
+
   const me = useMe();
   const settings = useSettings();
   const saveSettings = useUpdateSettings();
@@ -47,27 +53,23 @@ export function SettingsPage() {
     <>
       <PageHeader title={t('settings.title')} description={t('settings.description')} />
 
-      <div className="grid gap-(--gap-lg) lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
-        <SettingsNav />
+      <div className="grid gap-(--gap-lg) lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] lg:items-start">
+        <SettingsNav active={active} />
 
         <div className="flex min-w-0 flex-col gap-(--gap-lg)">
-          <section id="account" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
-            <AccountSection me={me.data} loading={me.isLoading} />
-          </section>
+          {active === 'account' ? <AccountSection me={me.data} loading={me.isLoading} /> : null}
 
-          <section id="security" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
+          {active === 'security' ? (
             <SecuritySection settings={settings.data} loading={settings.isLoading} />
-          </section>
+          ) : null}
 
-          <section id="appearance" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
-            <AppearanceSection />
-          </section>
+          {active === 'appearance' ? <AppearanceSection /> : null}
 
-          <section id="region" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
+          {active === 'region' ? (
             <RegionSection settings={settings.data} loading={settings.isLoading} />
-          </section>
+          ) : null}
 
-          <section id="transfers" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
+          {active === 'transfers' ? (
             <TransferSettingsCard
               settings={settings.data}
               loading={settings.isLoading}
@@ -85,25 +87,26 @@ export function SettingsPage() {
                 )
               }
             />
-          </section>
+          ) : null}
 
-          <section id="notifications" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
+          {active === 'notifications' ? (
             <NotificationsSection settings={settings.data} loading={settings.isLoading} />
-          </section>
+          ) : null}
 
-          <section id="activity-forwarding" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
+          {active === 'forwarding' ? (
             <ActivityForwardingSection settings={settings.data} loading={settings.isLoading} />
-          </section>
+          ) : null}
 
-          <section id="backup-retention" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
+          {active === 'backup' ? (
             <BackupSection settings={settings.data} loading={settings.isLoading} />
-          </section>
+          ) : null}
 
-          <section id="about" className="scroll-mt-[calc(var(--topbar-h)+1rem)]">
-            <AboutSection />
-          </section>
+          {active === 'about' ? <AboutSection /> : null}
         </div>
       </div>
+
+      {/* `/settings/$section/new-token` renders here. */}
+      <Outlet />
     </>
   );
 }

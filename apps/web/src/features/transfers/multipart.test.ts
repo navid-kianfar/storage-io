@@ -20,7 +20,12 @@ import {
  */
 
 const PART_SIZE = 5 * 1024 * 1024;
-const SCOPE = { serverId: 's1', serverName: 'minio-prod-01', bucket: 'media-prod' };
+const SCOPE = {
+  serverId: 's1',
+  serverName: 'minio-prod-01',
+  bucket: 'media-prod',
+  bucketId: 'bucket-media-prod',
+};
 const UPLOAD_ID = 'upload-1';
 
 /** Part uploads never resolve on their own: each test finishes the ones it wants. */

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useNavigate, useParams } from '@tanstack/react-router';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/app/Alert';
@@ -18,16 +19,18 @@ import { FormField } from '@/components/app/FormField';
 import { OptionRow } from '@/components/app/FormRow';
 import { Switch } from '@/components/app/Switch';
 import { TagEditor } from '@/components/app/TagEditor';
-import { useBucketDetail, useBucketQuota, useBuckets } from '@/features/buckets/api';
+import { useBucketDetail, useBucketQuota } from '@/features/buckets/api';
 import { useServerList } from '@/features/shell/api';
 import { enqueueUploads } from '@/features/transfers/engine';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useBucketScope, type BucketScope } from '@/lib/entities/resolve';
 import { useFormat } from '@/lib/format/FormatProvider';
 import { guessContentType } from '../fileKind';
 
 /**
- * Upload — `?dialog=upload`, with `d_server`, `d_bucket` and `d_prefix` from the
- * object browser (or typed in when the dialog is opened from the palette).
+ * Upload — the `/buckets/$bucketId/upload/$` route, rendered over the object
+ * browser. The bucket is the route's id and the splat is the destination prefix,
+ * so the dialog never has to ask which bucket it is uploading to: the palette's
+ * "Upload" goes to `/browse`, where a bucket is picked first.
  *
  * `FileDropzone` is the only file input in the app and it already preserves the
  * relative path of a dropped folder; this dialog passes those paths straight
@@ -41,18 +44,27 @@ import { guessContentType } from '../fileKind';
 
 const STORAGE_CLASSES = ['STANDARD', 'STANDARD_IA', 'REDUCED_REDUNDANCY', 'GLACIER'] as const;
 
-function UploadDialog({ params, onClose }: DialogProps) {
+/** One stable placeholder while the bucket id resolves; the queries are disabled. */
+const EMPTY_SCOPE: BucketScope = { serverId: '', bucket: '' };
+
+export interface UploadDialogProps {
+  /** The resolved bucket; `null` while its id is still resolving. */
+  readonly scope: BucketScope | null;
+  /** The bucket's opaque id, which the transfer carries for "open location". */
+  readonly bucketId: string;
+  readonly initialPrefix: string;
+  readonly onClose: () => void;
+}
+
+function UploadDialog({ scope, bucketId, initialPrefix, onClose }: UploadDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const format = useFormat();
 
-  const serverParam = params.server ?? '';
-  const bucketParam = params.bucket ?? '';
-
   const servers = useServerList();
-  const [serverId, setServerId] = useState<string | null>(serverParam === '' ? null : serverParam);
-  const [bucket, setBucket] = useState(bucketParam);
-  const [prefix, setPrefix] = useState(params.prefix ?? '');
+  const serverId = scope?.serverId ?? null;
+  const bucket = scope?.bucket ?? '';
+  const [prefix, setPrefix] = useState(initialPrefix);
   const [files, setFiles] = useState<readonly DroppedFile[]>([]);
   const [storageClass, setStorageClass] = useState<string | null>(null);
   const [overwrite, setOverwrite] = useState(false);
@@ -61,11 +73,8 @@ function UploadDialog({ params, onClose }: DialogProps) {
   const [metadata, setMetadata] = useState<Readonly<Record<string, string>>>({});
   const [tags, setTags] = useState<Readonly<Record<string, string>>>({});
 
-  const scopeReady = serverId !== null && bucket !== '';
-  const bucketRef = useMemo(
-    () => ({ serverId: serverId ?? '', bucket }),
-    [serverId, bucket],
-  );
+  const scopeReady = scope !== null;
+  const bucketRef = scope ?? EMPTY_SCOPE;
   const detail = useBucketDetail(bucketRef, scopeReady);
   const quota = useBucketQuota(bucketRef, scopeReady);
 
@@ -78,24 +87,6 @@ function UploadDialog({ params, onClose }: DialogProps) {
       : (usedBytes + totalBytes) / limitBytes;
   const overQuota = ratioAfter !== null && ratioAfter > 1;
 
-  const serverOptions = useMemo(
-    () =>
-      (servers.data?.items ?? []).map((server) => ({
-        value: server.id,
-        label: server.name,
-        disabled: server.status === 'offline',
-      })),
-    [servers.data],
-  );
-  const serverBuckets = useBuckets({ serverId: serverId ?? undefined, sort: 'name', page: 1, pageSize: 500 });
-  const bucketOptions = useMemo(
-    () =>
-      serverId === null
-        ? []
-        : (serverBuckets.data?.items ?? []).map((item) => ({ value: item.name, label: item.name })),
-    [serverId, serverBuckets.data],
-  );
-
   const serverName =
     servers.data?.items.find((item) => item.id === serverId || item.name === serverId)?.name ??
     serverId ??
@@ -107,7 +98,7 @@ function UploadDialog({ params, onClose }: DialogProps) {
   function submit(): void {
     if (!canSubmit || serverId === null) return;
     enqueueUploads({
-      scope: { serverId, serverName, bucket },
+      scope: { serverId, serverName, bucket, bucketId },
       items: files.map((dropped) => ({
         file: dropped.file,
         relativePath: dropped.relativePath,
@@ -139,41 +130,12 @@ function UploadDialog({ params, onClose }: DialogProps) {
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {t('browse.upload.title', { bucket: bucket === '' ? tCommon('action.select') : bucket })}
+            {/* Neutral until the bucket is known: "Upload to …" with a placeholder
+                where the name goes reads as a broken string, not as a heading. */}
+            {bucket === '' ? t('browse.upload.titleNeutral') : t('browse.upload.title', { bucket })}
           </DialogTitle>
           <DialogDescription>{t('browse.upload.description')}</DialogDescription>
         </DialogHeader>
-
-        {bucketParam === '' ? (
-          <div className="grid items-start gap-4 sm:grid-cols-2">
-            <FormField label={t('browse.copy.server')}>
-              {({ id }) => (
-                <Combobox
-                  id={id}
-                  options={serverOptions}
-                  value={serverId}
-                  onValueChange={(value) => {
-                    setServerId(value);
-                    setBucket('');
-                  }}
-                  placeholder={tCommon('form.comboboxPlaceholder')}
-                />
-              )}
-            </FormField>
-            <FormField label={t('browse.copy.bucket')}>
-              {({ id }) => (
-                <Combobox
-                  id={id}
-                  options={bucketOptions}
-                  value={bucket === '' ? null : bucket}
-                  onValueChange={(value) => setBucket(value ?? '')}
-                  placeholder={tCommon('form.comboboxPlaceholder')}
-                  disabled={serverId === null}
-                />
-              )}
-            </FormField>
-          </div>
-        ) : null}
 
         <FileDropzone
           files={files}
@@ -232,18 +194,18 @@ function UploadDialog({ params, onClose }: DialogProps) {
 
         {showExtras ? (
           <div className="flex flex-col gap-4 rounded-lg border p-(--card-pad)">
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{t('browse.metadataDialog.custom')}</span>
-              <TagEditor
-                tags={metadata}
-                onTagsChange={setMetadata}
-                hint={t('browse.metadataDialog.customHint')}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{t('browse.inspector.tabs.tags')}</span>
-              <TagEditor tags={tags} onTagsChange={setTags} />
-            </div>
+            <FormField label={t('browse.metadataDialog.custom')}>
+              {() => (
+                <TagEditor
+                  tags={metadata}
+                  onTagsChange={setMetadata}
+                  hint={t('browse.metadataDialog.customHint')}
+                />
+              )}
+            </FormField>
+            <FormField label={t('browse.inspector.tabs.tags')}>
+              {() => <TagEditor tags={tags} onTagsChange={setTags} />}
+            </FormField>
           </div>
         ) : null}
 
@@ -278,6 +240,23 @@ function UploadDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('upload', UploadDialog);
-
 export { UploadDialog };
+
+/** `/buckets/$bucketId/upload/$` — the upload dialog over the object browser. */
+export function UploadRoute() {
+  const navigate = useNavigate();
+  const { bucketId, _splat } = useParams({ from: '/protected/object-browser/buckets/$bucketId/upload/$' });
+  const prefix = _splat ?? '';
+  const { scope } = useBucketScope(bucketId);
+
+  const close = useCallback(() => {
+    void navigate({
+      to: '/buckets/$bucketId/browse/$',
+      params: { bucketId, _splat: prefix },
+    });
+  }, [navigate, bucketId, prefix]);
+
+  return (
+    <UploadDialog scope={scope} bucketId={bucketId} initialPrefix={prefix} onClose={close} />
+  );
+}

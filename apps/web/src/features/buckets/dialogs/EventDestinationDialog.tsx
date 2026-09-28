@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/app/Dialog';
 import { Input } from '@/components/app/Input';
+import { FormField } from '@/components/app/FormField';
 import { Label } from '@/components/app/Label';
 import { Spinner } from '@/components/app/Spinner';
 
@@ -81,10 +82,6 @@ function EventDestinationDialogBody({
 }) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
-  const arnId = useId();
-  const kindId = useId();
-  const prefixId = useId();
-  const suffixId = useId();
   const eventsId = useId();
 
   const isEdit = target !== null;
@@ -135,53 +132,59 @@ function EventDestinationDialogBody({
         <DialogDescription>{t('bucket.events.dialog.description')}</DialogDescription>
       </DialogHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <Label htmlFor={arnId}>{t('bucket.events.dialog.arn')}</Label>
-          <Input
-            id={arnId}
-            value={arn}
-            onChange={(event) => setArn(event.target.value)}
-            placeholder="arn:minio:sqs::webhook:webhook"
-            className="ltr-isolate font-mono"
-          />
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {t('bucket.events.dialog.arnHint')}
-          </p>
-        </div>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <FormField
+          className="sm:col-span-2"
+          label={t('bucket.events.dialog.arn')}
+          hint={t('bucket.events.dialog.arnHint')}
+        >
+          {({ id, describedBy }) => (
+            <Input
+              id={id}
+              aria-describedby={describedBy}
+              value={arn}
+              onChange={(event) => setArn(event.target.value)}
+              placeholder="arn:minio:sqs::webhook:webhook"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={kindId}>{t('bucket.events.dialog.kind')}</Label>
-          <Combobox
-            id={kindId}
-            options={kindOptions}
-            value={kind}
-            onValueChange={(next) => setKind(next === null ? 'queue' : next)}
-            aria-label={t('bucket.events.dialog.kind')}
-          />
-        </div>
+        <FormField label={t('bucket.events.dialog.kind')}>
+          {({ id }) => (
+            <Combobox
+              id={id}
+              options={kindOptions}
+              value={kind}
+              onValueChange={(next) => setKind(next === null ? 'queue' : next)}
+              aria-label={t('bucket.events.dialog.kind')}
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={prefixId}>{t('bucket.events.dialog.prefix')}</Label>
-          <Input
-            id={prefixId}
-            value={prefix}
-            onChange={(event) => setPrefix(event.target.value)}
-            placeholder="raw/"
-            className="ltr-isolate font-mono"
-          />
-        </div>
+        <FormField label={t('bucket.events.dialog.prefix')}>
+          {({ id }) => (
+            <Input
+              id={id}
+              value={prefix}
+              onChange={(event) => setPrefix(event.target.value)}
+              placeholder="raw/"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={suffixId}>{t('bucket.events.dialog.suffix')}</Label>
-          <Input
-            id={suffixId}
-            value={suffix}
-            onChange={(event) => setSuffix(event.target.value)}
-            placeholder=".jpg"
-            className="ltr-isolate font-mono"
-          />
-        </div>
+        <FormField label={t('bucket.events.dialog.suffix')}>
+          {({ id }) => (
+            <Input
+              id={id}
+              value={suffix}
+              onChange={(event) => setSuffix(event.target.value)}
+              placeholder=".jpg"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
       </div>
 
       <fieldset className="flex flex-col gap-2" aria-describedby={`${eventsId}-hint`}>

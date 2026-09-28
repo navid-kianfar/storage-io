@@ -6,7 +6,7 @@ import {
 } from '@storage-io/contracts';
 import { useNavigate } from '@tanstack/react-router';
 import { BracesIcon, CircleCheckIcon, CircleXIcon, GlobeIcon, LockIcon } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/app/Alert';
@@ -23,18 +23,19 @@ import {
   DialogTitle,
 } from '@/components/app/Dialog';
 import { Input } from '@/components/app/Input';
-import { Label } from '@/components/app/Label';
+import { FormField } from '@/components/app/FormField';
 import { OptionRow } from '@/components/app/FormRow';
 import { ProviderMark } from '@/components/app/ProviderMark';
 import { Spinner } from '@/components/app/Spinner';
 import { Switch } from '@/components/app/Switch';
 import { useServerList } from '@/features/shell/api';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useRouteState } from '@/lib/dialogs/route';
 import { toastProblem } from '@/lib/api/problems';
 import { useCreateBucket } from '../api';
 
 /**
- * Create bucket — `?dialog=create-bucket`, optionally with `d_server` so the
+ * Create bucket — the `/buckets/new` route over the buckets list. A server may
+ * be pre-selected through router history state, so the
  * command palette, a server page and an empty state can all open it pre-filled.
  *
  * The name is validated as the operator types with the contract's own
@@ -48,16 +49,18 @@ import { useCreateBucket } from '../api';
 
 type AccessChoice = 'private' | 'public-read' | 'custom';
 
-function CreateBucketDialog({ params, onClose }: DialogProps) {
+export interface CreateBucketDialogProps {
+  /** Pre-selected server, from router history state; never from the URL. */
+  readonly initialServerId: string | null;
+  readonly onClose: () => void;
+}
+
+function CreateBucketDialog({ initialServerId, onClose }: CreateBucketDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
   const servers = useServerList();
   const create = useCreateBucket();
-
-  const nameId = useId();
-  const regionId = useId();
-  const serverId = useId();
 
   const options = useMemo<readonly ComboboxOption[]>(
     () =>
@@ -75,8 +78,7 @@ function CreateBucketDialog({ params, onClose }: DialogProps) {
     [servers.data, t],
   );
 
-  const initialServer = params.server ?? null;
-  const [selectedServer, setSelectedServer] = useState<string | null>(initialServer);
+  const [selectedServer, setSelectedServer] = useState<string | null>(initialServerId);
   const [name, setName] = useState('');
   const [region, setRegion] = useState('');
   const [versioning, setVersioning] = useState(true);
@@ -150,13 +152,15 @@ function CreateBucketDialog({ params, onClose }: DialogProps) {
           toast.success(t('buckets.create.created'), {
             description: `${bucket.name} · ${bucket.serverName}`,
           });
+          if (access === 'custom') {
+            void navigate({
+              to: '/buckets/$bucketId',
+              params: { bucketId: bucket.id },
+              hash: 'access',
+            });
+            return;
+          }
           onClose();
-          if (access !== 'custom') return;
-          void navigate({
-            to: '/buckets/$server/$bucket',
-            params: { server: bucket.serverName, bucket: bucket.name },
-            hash: 'access',
-          });
         },
         onError: (error) => toastProblem(error, tCommon, t('buckets.create.failed')),
       },
@@ -176,56 +180,63 @@ function CreateBucketDialog({ params, onClose }: DialogProps) {
           <DialogDescription>{t('buckets.create.description')}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={serverId}>{t('buckets.create.server')}</Label>
-            <Combobox
-              id={serverId}
-              options={options}
-              value={selectedServer}
-              onValueChange={setSelectedServer}
-              placeholder={tCommon('form.comboboxPlaceholder')}
-              disabled={servers.isLoading}
-              aria-label={t('buckets.create.server')}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={regionId}>{t('buckets.create.region')}</Label>
-            <Input
-              id={regionId}
-              value={region}
-              onChange={(event) => setRegion(event.target.value)}
-              placeholder={server?.region ?? ''}
-              className="ltr-isolate font-mono"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor={nameId}>{t('buckets.create.name')}</Label>
-            <Input
-              id={nameId}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={nameError}
-              aria-describedby={`${nameId}-hint`}
-              className="ltr-isolate font-mono"
-            />
-            <p
-              id={`${nameId}-hint`}
-              className="flex items-center gap-1.5 text-[0.8125rem] text-muted-foreground"
-            >
-              {nameError ? (
-                <CircleXIcon className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
-              ) : (
-                <CircleCheckIcon
-                  className="size-3.5 shrink-0 text-success-foreground"
-                  aria-hidden="true"
-                />
-              )}
-              {nameError ? nameCheck.message : t('buckets.create.nameHint')}
-            </p>
-          </div>
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          <FormField label={t('buckets.create.server')}>
+            {({ id, describedBy }) => (
+              <Combobox
+                id={id}
+                aria-describedby={describedBy}
+                options={options}
+                value={selectedServer}
+                onValueChange={setSelectedServer}
+                placeholder={tCommon('form.comboboxPlaceholder')}
+                disabled={servers.isLoading}
+                aria-label={t('buckets.create.server')}
+              />
+            )}
+          </FormField>
+          <FormField label={t('buckets.create.region')}>
+            {({ id, describedBy }) => (
+              <Input
+                id={id}
+                aria-describedby={describedBy}
+                value={region}
+                onChange={(event) => setRegion(event.target.value)}
+                placeholder={server?.region ?? ''}
+                className="ltr-isolate font-mono"
+              />
+            )}
+          </FormField>
+          <FormField
+            className="sm:col-span-2"
+            label={t('buckets.create.name')}
+            hint={
+              <span className="flex items-center gap-1.5">
+                {nameError ? (
+                  <CircleXIcon className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+                ) : (
+                  <CircleCheckIcon
+                    className="size-3.5 shrink-0 text-success-foreground"
+                    aria-hidden="true"
+                  />
+                )}
+                {nameError ? nameCheck.message : t('buckets.create.nameHint')}
+              </span>
+            }
+          >
+            {({ id, describedBy }) => (
+              <Input
+                id={id}
+                aria-describedby={describedBy}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                aria-invalid={nameError}
+                className="ltr-isolate font-mono"
+              />
+            )}
+          </FormField>
         </div>
 
         <div className="rounded-lg border px-(--card-pad)">
@@ -271,8 +282,8 @@ function CreateBucketDialog({ params, onClose }: DialogProps) {
           </OptionRow>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">{t('buckets.create.access')}</span>
+        <FormField label={t('buckets.create.access')} className="gap-2">
+          {() => (
           <ChoiceCards
             options={accessOptions}
             value={access}
@@ -280,7 +291,8 @@ function CreateBucketDialog({ params, onClose }: DialogProps) {
             columns={3}
             aria-label={t('buckets.create.access')}
           />
-        </div>
+          )}
+        </FormField>
 
         {access === 'public-read' ? (
           <Alert variant="warning">
@@ -303,6 +315,14 @@ function CreateBucketDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('create-bucket', CreateBucketDialog);
-
 export { CreateBucketDialog };
+
+/** `/buckets/new` — the create dialog over the buckets list. */
+export function CreateBucketRoute() {
+  const navigate = useNavigate();
+  const state = useRouteState();
+  const close = useCallback(() => {
+    void navigate({ to: '/buckets' });
+  }, [navigate]);
+  return <CreateBucketDialog initialServerId={state.serverId ?? null} onClose={close} />;
+}

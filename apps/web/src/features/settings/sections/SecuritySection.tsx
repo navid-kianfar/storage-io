@@ -1,4 +1,5 @@
 import { SETTINGS_DEFAULTS, cidrSchema, type Settings } from '@storage-io/contracts';
+import { useNavigate } from '@tanstack/react-router';
 import {
   InfoIcon,
   LaptopIcon,
@@ -37,7 +38,6 @@ import {
   useUpdateSettings,
 } from '@/features/settings/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 
 /**
  * Sessions, CLI tokens and the two settings that decide who can reach the console.
@@ -68,7 +68,7 @@ export function SecuritySection({
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
-  const dialogs = useDialogs();
+  const navigate = useNavigate();
 
   const sessions = useAuthSessions();
   const tokens = useApiTokens();
@@ -271,7 +271,12 @@ export function SecuritySection({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => dialogs.openHere('create-api-token')}
+                onClick={() =>
+                  void navigate({
+                    to: '/settings/$section/new-token',
+                    params: { section: 'security' },
+                  })
+                }
               >
                 <PlusIcon />
                 {t('settings.security.newToken')}

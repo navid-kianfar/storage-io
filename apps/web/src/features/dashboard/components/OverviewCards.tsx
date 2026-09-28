@@ -1,5 +1,5 @@
 import type { AccessKey, ActivityEvent, Dashboard, Job } from '@storage-io/contracts';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ActivityIcon,
   ArrowRightIcon,
@@ -31,7 +31,6 @@ import {
   Tile,
 } from '@/components/app';
 import type { DonutSlice } from '@/features/dashboard/components/StorageDonut';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 
 const StorageDonut = lazy(() => import('@/features/dashboard/components/StorageDonut'));
 
@@ -111,8 +110,8 @@ function JobRow({ job }: { readonly job: Job }) {
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-2">
         <Link
-          to="/jobs"
-          search={{ job: job.id }}
+          to="/jobs/$jobId"
+          params={{ jobId: job.id }}
           className="truncate text-[0.8125rem] font-medium hover:underline"
         >
           {job.name.length > 0 ? job.name : tDomain(`jobType.${job.type}`)}
@@ -258,7 +257,7 @@ export function StorageByServerCard({
 
 export function QuickActionsCard() {
   const { t } = useTranslation('pages');
-  const dialogs = useDialogs();
+  const navigate = useNavigate();
 
   return (
     <SectionCard
@@ -273,22 +272,22 @@ export function QuickActionsCard() {
         <Tile
           icon={UploadIcon}
           label={t('overview.quick.upload')}
-          onClick={() => dialogs.open('upload')}
+          onClick={() => void navigate({ to: '/browse' })}
         />
         <Tile
           icon={FolderPlusIcon}
           label={t('overview.quick.createBucket')}
-          onClick={() => dialogs.open('create-bucket')}
+          onClick={() => void navigate({ to: '/buckets/new' })}
         />
         <Tile
           icon={KeyRoundIcon}
           label={t('overview.quick.createKey')}
-          onClick={() => dialogs.open('create-access-key')}
+          onClick={() => void navigate({ to: '/keys/new' })}
         />
         <Tile
           icon={LayersIcon}
           label={t('overview.quick.startJob')}
-          onClick={() => dialogs.open('new-job')}
+          onClick={() => void navigate({ to: '/jobs/new' })}
         />
       </div>
     </SectionCard>

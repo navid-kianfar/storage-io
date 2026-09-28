@@ -5,7 +5,7 @@ import {
   type Provider,
   type Server,
 } from '@storage-io/contracts';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import { PlusIcon, RefreshCwIcon, SearchIcon, ServerIcon } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,12 +40,7 @@ import {
   useTestServer,
 } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 
-/** Registers the three dialogs this route owns. */
-import '@/features/servers/dialogs/AddServerDialog';
-import '@/features/servers/dialogs/EditServerDialog';
-import '@/features/servers/dialogs/RotateCredentialsDialog';
 
 /**
  * Every endpoint storage-io manages, as cards rather than rows: a server's health,
@@ -91,7 +86,6 @@ export function ServersPage() {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
 
   const search = useSearch({ strict: false });
@@ -228,13 +222,19 @@ export function ServersPage() {
     () => ({
       onTest: runTest,
       onCheck: runCheck,
-      onEdit: (server) => dialogs.openHere('edit-server', { server: server.name }),
+      // Editing and rotating belong to the server, so they are that server's own
+      // routes; the list is where they are reached from, not where they live.
+      onEdit: (server) =>
+        void navigate({ to: '/servers/$serverId/edit', params: { serverId: server.id } }),
       onRotate: (server) =>
-        dialogs.openHere('rotate-server-credentials', { server: server.name }),
+        void navigate({
+          to: '/servers/$serverId/rotate-credentials',
+          params: { serverId: server.id },
+        }),
       onToggleMaintenance: toggleMaintenance,
       onRemove: setPendingRemoval,
     }),
-    [dialogs, runCheck, runTest, toggleMaintenance],
+    [navigate, runCheck, runTest, toggleMaintenance],
   );
 
   const confirmRemoval = useCallback(() => {
@@ -269,7 +269,7 @@ export function ServersPage() {
               {checkAll.isPending ? <Spinner /> : <RefreshCwIcon />}
               {t('servers.checkAll')}
             </Button>
-            <Button onClick={() => dialogs.openHere('add-server')}>
+            <Button onClick={() => void navigate({ to: '/servers/new' })}>
               <PlusIcon />
               {t('servers.add')}
             </Button>
@@ -346,7 +346,7 @@ export function ServersPage() {
           }
           action={
             items.length === 0 ? (
-              <Button onClick={() => dialogs.openHere('add-server')}>
+              <Button onClick={() => void navigate({ to: '/servers/new' })}>
                 <PlusIcon />
                 {t('servers.add')}
               </Button>
@@ -372,7 +372,7 @@ export function ServersPage() {
               maintenanceBusy={busyId === server.id && setMaintenance.isPending}
             />
           ))}
-          <AddServerCard onClick={() => dialogs.openHere('add-server')} />
+          <AddServerCard onClick={() => void navigate({ to: '/servers/new' })} />
         </div>
       )}
 
@@ -390,6 +390,9 @@ export function ServersPage() {
         busy={deleteServer.isPending}
         onConfirm={confirmRemoval}
       />
+
+      {/* `/servers/new` renders here. */}
+      <Outlet />
     </>
   );
 }

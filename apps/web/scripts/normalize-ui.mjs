@@ -53,6 +53,27 @@ const REWRITES = [
   [/(?<![\w-])rounded-r-/g, 'rounded-e-'],
 ];
 
+/**
+ * Control heights the CLI hard-codes. Every control in this app derives its height
+ * from `--control-h`, so the density setting resizes all of them at once and two
+ * controls side by side in a form row line up exactly. A literal `h-9` opts out of
+ * both, which is a bug the operator sees as a crooked row.
+ */
+const CONTROL_HEIGHTS = [
+  ['"h-9 min-w-0 has-[>textarea]:h-auto"', '"h-(--control-h) min-w-0 has-[>textarea]:h-auto"'],
+  ['"h-9 min-w-9 px-2"', '"h-(--control-h) min-w-(--control-h) px-2"'],
+  [
+    '"h-8 min-w-8 px-1.5"',
+    '"h-[calc(var(--control-h)-0.375rem)] min-w-[calc(var(--control-h)-0.375rem)] px-1.5"',
+  ],
+];
+
+function normalizeControlHeights(source) {
+  let out = source;
+  for (const [literal, replacement] of CONTROL_HEIGHTS) out = out.replaceAll(literal, replacement);
+  return out;
+}
+
 /** Icons whose meaning is "forward"/"back": they mirror in RTL. */
 const FLIP_ICONS = ['ChevronRightIcon', 'ChevronRight', 'ChevronLeftIcon', 'ChevronLeft'];
 
@@ -84,7 +105,10 @@ for (const name of readdirSync(UI_DIR)) {
   if (!name.endsWith('.tsx')) continue;
   const path = join(UI_DIR, name);
   const before = readFileSync(path, 'utf8');
-  const after = addIconFlip(normalizeDirection(normalizeImports(before)));
+  const imported = normalizeImports(before);
+  const directional = normalizeDirection(imported);
+  const sized = normalizeControlHeights(directional);
+  const after = addIconFlip(sized);
   if (after !== before) {
     writeFileSync(path, after);
     changed += 1;

@@ -10,6 +10,7 @@ import { CREDENTIALS_CSV_HEADERS, SNIPPET_KINDS, buildSnippet, credentialsCsvRow
 
 const created: CreatedKey = {
   accessKey: {
+    id: 'key-11111111-1111-4111-8111-111111111111',
     serverId: 'srv-1',
     serverName: 'minio-prod-01',
     provider: 'minio',

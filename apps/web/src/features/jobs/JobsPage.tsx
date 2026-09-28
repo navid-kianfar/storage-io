@@ -7,7 +7,7 @@ import {
   type JobType,
   type JobView,
 } from '@storage-io/contracts';
-import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ColumnDef, PaginationState } from '@tanstack/react-table';
 import {
   BanIcon,
@@ -68,6 +68,7 @@ import {
 import {
   useDeleteJob,
   useDuplicateJob,
+  useJob,
   useJobCommand,
   useJobs,
   useUpdateJob,
@@ -81,12 +82,10 @@ import { JobLogSheet } from '@/features/jobs/components/JobLogSheet';
 import { RunDuration, RunHistorySheet } from '@/features/jobs/components/RunHistorySheet';
 import { JOB_TYPE_ICONS, jobSourcePath, jobTargetPath } from '@/features/jobs/jobTypes';
 import { useApiError } from '@/lib/api/useApiError';
+import { useRouteOverlay } from '@/lib/dialogs/route';
 import { csvFileName, downloadCsv, toCsv } from '@/lib/csv/csv';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { useFormat } from '@/lib/format/FormatProvider';
 
-/** Registers `?dialog=new-job`; the palette and the object browser open it by URL. */
-import '@/features/jobs/dialogs/NewJobDialog';
 
 /**
  * Bulk jobs: what is running now, what is scheduled, and what has already run.
@@ -115,18 +114,44 @@ export function JobsPage() {
   const { t: tCommon } = useTranslation();
   const { t: tDomainRoot } = useTranslation('domain');
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
   const format = useFormat();
 
   const search = useSearch({ strict: false });
   const view: JobView = isJobView(search.view) ? search.view : 'active';
 
-  const [logJob, setLogJob] = useState<Job | null>(null);
   const [cancelJob, setCancelJob] = useState<Job | null>(null);
   const [concurrencyJob, setConcurrencyJob] = useState<Job | null>(null);
   const [scheduleJob, setScheduleJob] = useState<Job | null>(null);
-  const [runsJob, setRunsJob] = useState<Job | null>(null);
+
+  /**
+   * The log sheet and the run history are routes — `/jobs/$jobId` and
+   * `/jobs/$jobId/runs` — so a link to a running job is a link an operator can
+   * send. They act on the row behind them (pause, resume, cancel), so this page
+   * keeps ownership and the route only says which overlay and which id.
+   */
+  const overlay = useRouteOverlay();
+  const overlayJob = useJob(overlay.params.jobId ?? null);
+  const logJob = overlay.name === 'job-log' ? (overlayJob.data ?? null) : null;
+  const runsJob = overlay.name === 'job-runs' ? (overlayJob.data ?? null) : null;
+
+  const closeOverlay = useCallback(() => {
+    void navigate({ to: '/jobs', search: true });
+  }, [navigate]);
+
+  const setLogJob = useCallback(
+    (job: Job) => {
+      void navigate({ to: '/jobs/$jobId', params: { jobId: job.id }, search: true });
+    },
+    [navigate],
+  );
+
+  const setRunsJob = useCallback(
+    (job: Job) => {
+      void navigate({ to: '/jobs/$jobId/runs', params: { jobId: job.id }, search: true });
+    },
+    [navigate],
+  );
   const [deleteScheduleJob, setDeleteScheduleJob] = useState<Job | null>(null);
   const [deleteHistoryJob, setDeleteHistoryJob] = useState<Job | null>(null);
   const [pagination, setPagination] = useState<PaginationState>({
@@ -193,12 +218,12 @@ export function JobsPage() {
         onSuccess: () => {
           toast.success(t('jobs.toast.cancelled'), { description: job.name });
           setCancelJob(null);
-          setLogJob(null);
+          closeOverlay();
         },
         onError: (error) => apiError.toastError(error, t('jobs.toast.commandFailed')),
       },
     );
-  }, [apiError, cancelJob, command, t]);
+  }, [apiError, cancelJob, closeOverlay, command, t]);
 
   const toggleSchedule = useCallback(
     (job: Job, enabled: boolean) => {
@@ -597,14 +622,14 @@ export function JobsPage() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/settings" hash="transfers">
+                  <Link to="/settings/$section" params={{ section: 'transfers' }}>
                     <SettingsIcon />
                     {t('jobs.jobDefaults')}
                   </Link>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button onClick={() => dialogs.openHere('new-job')}>
+            <Button onClick={() => void navigate({ to: '/jobs/new' })}>
               <PlusIcon />
               {t('jobs.newJob')}
             </Button>
@@ -664,7 +689,7 @@ export function JobsPage() {
                 title={t('jobs.empty.activeTitle')}
                 description={t('jobs.empty.activeDescription')}
                 action={
-                  <Button onClick={() => dialogs.openHere('new-job')}>
+                  <Button onClick={() => void navigate({ to: '/jobs/new' })}>
                     <PlusIcon />
                     {t('jobs.newJob')}
                   </Button>
@@ -694,7 +719,7 @@ export function JobsPage() {
             title={t('jobs.scheduled.title')}
             description={t('jobs.scheduled.description')}
             action={
-              <Button variant="outline" size="sm" onClick={() => dialogs.openHere('new-job')}>
+              <Button variant="outline" size="sm" onClick={() => void navigate({ to: '/jobs/new' })}>
                 <CalendarClockIcon />
                 {t('jobs.newSchedule')}
               </Button>
@@ -713,7 +738,7 @@ export function JobsPage() {
                   title={t('jobs.empty.scheduledTitle')}
                   description={t('jobs.empty.scheduledDescription')}
                   action={
-                    <Button onClick={() => dialogs.openHere('new-job')}>
+                    <Button onClick={() => void navigate({ to: '/jobs/new' })}>
                       <PlusIcon />
                       {t('jobs.newSchedule')}
                     </Button>
@@ -800,9 +825,12 @@ export function JobsPage() {
         </TabsContent>
       </Tabs>
 
+      {/* `/jobs/new` renders here; the sheets below are driven by their routes. */}
+      <Outlet />
+
       <JobLogSheet
         job={logJob}
-        onClose={() => setLogJob(null)}
+        onClose={closeOverlay}
         onPause={pause}
         onResume={resume}
         onCancel={setCancelJob}
@@ -815,7 +843,7 @@ export function JobsPage() {
         <EditScheduleDialog job={scheduleJob} onClose={() => setScheduleJob(null)} />
       )}
       {runsJob === null ? null : (
-        <RunHistorySheet job={runsJob} onClose={() => setRunsJob(null)} />
+        <RunHistorySheet job={runsJob} onClose={closeOverlay} />
       )}
 
       <ConfirmDialog

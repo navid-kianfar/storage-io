@@ -78,7 +78,8 @@ src/
     query/        query client defaults and the query-key factory
     events/       useEventStream (SSE)
     format/       Intl formatters and the FormatProvider
-    dialogs/      the URL-addressable dialog registry
+    dialogs/      dialog routes: RouteState, useRouteOverlay
+    entities/     the opaque-id resolver (id -> serverId + name)
   stores/         zustand: preferences, transfers
   i18n/           i18next setup and the locale files
   mocks/          MSW handlers and fixtures (dev only)
@@ -108,7 +109,6 @@ src/
 | `ProviderMark` | MI / SW / S3 / CE / GA / R2 / WA tiles in the concept's colours |
 | `ServerStatusBadge`, `JobStatusBadge`, `AccessKeyStatusBadge`, `UserStatusBadge`, `StatusDot` | every status in the system |
 | `Bytes`, `Num`, `Pct`, `Ms`, `Duration`, `DateTime`, `RelativeTime`, `Dash` | every formatted value |
-| `DialogHost` | mounted by the shell; renders whatever `?dialog=` asks for |
 
 ### Formatting
 
@@ -142,7 +142,7 @@ const buckets = useBuckets({ page: pagination.pageIndex + 1, pageSize: paginatio
   aria-label={t('buckets.title')}
   columns={[selectionColumn<Bucket>(), ...bucketColumns]}
   data={buckets.data?.items ?? []}
-  getRowId={(bucket) => `${bucket.serverId}/${bucket.name}`}
+  getRowId={(bucket) => bucket.id}
   loading={buckets.isLoading}
   emptyState={<EmptyState icon={DatabaseIcon} title={…} action={…} />}
   rowSelection={rowSelection} onRowSelectionChange={setRowSelection}
@@ -151,7 +151,7 @@ const buckets = useBuckets({ page: pagination.pageIndex + 1, pageSize: paginatio
   total={buckets.data?.total}
   showColumnsMenu
   bulkActions={({ selectedRows, clearSelection }) => …}
-  onRowClick={(bucket) => navigate({ to: '/buckets/$server/$bucket', params: … })}
+  onRowClick={(bucket) => navigate({ to: '/buckets/$bucketId', params: { bucketId: bucket.id } })}
 />
 ```
 
@@ -170,71 +170,82 @@ Notes worth knowing before you fight it:
 
 ## Routing
 
-Code-based, all in `src/app/router.tsx`. To build a page, replace that route's
-`component` and leave `path` and `staticData` alone.
+Code-based, all in `src/app/router.tsx`. The route map is **docs/ROUTES.md** and
+that document is binding.
 
+- **Every param is an opaque id** — `$serverId`, `$bucketId`, `$userId`,
+  `$groupId`, `$policyId`, `$keyId`, `$jobId`, `$eventId`. Never a name: a name is
+  unique only within one server, is not a safe path segment, and leaks what the
+  operator called something into every link they paste. The object key and the
+  browsed prefix are splats, because a key is the object's identity in S3 and has
+  no other id.
+- **Search params carry view state only**: filters, sort, page, the active tab and
+  a time range. Identity travels in the path; context that is neither identity nor
+  view state travels in router history state (below). The root route's schema is
+  *loose*, so a page may add its own filters without declaring them.
 - **Breadcrumbs** come from `staticData`: `crumb` is a key in the `pages`
-  namespace, `crumbFromParams(params)` returns the text for a dynamic segment.
-- **Search params** are validated on the root route with a *loose* schema, so a
-  page may add its own filters without declaring them. `dialog` and anything
-  starting with `d_` are reserved.
+  namespace, and `crumbEntity` names an id param plus what kind of entity it is, so
+  the crumb shows the resolved *name* while the URL keeps the id.
 - Do not write a helper that wraps `createRoute`: the router infers `Link`'s `to`
   types from the literal `path`, and a helper taking `path: string` collapses every
   route type in the app.
 - Heavy pages should be split: `component: lazyRouteComponent(() => import('…'))`.
-  The initial bundle is ~845 kB / 261 kB gzipped today (React, the router, Query,
-  Radix, i18next, lucide, cmdk). CodeMirror and Recharts are already outside it —
-  keep Recharts there by lazily loading any section that charts.
+  CodeMirror and Recharts are outside the initial bundle — keep Recharts there by
+  lazily loading any section that charts.
 
-### URL-addressable dialogs — the `?dialog=` convention
+### Dialogs are routes
 
-Every dialog that something else can open lives in the URL:
+A dialog that creates or edits an entity is a **child route**, rendered over its
+parent page through that page's `<Outlet/>`. Closing it navigates to the parent —
+never `history.back()`, which does nothing useful when the dialog's URL was opened
+directly. A small in-page confirmation (delete, rename, tag, "share this link")
+stays component state and has no URL.
 
 ```
-/servers?dialog=add-server
-/quotas?dialog=edit-quota&d_server=minio-prod-01&d_bucket=media-prod
+/servers            ServersPage, with <Outlet/>
+/servers/new          → AddServerRoute renders the wizard over it
+/keys               KeysPage, with <Outlet/>
+/keys/new             → CreateAccessKeyRoute
+/keys/$keyId/rotate   → staticData.overlay = 'key-rotate'; the page renders it
 ```
 
-`dialog` names it; everything after `d_` is that dialog's own context. Back closes
-the dialog, and a link or a bookmark opens it.
+Two shapes, and the difference is who owns the state:
 
-**Every page that owns a dialog must do three things**, or the command palette's
-action does nothing:
+1. **Self-contained** — "create a bucket", "add a server". The child route's
+   `component` is a small `…Route` wrapper that supplies `onClose` (a navigation to
+   the parent) and renders the dialog. Nothing from the page is needed.
+2. **Acts on the row behind it** — pause a job, rotate a key, edit a group. The
+   page keeps ownership because the handlers and the list's queries live there, so
+   the route carries only `staticData: { overlay: '<name>' }` and its id param, and
+   the page asks `useRouteOverlay()` (`src/lib/dialogs/route.ts`) which overlay is
+   open and with which id. The params come from the deepest match, because
+   `useParams` inside the *parent's* component never sees the child's `$jobId`.
 
-1. add the key to `DIALOG_KEYS` in `src/lib/dialogs/registry.ts` (it is a union
-   type, so a typo is a compile error);
-2. point `DIALOG_OWNERS[key]` at the route whose module registers it;
-3. call `registerDialog('<key>', MyDialog)` at module scope in that route's module.
+The `?dialog=` + `d_*` registry this replaces is gone. It put entity names and ids
+in the query string, which the routing rules forbid, and it made every dialog a
+runtime lookup that could silently fail to register.
 
-```tsx
-// src/features/servers/dialogs/AddServerDialog.tsx
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+### History state — context that is neither an id nor view state
 
-export function AddServerDialog({ params, onClose }: DialogProps) {
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      …
-    </Dialog>
-  );
-}
+`navigate({ to, state: routeState({ … }) })`, read back with `useRouteState()`.
+The shape is `RouteState` in `src/lib/dialogs/route.ts`; every field is optional
+because a typed URL, a bookmark or a reload arrives with none of them.
 
-registerDialog('add-server', AddServerDialog);
-```
+This is how the object browser hands its selection to the new-job wizard: the
+server, the bucket, the prefix, the chosen keys and the operation. A selection of
+tens of thousands of keys has no business in an address bar, and a bookmark of
+`/jobs/new` is simply an empty wizard, which is the right answer.
 
-Render it always-open and close with `onClose()`; the host mounts it only while the
-URL asks for it. To open one from elsewhere: `useDialogs().open('add-server')`
-(navigates to the owner route first) or `.openHere(key, params)` when the page
-already owns it.
+### Resolving an id — `src/lib/entities/resolve.ts`
 
-Keys whose dialog needs a bucket (`upload`, `import-url`, `new-folder`,
-`share-link`) are owned by `/browse`; the object browser registers them with the
-bucket pre-filled from the route, and `/browse` registers the same component with a
-bucket picker. Two routes registering the *same* component under one key is fine;
-two different components is not — the last one wins.
-
-**Today none of the 18 keys has a component yet.** The palette, the URL handling
-and the host are done and verified; the dialogs are page work. Until a key is
-registered, opening it logs a precise error in development and clears the param.
+Every URL carries ids while every per-server endpoint is addressed by `serverId` +
+*name*, so one module turns one into the other: `useEntityRef(kind, id)` for the
+`{ id, serverId, name }` a breadcrumb or a route needs, `useBucketScope(bucketId)`
+for the `{ serverId, bucket }` every bucket query keys off, and the
+`use…ById` hooks in `features/iam/api.ts` when a page needs the whole entity in one
+request. They share the `entities` query scope, so a page and its breadcrumb
+resolve the same id once between them, and `seedEntities` fills that cache from a
+list the operator has already seen.
 
 ---
 
@@ -268,9 +279,11 @@ event to the query scopes it makes stale:
 | event | invalidates |
 |---|---|
 | `server.health` | servers, dashboard |
+| `server.created` / `server.deleted` | servers, dashboard, buckets, quotas, iam |
 | `job.progress` | jobs |
 | `job.status` | jobs, dashboard, activity |
-| `notification` | notifications |
+| `notification` | notifications, activity |
+| `activity.created` | activity, dashboard |
 | `inventory.updated` | buckets, quotas, servers, dashboard |
 
 A page never subscribes to the stream. It uses a query, and the query goes stale
@@ -332,13 +345,13 @@ by class. The English messages are loaded for real, so a missing key fails a tes
 - **`src/components/ui` is linted lightly** (see `eslint.config.js`): it is
   vendored code that `shadcn add` regenerates. Our patches to it are re-applied by
   `pnpm normalize:ui`.
-- **The sidebar's S3-users and access-keys counts are empty.** The concept draws
-  "38" and "61" there, but `GET /dashboard` carries no totals for either. Do not
-  substitute `expiringKeys.length` — it means something else. Either the contract
-  gains `totals.users` / `totals.keys`, or those two badges stay empty.
-- **No dialog component is registered yet.** The palette, the `?dialog=` handling
-  and the host are complete and verified end to end; each of the 18 keys is page
-  work. Until a key is registered, opening it logs a precise error in development
-  and clears the param.
-- The placeholder pages exist so every route, breadcrumb and shell state is real.
-  None of them ships.
+- **`Dashboard.totals.bucketsBytes` is not the servers' used capacity.** It is the
+  sum of every bucket's size; `byServer[].usedBytes` is what each server reports
+  about itself, and the two do not have to agree — replication, erasure coding and
+  anything on the server storage-io did not put there sit in the difference. The
+  sidebar's meter and the Storage KPI show `bucketsBytes` against `capacityBytes`.
+- **The transfer engine does not know about the query cache.** A finished upload
+  invalidates the object listing through a handler `src/app/App.tsx` installs
+  (`setUploadCompletedHandler`), the same seam as the API client's unauthorized
+  handler. Nothing on the SSE stream reports an object write, so without it a
+  folder stays one upload out of date.

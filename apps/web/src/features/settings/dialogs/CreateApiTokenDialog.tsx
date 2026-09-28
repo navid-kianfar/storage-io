@@ -1,5 +1,5 @@
 import { TerminalIcon, TriangleAlertIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -23,10 +23,10 @@ import {
 } from '@/components/app';
 import { useCreateApiToken } from '@/features/settings/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useNavigate, useParams } from '@tanstack/react-router';
 
 /**
- * A CLI token for scripts and CI: `?dialog=create-api-token`.
+ * A CLI token for scripts and CI — the `/settings/$section/new-token` route.
  *
  * Like an S3 secret, the token is shown once and cannot be retrieved, so the dialog
  * does not close on success — it swaps to the value, with the same "I have stored
@@ -37,7 +37,7 @@ import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
 const EXPIRY_CHOICES = [30, 90, 365] as const;
 const NEVER = 'never';
 
-export function CreateApiTokenDialog({ onClose }: DialogProps) {
+export function CreateApiTokenDialog({ onClose }: { readonly onClose: () => void }) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
@@ -176,4 +176,12 @@ export function CreateApiTokenDialog({ onClose }: DialogProps) {
   );
 }
 
-registerDialog('create-api-token', CreateApiTokenDialog);
+/** `/settings/$section/new-token` — the dialog over the settings section. */
+export function CreateApiTokenRoute() {
+  const navigate = useNavigate();
+  const { section } = useParams({ from: '/protected/settings/$section/new-token' });
+  const close = useCallback(() => {
+    void navigate({ to: '/settings/$section', params: { section } });
+  }, [navigate, section]);
+  return <CreateApiTokenDialog onClose={close} />;
+}

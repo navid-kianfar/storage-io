@@ -70,6 +70,7 @@ function sourceOf(bucket: string, prefix: string): Job['source'] {
     serverName: SERVER_A?.name ?? 'minio-prod-01',
     bucket,
     filters: { ...JOB_FILTER_DEFAULTS, prefix },
+    prefixes: [],
     keyCount: null,
   };
 }
@@ -517,6 +518,7 @@ export const jobHandlers = [
         serverName: server?.name ?? body.source.serverId,
         bucket: body.source.bucket,
         filters: body.source.filters,
+        prefixes: [],
         keyCount: null,
       },
       target:

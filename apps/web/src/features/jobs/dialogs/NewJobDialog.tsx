@@ -71,19 +71,22 @@ import {
 } from '@/features/jobs/jobTypes';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useNavigate } from '@tanstack/react-router';
+import { useRouteState, type RouteState } from '@/lib/dialogs/route';
 
 /**
- * The four-step New bulk job wizard: `?dialog=new-job`.
+ * The four-step New bulk job wizard — the `/jobs/new` route over the jobs list.
  *
- * It accepts a prefill, which is the whole reason it is URL-addressable: the object
- * browser's "Run selection as bulk job…" opens
- * `?dialog=new-job&d_server=…&d_bucket=…&d_prefix=…&d_type=copy`, and the operator
- * lands on step 2 with the scope already filled in rather than re-picking a bucket
- * they were just looking at. `d_keys` (a comma-separated selection) narrows the
- * source to a glob over those keys, because the contract's job source is a prefix
- * plus filters — there is no key list on it, so the honest translation of a
- * selection is a filter, and the review step says so.
+ * It accepts a prefill, and that prefill travels in **router history state**, not
+ * in the URL (docs/ROUTES.md rule 3): the object browser's "Run selection as bulk
+ * job…" navigates here carrying the server, the bucket, the prefix, the operation
+ * and the explicit selection, and the operator lands on step 2 with the scope
+ * filled in rather than re-picking a bucket they were just looking at. A selection
+ * of tens of thousands of keys has no business in an address bar, and a bookmark
+ * of this route is simply an empty wizard, which is the right answer.
+ *
+ * The selection is sent as `source.keys` and `source.prefixes` — the contract
+ * takes both — so the glob that used to approximate a selection is gone with it.
  *
  * Two things are deliberate. First, the estimate is a *request*, not a guess: the
  * server lists the prefix, time-boxed, and `partial` is shown when it gave up — a
@@ -108,6 +111,10 @@ interface WizardState {
   readonly minSize: number | null;
   readonly maxSize: number | null;
   readonly glob: string;
+  /** An explicit selection handed over by the object browser, sent as `source.keys`. */
+  readonly selectedKeys: readonly string[];
+  /** The folders in that selection, sent as `source.prefixes`. */
+  readonly selectedPrefixes: readonly string[];
   readonly tagFilters: Readonly<Record<string, string>>;
   readonly targetServerId: string | null;
   readonly targetBucket: string | null;
@@ -126,26 +133,25 @@ interface WizardState {
   readonly acknowledged: boolean;
 }
 
-function initialState(params: Readonly<Record<string, string>>): WizardState {
-  const prefilledType = params.type;
+function initialState(prefill: RouteState): WizardState {
+  const prefilledType = prefill.type;
   const type: JobType =
     prefilledType !== undefined && (WIZARD_JOB_TYPES as readonly string[]).includes(prefilledType)
       ? (prefilledType as JobType)
       : 'copy';
-  const keys = (params.keys ?? '').split(',').filter((key) => key.length > 0);
   return {
     type,
     name: '',
-    sourceServerId: params.server ?? null,
-    sourceBucket: params.bucket ?? null,
-    prefix: params.prefix ?? '',
+    sourceServerId: prefill.serverId ?? null,
+    sourceBucket: prefill.bucket ?? null,
+    prefix: prefill.prefix ?? '',
+    selectedKeys: prefill.keys ?? [],
+    selectedPrefixes: prefill.prefixes ?? [],
     modifiedAfter: null,
     modifiedBefore: null,
     minSize: null,
     maxSize: null,
-    // A selection of keys becomes a glob that matches exactly those names, which is
-    // the only shape the contract's JobFilters can express.
-    glob: keys.length === 1 ? (keys[0] ?? '') : keys.length > 1 ? `{${keys.join(',')}}` : '',
+    glob: '',
     tagFilters: {},
     targetServerId: null,
     targetBucket: null,
@@ -165,13 +171,19 @@ function initialState(params: Readonly<Record<string, string>>): WizardState {
   };
 }
 
-export function NewJobDialog({ params, onClose }: DialogProps) {
+export interface NewJobDialogProps {
+  /** The prefill from router history state; empty on a cold entry. */
+  readonly prefill: RouteState;
+  readonly onClose: () => void;
+}
+
+export function NewJobDialog({ prefill, onClose }: NewJobDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const { t: tDomain } = useTranslation('domain');
   const apiError = useApiError();
 
-  const [state, setState] = useState<WizardState>(() => initialState(params));
+  const [state, setState] = useState<WizardState>(() => initialState(prefill));
   const patch = useCallback(
     (next: Partial<WizardState>) => setState((current) => ({ ...current, ...next })),
     [],
@@ -222,6 +234,19 @@ export function NewJobDialog({ params, onClose }: DialogProps) {
     [state],
   );
 
+  /**
+   * The explicit selection, sent alongside the filters. Empty arrays are left out
+   * entirely: the contract reads an omitted `keys` as "this job is its filters",
+   * which is a different job from one whose selection happens to be empty.
+   */
+  const selection = useMemo(
+    () => ({
+      ...(state.selectedKeys.length > 0 ? { keys: [...state.selectedKeys] } : {}),
+      ...(state.selectedPrefixes.length > 0 ? { prefixes: [...state.selectedPrefixes] } : {}),
+    }),
+    [state.selectedKeys, state.selectedPrefixes],
+  );
+
   const needsTarget = jobHasTarget(state.type);
   const scopeReady = state.sourceServerId !== null && state.sourceBucket !== null;
   const cronValid = isCronExpression(state.cron);
@@ -252,10 +277,10 @@ export function NewJobDialog({ params, onClose }: DialogProps) {
   const runEstimate = useCallback(() => {
     if (state.sourceServerId === null || state.sourceBucket === null) return;
     estimate.mutate(
-      { source: { serverId: state.sourceServerId, bucket: state.sourceBucket, filters } },
+      { source: { serverId: state.sourceServerId, bucket: state.sourceBucket, filters, ...selection } },
       { onError: (error) => apiError.toastError(error, t('jobs.wizard.estimateFailed')) },
     );
-  }, [apiError, estimate, filters, state.sourceBucket, state.sourceServerId, t]);
+  }, [apiError, estimate, filters, selection, state.sourceBucket, state.sourceServerId, t]);
 
   const typeOptions = useMemo<readonly ChoiceOption<JobType>[]>(
     () =>
@@ -306,7 +331,7 @@ export function NewJobDialog({ params, onClose }: DialogProps) {
 
     const body: CreateJobRequest = {
       type: state.type,
-      source: { serverId: state.sourceServerId, bucket: state.sourceBucket, filters },
+      source: { serverId: state.sourceServerId, bucket: state.sourceBucket, filters, ...selection },
       params: {
         ...(state.type === 'tag' ? { tags: state.newTags } : {}),
         ...(state.type === 'storage-class' ? { storageClass: state.storageClass.trim() } : {}),
@@ -358,6 +383,7 @@ export function NewJobDialog({ params, onClose }: DialogProps) {
     filters,
     needsTarget,
     onClose,
+    selection,
     retentionDaysValue,
     state,
     t,
@@ -997,4 +1023,12 @@ function currentTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-registerDialog('new-job', NewJobDialog);
+/** `/jobs/new` — the wizard over the jobs list. */
+export function NewJobRoute() {
+  const navigate = useNavigate();
+  const prefill = useRouteState();
+  const close = useCallback(() => {
+    void navigate({ to: '/jobs' });
+  }, [navigate]);
+  return <NewJobDialog prefill={prefill} onClose={close} />;
+}

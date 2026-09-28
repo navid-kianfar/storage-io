@@ -29,14 +29,19 @@ export function BucketAccessDialog({
   open,
   onOpenChange,
   buckets,
+  bucketId,
   initial,
   onSaved,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly buckets: readonly BucketRef[];
+  /**
+   * The single bucket's opaque id, for the "open the full editor" link. `null`
+   * for a bulk selection, where there is no one settings page to open.
+   */
+  readonly bucketId?: string | null;
   readonly initial?: BucketAccessSettable;
-  /** The route params for the "open the full editor" link, when there is one bucket. */
   readonly onSaved?: () => void;
 }) {
   const { t } = useTranslation('pages');
@@ -99,8 +104,6 @@ export function BucketAccessDialog({
     );
   }
 
-  const only = buckets.length === 1 ? buckets[0] : undefined;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -125,15 +128,11 @@ export function BucketAccessDialog({
         ) : null}
 
         <DialogFooter className="sm:justify-between">
-          {only === undefined || many ? (
+          {many || bucketId === undefined || bucketId === null ? (
             <span />
           ) : (
             <Button variant="ghost" size="sm" asChild>
-              <Link
-                to="/buckets/$server/$bucket"
-                params={{ server: only.serverId, bucket: only.bucket }}
-                hash="access"
-              >
+              <Link to="/buckets/$bucketId" params={{ bucketId }} hash="access">
                 {t('buckets.accessDialog.openSettings')}
               </Link>
             </Button>

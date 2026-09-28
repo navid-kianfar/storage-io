@@ -1,5 +1,5 @@
 import type { ReplicationRule } from '@storage-io/contracts';
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/app/Button';
 import { Combobox, type ComboboxOption } from '@/components/app/Combobox';
@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/app/Dialog';
 import { Input } from '@/components/app/Input';
-import { Label } from '@/components/app/Label';
+import { FormField } from '@/components/app/FormField';
 import { OptionRow } from '@/components/app/FormRow';
 import { Spinner } from '@/components/app/Spinner';
 import { Switch } from '@/components/app/Switch';
@@ -78,11 +78,6 @@ function ReplicationRuleDialogBody({
 }) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
-  const nameId = useId();
-  const arnId = useId();
-  const prefixId = useId();
-  const priorityId = useId();
-  const classId = useId();
 
   const isEdit = rule !== null;
   const [id, setId] = useState(rule?.id ?? '');
@@ -152,103 +147,110 @@ function ReplicationRuleDialogBody({
         <DialogDescription>{t('bucket.replication.dialog.description')}</DialogDescription>
       </DialogHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={nameId}>{t('bucket.replication.dialog.name')}</Label>
-          <Input
-            id={nameId}
-            value={id}
-            onChange={(event) => setId(event.target.value)}
-            aria-invalid={duplicateId}
-            autoComplete="off"
-            className="ltr-isolate font-mono"
-          />
-          {duplicateId ? (
-            <p className="text-[0.8125rem] text-destructive">
-              {t('bucket.lifecycle.dialog.duplicateId')}
-            </p>
-          ) : null}
-        </div>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <FormField
+          label={t('bucket.replication.dialog.name')}
+          error={duplicateId ? t('bucket.lifecycle.dialog.duplicateId') : undefined}
+        >
+          {({ id: fieldId, describedBy, invalid }) => (
+            <Input
+              id={fieldId}
+              aria-describedby={describedBy}
+              value={id}
+              onChange={(event) => setId(event.target.value)}
+              aria-invalid={invalid}
+              autoComplete="off"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={priorityId}>{t('bucket.replication.dialog.priority')}</Label>
-          <Input
-            id={priorityId}
-            value={priority}
-            inputMode="numeric"
-            aria-invalid={!priorityValid}
-            onChange={(event) => setPriority(event.target.value)}
-            className="num w-24"
-          />
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {t('bucket.replication.dialog.priorityHint')}
-          </p>
-        </div>
+        <FormField
+          label={t('bucket.replication.dialog.priority')}
+          hint={t('bucket.replication.dialog.priorityHint')}
+        >
+          {({ id: fieldId, describedBy }) => (
+            <Input
+              id={fieldId}
+              aria-describedby={describedBy}
+              value={priority}
+              inputMode="numeric"
+              aria-invalid={!priorityValid}
+              onChange={(event) => setPriority(event.target.value)}
+              className="num"
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">
-            {t('bucket.replication.dialog.destinationServer')}
-          </span>
-          <Combobox
-            options={serverOptions}
-            value={serverId}
-            onValueChange={setServerId}
-            placeholder={tCommon('form.comboboxPlaceholder')}
-            aria-label={t('bucket.replication.dialog.destinationServer')}
-          />
-        </div>
+        <FormField label={t('bucket.replication.dialog.destinationServer')}>
+          {({ id: fieldId }) => (
+            <Combobox
+              id={fieldId}
+              options={serverOptions}
+              value={serverId}
+              onValueChange={setServerId}
+              placeholder={tCommon('form.comboboxPlaceholder')}
+              aria-label={t('bucket.replication.dialog.destinationServer')}
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">
-            {t('bucket.replication.dialog.destinationBucket')}
-          </span>
-          <Combobox
-            options={bucketOptions}
-            value={null}
-            onValueChange={(bucket) => {
-              if (bucket !== null) setArn(`${ARN_PREFIX}${bucket}`);
-            }}
-            placeholder={tCommon('form.comboboxPlaceholder')}
-            disabled={serverId === null || destinationBuckets.isLoading}
-            aria-label={t('bucket.replication.dialog.destinationBucket')}
-          />
-        </div>
+        <FormField label={t('bucket.replication.dialog.destinationBucket')}>
+          {({ id: fieldId }) => (
+            <Combobox
+              id={fieldId}
+              options={bucketOptions}
+              value={null}
+              onValueChange={(bucket) => {
+                if (bucket !== null) setArn(`${ARN_PREFIX}${bucket}`);
+              }}
+              placeholder={tCommon('form.comboboxPlaceholder')}
+              disabled={serverId === null || destinationBuckets.isLoading}
+              aria-label={t('bucket.replication.dialog.destinationBucket')}
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <Label htmlFor={arnId}>{t('bucket.replication.dialog.destinationArn')}</Label>
-          <Input
-            id={arnId}
-            value={arn}
-            onChange={(event) => setArn(event.target.value)}
-            placeholder={`${ARN_PREFIX}bucket-name`}
-            className="ltr-isolate font-mono"
-          />
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {t('bucket.replication.dialog.destinationArnHint')}
-          </p>
-        </div>
+        <FormField
+          className="sm:col-span-2"
+          label={t('bucket.replication.dialog.destinationArn')}
+          hint={t('bucket.replication.dialog.destinationArnHint')}
+        >
+          {({ id: fieldId, describedBy }) => (
+            <Input
+              id={fieldId}
+              aria-describedby={describedBy}
+              value={arn}
+              onChange={(event) => setArn(event.target.value)}
+              placeholder={`${ARN_PREFIX}bucket-name`}
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={prefixId}>{t('bucket.replication.dialog.prefix')}</Label>
-          <Input
-            id={prefixId}
-            value={prefix}
-            onChange={(event) => setPrefix(event.target.value)}
-            placeholder="raw/"
-            className="ltr-isolate font-mono"
-          />
-        </div>
+        <FormField label={t('bucket.replication.dialog.prefix')}>
+          {({ id: fieldId }) => (
+            <Input
+              id={fieldId}
+              value={prefix}
+              onChange={(event) => setPrefix(event.target.value)}
+              placeholder="raw/"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={classId}>{t('bucket.replication.dialog.storageClass')}</Label>
-          <Input
-            id={classId}
-            value={storageClass}
-            onChange={(event) => setStorageClass(event.target.value)}
-            placeholder="STANDARD"
-            className="ltr-isolate font-mono"
-          />
-        </div>
+        <FormField label={t('bucket.replication.dialog.storageClass')}>
+          {({ id: fieldId }) => (
+            <Input
+              id={fieldId}
+              value={storageClass}
+              onChange={(event) => setStorageClass(event.target.value)}
+              placeholder="STANDARD"
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
       </div>
 
       <div className="rounded-lg border px-(--card-pad)">

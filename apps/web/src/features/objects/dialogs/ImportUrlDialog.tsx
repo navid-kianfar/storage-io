@@ -1,5 +1,6 @@
 import { importObjectFromUrlRequestSchema } from '@storage-io/contracts';
-import { useId, useState } from 'react';
+import { useNavigate, useParams } from '@tanstack/react-router';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/app/Button';
@@ -12,18 +13,19 @@ import {
   DialogTitle,
 } from '@/components/app/Dialog';
 import { Input } from '@/components/app/Input';
-import { Label } from '@/components/app/Label';
+import { FormField } from '@/components/app/FormField';
 import { OptionRow } from '@/components/app/FormRow';
 import { Spinner } from '@/components/app/Spinner';
 import { Switch } from '@/components/app/Switch';
 import { useSettings } from '@/features/shell/api';
 import { toastProblem } from '@/lib/api/problems';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useBucketScope, type BucketScope } from '@/lib/entities/resolve';
 import { useFormat } from '@/lib/format/FormatProvider';
 import { useImportFromUrl } from '../api';
 
 /**
- * Import from URL — `?dialog=import-url`.
+ * Import from URL — the `/buckets/$bucketId/import/$` route over the object
+ * browser.
  *
  * The API fetches the URL server-side and streams it into the bucket, so nothing
  * passes through this browser and a 4 GB import does not need a 4 GB tab. That is
@@ -35,15 +37,22 @@ import { useImportFromUrl } from '../api';
  */
 const BYTES_IN_MB = 1_000_000;
 
-function ImportUrlDialog({ params, onClose }: DialogProps) {
+/** One stable placeholder while the bucket id resolves. */
+const EMPTY_SCOPE: BucketScope = { serverId: '', bucket: '' };
+
+export interface ImportUrlDialogProps {
+  /** The resolved bucket; `null` while its id is still resolving. */
+  readonly scope: BucketScope | null;
+  readonly prefix: string;
+  readonly onClose: () => void;
+}
+
+function ImportUrlDialog({ scope: resolved, prefix, onClose }: ImportUrlDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const format = useFormat();
-  const urlId = useId();
-  const keyId = useId();
 
-  const scope = { serverId: params.server ?? '', bucket: params.bucket ?? '' };
-  const prefix = params.prefix ?? '';
+  const scope = resolved ?? EMPTY_SCOPE;
 
   const settings = useSettings();
   const importUrl = useImportFromUrl(scope);
@@ -57,7 +66,8 @@ function ImportUrlDialog({ params, onClose }: DialogProps) {
   const parsedUrl = importObjectFromUrlRequestSchema.shape.url.safeParse(url);
   const urlInvalid = url !== '' && !parsedUrl.success;
   const effectiveKey = key.trim() === '' ? '' : `${prefix}${key.trim()}`;
-  const canSubmit = parsedUrl.success && effectiveKey !== '' && !importUrl.isPending;
+  const canSubmit =
+    resolved !== null && parsedUrl.success && effectiveKey !== '' && !importUrl.isPending;
 
   /** A URL's last path segment is almost always the name the operator wants. */
   function suggestKey(next: string): void {
@@ -98,36 +108,44 @@ function ImportUrlDialog({ params, onClose }: DialogProps) {
           <DialogDescription>{t('browse.importUrl.description')}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={urlId}>{t('browse.importUrl.url')}</Label>
-          <Input
-            id={urlId}
-            value={url}
-            onChange={(event) => {
-              setUrl(event.target.value);
-              suggestKey(event.target.value);
-            }}
-            placeholder="https://example.com/file.zip"
-            aria-invalid={urlInvalid}
-            className="ltr-isolate font-mono"
-          />
-        </div>
+        <FormField label={t('browse.importUrl.url')}>
+          {({ id, describedBy }) => (
+            <Input
+              id={id}
+              aria-describedby={describedBy}
+              value={url}
+              onChange={(event) => {
+                setUrl(event.target.value);
+                suggestKey(event.target.value);
+              }}
+              placeholder="https://example.com/file.zip"
+              aria-invalid={urlInvalid}
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={keyId}>{t('browse.importUrl.key')}</Label>
-          <Input
-            id={keyId}
-            value={key}
-            onChange={(event) => {
-              setKey(event.target.value);
-              setKeyEdited(true);
-            }}
-            className="ltr-isolate font-mono"
-          />
-          <p className="ltr-isolate font-mono text-[0.8125rem] text-muted-foreground">
-            {scope.bucket}/{effectiveKey}
-          </p>
-        </div>
+        <FormField
+          label={t('browse.importUrl.key')}
+          hint={
+            <span className="ltr-isolate font-mono break-all">
+              {scope.bucket}/{effectiveKey}
+            </span>
+          }
+        >
+          {({ id, describedBy }) => (
+            <Input
+              id={id}
+              aria-describedby={describedBy}
+              value={key}
+              onChange={(event) => {
+                setKey(event.target.value);
+                setKeyEdited(true);
+              }}
+              className="ltr-isolate font-mono"
+            />
+          )}
+        </FormField>
 
         <div className="rounded-lg border px-(--card-pad)">
           <OptionRow label={t('browse.importUrl.overwrite')}>
@@ -159,6 +177,21 @@ function ImportUrlDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('import-url', ImportUrlDialog);
-
 export { ImportUrlDialog };
+
+/** `/buckets/$bucketId/import/$` — import-from-URL over the object browser. */
+export function ImportUrlRoute() {
+  const navigate = useNavigate();
+  const { bucketId, _splat } = useParams({ from: '/protected/object-browser/buckets/$bucketId/import/$' });
+  const prefix = _splat ?? '';
+  const { scope } = useBucketScope(bucketId);
+
+  const close = useCallback(() => {
+    void navigate({
+      to: '/buckets/$bucketId/browse/$',
+      params: { bucketId, _splat: prefix },
+    });
+  }, [navigate, bucketId, prefix]);
+
+  return <ImportUrlDialog scope={scope} prefix={prefix} onClose={close} />;
+}

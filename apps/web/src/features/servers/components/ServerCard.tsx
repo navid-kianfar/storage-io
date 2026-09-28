@@ -89,8 +89,8 @@ export function ServerCard({
         <ProviderMark provider={server.provider} size="lg" />
         <div className="flex min-w-0 flex-1 flex-col">
           <Link
-            to="/servers/$server"
-            params={{ server: server.name }}
+            to="/servers/$serverId"
+            params={{ serverId: server.id }}
             className="truncate font-mono text-sm font-medium hover:underline"
           >
             {server.name}
@@ -111,7 +111,7 @@ export function ServerCard({
             <DropdownMenuContent align="end" className="min-w-56">
               <DropdownMenuLabel className="font-mono">{server.name}</DropdownMenuLabel>
               <DropdownMenuItem asChild>
-                <Link to="/servers/$server" params={{ server: server.name }}>
+                <Link to="/servers/$serverId" params={{ serverId: server.id }}>
                   <PanelTopOpenIcon />
                   {t('servers.card.open')}
                 </Link>
@@ -247,7 +247,7 @@ export function ServerCard({
           </Button>
         )}
         <Button variant="outline" size="sm" asChild>
-          <Link to="/servers/$server" params={{ server: server.name }}>
+          <Link to="/servers/$serverId" params={{ serverId: server.id }}>
             {t('servers.card.open')}
             <ArrowRightIcon className="flip-rtl" />
           </Link>

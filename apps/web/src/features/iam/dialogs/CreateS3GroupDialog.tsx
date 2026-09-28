@@ -1,5 +1,6 @@
+import type { S3Group } from '@storage-io/contracts';
 import { UsersIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -23,13 +24,14 @@ import {
   Switch,
   type ComboboxOption,
 } from '@/components/app';
-import { useIamGroups, useIamPolicies, useIamUsers, useUpsertIamGroup } from '@/features/iam/api';
+import { useIamPolicies, useIamUsers, useUpsertIamGroup } from '@/features/iam/api';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useNavigate } from '@tanstack/react-router';
+import { useRouteState } from '@/lib/dialogs/route';
 
 /**
- * Create or edit a group: `?dialog=create-s3-group`, with `d_server` and — when
+ * Create or edit a group — `/users/groups/new` and `/users/groups/$groupId`. When
  * editing — `d_group`.
  *
  * One component for both because the endpoint is the same shape: `POST` creates,
@@ -42,7 +44,19 @@ import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
 const GROUP_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{1,126}[A-Za-z0-9]$/;
 const MEMBER_PAGE_SIZE = 500;
 
-export function CreateS3GroupDialog({ params, onClose }: DialogProps) {
+export interface CreateS3GroupDialogProps {
+  /** The group being edited, or `null` to create one. */
+  readonly existingGroup: S3Group | null;
+  /** Pre-selected server for a new group, from router history state. */
+  readonly initialServerId: string | null;
+  readonly onClose: () => void;
+}
+
+export function CreateS3GroupDialog({
+  existingGroup,
+  initialServerId,
+  onClose,
+}: CreateS3GroupDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
@@ -50,26 +64,17 @@ export function CreateS3GroupDialog({ params, onClose }: DialogProps) {
   const servers = useServers();
   const upsert = useUpsertIamGroup();
 
-  const existingName = params.group ?? null;
-  const [serverId, setServerId] = useState<string | null>(params.server ?? null);
+  const existingName = existingGroup?.name ?? null;
+  const [serverId, setServerId] = useState<string | null>(
+    existingGroup?.serverId ?? initialServerId,
+  );
 
-  const groups = useIamGroups(serverId === null ? {} : { serverId });
   const policies = useIamPolicies(serverId === null ? {} : { serverId });
   const users = useIamUsers({
     page: 1,
     pageSize: MEMBER_PAGE_SIZE,
     ...(serverId === null ? {} : { serverId }),
   });
-
-  const existing = useMemo(
-    () =>
-      existingName === null
-        ? undefined
-        : (groups.data?.items ?? []).find(
-            (group) => group.name === existingName && group.serverId === serverId,
-          ),
-    [existingName, groups.data, serverId],
-  );
 
   // Keyed by the group so the form's initial state is the group's own data without
   // an effect copying server data into state on every render.
@@ -111,17 +116,17 @@ export function CreateS3GroupDialog({ params, onClose }: DialogProps) {
 
         {serverId === null ? (
           <p className="text-sm text-muted-foreground">{t('users.groups.pickServerFirst')}</p>
-        ) : groups.isLoading ? (
+        ) : policies.isLoading ? (
           <Skeleton className="h-40 w-full" />
         ) : (
           <GroupForm
             key={`${serverId}/${existingName ?? 'new'}`}
             serverId={serverId}
             existingName={existingName}
-            initialName={existing?.name ?? ''}
-            initialMembers={existing?.members ?? []}
-            initialPolicies={existing?.policies ?? []}
-            initialEnabled={(existing?.status ?? 'enabled') === 'enabled'}
+            initialName={existingGroup?.name ?? ''}
+            initialMembers={existingGroup?.members ?? []}
+            initialPolicies={existingGroup?.policies ?? []}
+            initialEnabled={(existingGroup?.status ?? 'enabled') === 'enabled'}
             memberOptions={(users.data?.items ?? [])
               .filter((user) => user.serverId === serverId)
               .map((user) => user.name)}
@@ -332,4 +337,18 @@ function GroupForm({
   );
 }
 
-registerDialog('create-s3-group', CreateS3GroupDialog);
+/** `/users/groups/new` — the create dialog over the users page's Groups tab. */
+export function CreateS3GroupRoute() {
+  const navigate = useNavigate();
+  const state = useRouteState();
+  const close = useCallback(() => {
+    void navigate({ to: '/users', search: true });
+  }, [navigate]);
+  return (
+    <CreateS3GroupDialog
+      existingGroup={null}
+      initialServerId={state.serverId ?? null}
+      onClose={close}
+    />
+  );
+}

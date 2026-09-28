@@ -1,5 +1,5 @@
 import { ArrowUpDownIcon, EyeIcon, FileJsonIcon, GlobeIcon, UploadIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -27,10 +27,11 @@ import {
 } from '@/features/iam/policyTemplates';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import { useNavigate } from '@tanstack/react-router';
+import { useRouteState } from '@/lib/dialogs/route';
 
 /**
- * Create a policy from a template: `?dialog=create-policy`, with `d_server` and
+ * Create a policy from a template — the `/policies/new` route. The server and
  * `d_template` accepted so the "New policy" split button can open it already on the
  * right template.
  *
@@ -54,7 +55,20 @@ function isTemplate(value: unknown): value is PolicyTemplate {
   return typeof value === 'string' && (POLICY_TEMPLATES as readonly string[]).includes(value);
 }
 
-export function CreatePolicyDialog({ params, onClose }: DialogProps) {
+export interface CreatePolicyDialogProps {
+  /** Pre-fill from router history state; never from the URL. */
+  readonly initialServerId: string | null;
+  readonly initialTemplate: string | undefined;
+  readonly initialBucket: string | null;
+  readonly onClose: () => void;
+}
+
+export function CreatePolicyDialog({
+  initialServerId,
+  initialTemplate,
+  initialBucket,
+  onClose,
+}: CreatePolicyDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
@@ -63,13 +77,13 @@ export function CreatePolicyDialog({ params, onClose }: DialogProps) {
   const buckets = useBuckets({ sort: 'name', page: 1, pageSize: BUCKET_PICKER_PAGE_SIZE });
   const putPolicy = usePutIamPolicy();
 
-  const [serverId, setServerId] = useState<string | null>(params.server ?? null);
+  const [serverId, setServerId] = useState<string | null>(initialServerId);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [template, setTemplate] = useState<PolicyTemplate>(
-    isTemplate(params.template) ? params.template : 'read-only',
+    isTemplate(initialTemplate) ? initialTemplate : 'read-only',
   );
-  const [bucket, setBucket] = useState<string | null>(params.bucket ?? null);
+  const [bucket, setBucket] = useState<string | null>(initialBucket);
 
   const serverOptions = useMemo<readonly ComboboxOption<string>[]>(
     () =>
@@ -237,4 +251,19 @@ export function CreatePolicyDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('create-policy', CreatePolicyDialog);
+/** `/policies/new` — the templates dialog over the policies page. */
+export function CreatePolicyRoute() {
+  const navigate = useNavigate();
+  const state = useRouteState();
+  const close = useCallback(() => {
+    void navigate({ to: '/policies', search: true });
+  }, [navigate]);
+  return (
+    <CreatePolicyDialog
+      initialServerId={state.serverId ?? null}
+      initialTemplate={state.template}
+      initialBucket={state.bucket ?? null}
+      onClose={close}
+    />
+  );
+}

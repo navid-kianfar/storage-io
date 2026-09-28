@@ -21,7 +21,7 @@ import {
   CardTitle,
   Combobox,
   EmptyState,
-  Label,
+  FormField,
   PageHeader,
   ProviderMark,
   Skeleton,
@@ -30,7 +30,6 @@ import {
 import { useBuckets } from '@/features/buckets/api';
 import { useServerList } from '@/features/shell/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { useRecentBuckets } from '@/stores/recentBuckets';
 
 /**
@@ -64,7 +63,6 @@ export function BucketPickerPage() {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
 
   const servers = useServerList();
@@ -74,6 +72,8 @@ export function BucketPickerPage() {
   const forget = useRecentBuckets((state) => state.forget);
 
   const [chosenServerId, setServerId] = useState<string | null>(null);
+  // The chosen bucket is its opaque id, not its name: that is what the browse
+  // route takes, and a name is unique only within one server.
   const [chosenBucket, setBucket] = useState<string | null>(null);
 
   const serverItems = useMemo(() => servers.data?.items ?? [], [servers.data]);
@@ -99,7 +99,7 @@ export function BucketPickerPage() {
       bucketItems
         .filter((item) => serverId === null || item.serverId === serverId)
         .map((item) => ({
-          value: item.name,
+          value: item.id,
           label: item.name,
           description: item.serverName,
         })),
@@ -116,10 +116,10 @@ export function BucketPickerPage() {
   const chosenServer = serverItems.find((server) => server.id === serverId);
   const canBrowse = chosenServer !== undefined && bucket !== null;
 
-  function browse(targetServer: string, targetBucket: string): void {
+  function browse(targetBucketId: string): void {
     void navigate({
-      to: '/browse/$server/$bucket/$',
-      params: { server: targetServer, bucket: targetBucket, _splat: '' },
+      to: '/buckets/$bucketId/browse/$',
+      params: { bucketId: targetBucketId, _splat: '' },
     });
   }
 
@@ -135,7 +135,7 @@ export function BucketPickerPage() {
         title={t('browse.title')}
         description={t('browse.picker.description')}
         actions={
-          <Button variant="outline" onClick={() => dialogs.open('create-bucket')}>
+          <Button variant="outline" onClick={() => void navigate({ to: '/buckets/new' })}>
             <PlusIcon />
             {t('buckets.create.title')}
           </Button>
@@ -156,7 +156,7 @@ export function BucketPickerPage() {
           title={t('browse.picker.noServers')}
           description={t('browse.picker.noServersHint')}
           action={
-            <Button onClick={() => dialogs.open('add-server')}>
+            <Button onClick={() => void navigate({ to: '/servers/new' })}>
               <PlusIcon />
               {t('servers.add')}
             </Button>
@@ -170,39 +170,41 @@ export function BucketPickerPage() {
               <CardDescription>{t('browse.picker.hint')}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="picker-server">{t('browse.picker.server')}</Label>
-                {loading ? (
-                  <Skeleton className="h-9 w-full" />
-                ) : (
-                  <Combobox
-                    id="picker-server"
-                    options={serverOptions}
-                    value={serverId}
-                    onValueChange={setServerId}
-                    placeholder={tCommon('form.comboboxPlaceholder')}
-                    aria-label={t('browse.picker.server')}
-                  />
-                )}
-              </div>
+              <FormField label={t('browse.picker.server')}>
+                {({ id }) =>
+                  loading ? (
+                    <Skeleton className="h-(--control-h) w-full" />
+                  ) : (
+                    <Combobox
+                      id={id}
+                      options={serverOptions}
+                      value={serverId}
+                      onValueChange={setServerId}
+                      placeholder={tCommon('form.comboboxPlaceholder')}
+                      aria-label={t('browse.picker.server')}
+                    />
+                  )
+                }
+              </FormField>
 
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="picker-bucket">{t('browse.picker.bucket')}</Label>
-                {loading ? (
-                  <Skeleton className="h-9 w-full" />
-                ) : (
-                  <Combobox
-                    id="picker-bucket"
-                    options={bucketOptions}
-                    value={bucket}
-                    onValueChange={setBucket}
-                    placeholder={tCommon('form.comboboxPlaceholder')}
-                    emptyMessage={t('browse.picker.noBucketsOnServer')}
-                    disabled={serverId === null}
-                    aria-label={t('browse.picker.bucket')}
-                  />
-                )}
-              </div>
+              <FormField label={t('browse.picker.bucket')}>
+                {({ id }) =>
+                  loading ? (
+                    <Skeleton className="h-(--control-h) w-full" />
+                  ) : (
+                    <Combobox
+                      id={id}
+                      options={bucketOptions}
+                      value={bucket}
+                      onValueChange={setBucket}
+                      placeholder={tCommon('form.comboboxPlaceholder')}
+                      emptyMessage={t('browse.picker.noBucketsOnServer')}
+                      disabled={serverId === null}
+                      aria-label={t('browse.picker.bucket')}
+                    />
+                  )
+                }
+              </FormField>
 
               {noBuckets ? (
                 <p className="text-[0.8125rem] text-muted-foreground">
@@ -214,8 +216,8 @@ export function BucketPickerPage() {
                 <Button
                   disabled={!canBrowse}
                   onClick={() => {
-                    if (chosenServer === undefined || bucket === null) return;
-                    browse(chosenServer.id, bucket);
+                    if (bucket === null) return;
+                    browse(bucket);
                   }}
                 >
                   <FolderOpenIcon />
@@ -225,8 +227,11 @@ export function BucketPickerPage() {
                   variant="outline"
                   disabled={!canBrowse}
                   onClick={() => {
-                    if (chosenServer === undefined || bucket === null) return;
-                    dialogs.open('upload', { server: chosenServer.id, bucket });
+                    if (bucket === null) return;
+                    void navigate({
+                      to: '/buckets/$bucketId/upload/$',
+                      params: { bucketId: bucket, _splat: '' },
+                    });
                   }}
                 >
                   <UploadIcon />
@@ -262,7 +267,7 @@ export function BucketPickerPage() {
                           <Button
                             variant="ghost"
                             className="h-auto min-w-0 grow justify-start gap-2 px-1.5 py-1 text-start"
-                            onClick={() => browse(item.serverId, item.bucket)}
+                            onClick={() => browse(item.bucketId)}
                           >
                             {known === undefined ? (
                               <DatabaseIcon className="shrink-0 text-muted-foreground" />

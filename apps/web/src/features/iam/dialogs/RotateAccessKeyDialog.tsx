@@ -17,18 +17,16 @@ import {
   DialogHeader,
   DialogTitle,
   FormField,
-  Skeleton,
   Spinner,
   type ComboboxOption,
 } from '@/components/app';
-import { useAccessKeys, useRotateAccessKey } from '@/features/iam/api';
+import { useRotateAccessKey } from '@/features/iam/api';
 import { SecretRevealDialog } from '@/features/iam/components/SecretRevealDialog';
 import { isoInDays } from '@/features/iam/expiry';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
 
 /**
- * Rotate a key: `?dialog=rotate-access-key&d_server=…&d_key=…`.
+ * Rotate a key — the `/keys/$keyId/rotate` route over the access keys list.
  *
  * The grace period is the whole point of the dialog. Issuing a new key and killing
  * the old one in the same second breaks whatever was using it; keeping the old one
@@ -56,37 +54,24 @@ const EXPIRY_DAYS: Readonly<Record<Exclude<ExpiryOption, 'never'>, number>> = {
   '1y': 365,
 };
 
-const KEY_PAGE_SIZE = 500;
+export interface RotateAccessKeyDialogProps {
+  /** The key being rotated; the route (`/keys/$keyId/rotate`) names it by id. */
+  readonly accessKey: AccessKey;
+  readonly onClose: () => void;
+}
 
-export function RotateAccessKeyDialog({ params, onClose }: DialogProps) {
+export function RotateAccessKeyDialog({ accessKey, onClose }: RotateAccessKeyDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
 
-  const keys = useAccessKeys({ page: 1, pageSize: KEY_PAGE_SIZE });
   const rotate = useRotateAccessKey();
 
-  const requestedId = params.key ?? '';
-  const [pickedId, setPickedId] = useState<string | null>(null);
   const [grace, setGrace] = useState<GraceOption>('24h');
   const [expiry, setExpiry] = useState<ExpiryOption>('90d');
   const [created, setCreated] = useState<CreatedKey | null>(null);
 
-  const items = useMemo(() => keys.data?.items ?? [], [keys.data]);
-  const targetId = requestedId.length > 0 ? requestedId : pickedId;
-  const key: AccessKey | undefined = items.find((entry) => entry.accessKeyId === targetId);
-
-  const keyOptions = useMemo<readonly ComboboxOption<string>[]>(
-    () =>
-      items
-        .filter((entry) => entry.status !== 'expired')
-        .map((entry) => ({
-          value: entry.accessKeyId,
-          label: entry.accessKeyId,
-          description: `${entry.userName} · ${entry.serverName}`,
-        })),
-    [items],
-  );
+  const key = accessKey;
 
   const graceOptions = useMemo<readonly ComboboxOption<GraceOption>[]>(
     () => GRACE_OPTIONS.map((value) => ({ value, label: t(`keys.rotate.grace.${value}`) })),
@@ -99,7 +84,6 @@ export function RotateAccessKeyDialog({ params, onClose }: DialogProps) {
   );
 
   const submit = () => {
-    if (key === undefined) return;
     rotate.mutate(
       {
         serverId: key.serverId,
@@ -138,35 +122,12 @@ export function RotateAccessKeyDialog({ params, onClose }: DialogProps) {
         <DialogHeader>
           <DialogTitle>{t('keys.rotate.title')}</DialogTitle>
           <DialogDescription>
-            {key === undefined
-              ? t('keys.rotate.pickPrompt')
-              : t('keys.rotate.descriptionFor', { user: key.userName })}
+            {t('keys.rotate.descriptionFor', { user: key.userName })}
           </DialogDescription>
         </DialogHeader>
 
-        {keys.isLoading ? (
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {key === undefined ? (
-              <FormField label={t('keys.rotate.key')}>
-                {({ id }) => (
-                  <Combobox
-                    id={id}
-                    options={keyOptions}
-                    value={pickedId}
-                    onValueChange={setPickedId}
-                    placeholder={t('keys.rotate.pickKey')}
-                    aria-label={t('keys.rotate.key')}
-                  />
-                )}
-              </FormField>
-            ) : (
-              <CopyField value={key.accessKeyId} label={t('keys.copyId')} />
-            )}
+        <div className="flex flex-col gap-4">
+            <CopyField value={key.accessKeyId} label={t('keys.copyId')} />
 
             <FormField label={t('keys.rotate.graceLabel')} hint={t('keys.rotate.graceHint')}>
               {({ id }) => (
@@ -198,8 +159,7 @@ export function RotateAccessKeyDialog({ params, onClose }: DialogProps) {
                 <AlertDescription>{t('keys.rotate.immediateBody')}</AlertDescription>
               </Alert>
             ) : null}
-          </div>
-        )}
+        </div>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -208,7 +168,7 @@ export function RotateAccessKeyDialog({ params, onClose }: DialogProps) {
           <Button
             type="button"
             onClick={submit}
-            disabled={key === undefined || rotate.isPending}
+            disabled={rotate.isPending}
           >
             {rotate.isPending ? <Spinner /> : <RotateCwIcon />}
             {t('keys.rotate.submit')}
@@ -219,4 +179,4 @@ export function RotateAccessKeyDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('rotate-access-key', RotateAccessKeyDialog);
+

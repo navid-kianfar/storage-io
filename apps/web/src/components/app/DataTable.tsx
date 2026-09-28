@@ -228,7 +228,16 @@ export function DataTable<TData>({
   return (
     <div className={cn('overflow-hidden rounded-lg border bg-card', className)}>
       {hasSelection && bulkActions !== undefined ? (
-        <div className="flex flex-wrap items-center gap-1.5 border-b bg-primary/7 px-2.5 py-2">
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-1.5 bg-primary/7 px-2.5 py-2',
+            // On a phone the bar follows the viewport rather than the table: a
+            // selection made at the top of a long list has to stay actionable at
+            // the bottom of it, and the toolbar it replaces is off-screen by then.
+            'fixed inset-x-0 bottom-0 z-30 border-t shadow-lg',
+            'sm:static sm:z-auto sm:border-t-0 sm:border-b sm:shadow-none',
+          )}
+        >
           <span className="num ps-1 pe-2 text-sm font-semibold">
             {t('table.rowsSelected', { count: selectionCount })}
           </span>
@@ -345,6 +354,12 @@ export function DataTable<TData>({
 
       {manualPagination ? (
         <DataTablePagination table={table} total={total ?? 0} pagination={pagination} />
+      ) : null}
+
+      {/* The room the fixed bulk bar takes on a phone, so it never covers the last
+          row or the pagination controls. */}
+      {hasSelection && bulkActions !== undefined ? (
+        <div aria-hidden="true" className="h-16 sm:hidden" />
       ) : null}
     </div>
   );

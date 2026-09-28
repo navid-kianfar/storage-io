@@ -1,7 +1,8 @@
 import type { TestServerResponse } from '@storage-io/contracts';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { PlugZapIcon } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useNavigate, useParams } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -29,7 +30,7 @@ import {
 } from '@/features/servers/connection-schema';
 import { useServer, useTestConnection, useUpdateServer } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import type { DialogProps } from '@/lib/dialogs/route';
 
 /**
  * Edit a saved connection, from a server card's menu. The server page's
@@ -46,7 +47,7 @@ export function EditServerDialog({ params, onClose }: DialogProps) {
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
 
-  const serverId = params.server ?? '';
+  const serverId = params.serverId ?? '';
   const server = useServer(serverId);
   const update = useUpdateServer();
   const test = useTestConnection();
@@ -153,4 +154,13 @@ export function EditServerDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('edit-server', EditServerDialog);
+/** `/servers/$serverId/edit` — the dialog over the server's detail page. */
+export function EditServerRoute() {
+  const navigate = useNavigate();
+  const { serverId } = useParams({ from: '/protected/servers/$serverId/edit' });
+  const close = useCallback(() => {
+    void navigate({ to: '/servers/$serverId', params: { serverId } });
+  }, [navigate, serverId]);
+  const params = useMemo(() => ({ serverId }), [serverId]);
+  return <EditServerDialog params={params} onClose={close} />;
+}

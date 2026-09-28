@@ -4,7 +4,7 @@ import {
   type S3User,
   type S3UserStatus,
 } from '@storage-io/contracts';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ColumnDef, PaginationState, RowSelectionState } from '@tanstack/react-table';
 import {
   BanIcon,
@@ -72,24 +72,24 @@ import {
 import {
   fetchIamUsersCsv,
   useDeleteIamGroup,
-  useDeleteIamUser,
   useIamGroups,
   useIamPolicies,
+  useIamGroupById,
+  useIamUserById,
+  useIamUserBulk,
   useIamUsers,
-  useSetIamUserPolicies,
-  useSetIamUserStatus,
 } from '@/features/iam/api';
 import { UnavailableServersAlert } from '@/features/iam/components/UnavailableServersAlert';
 import { UserSheet } from '@/features/iam/components/UserSheet';
+import { CreateS3GroupDialog } from '@/features/iam/dialogs/CreateS3GroupDialog';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
+import { routeState, useRouteOverlay } from '@/lib/dialogs/route';
 import { csvFileName, downloadBlob } from '@/lib/csv/csv';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { useFormat } from '@/lib/format/FormatProvider';
 
 /** The two dialogs this route owns. */
 import '@/features/iam/dialogs/CreateS3UserDialog';
-import '@/features/iam/dialogs/CreateS3GroupDialog';
 
 /**
  * S3 users and groups, aggregated across every server whose driver has IAM.
@@ -124,7 +124,6 @@ export function UsersPage() {
   const { t: tCommon } = useTranslation();
   const { t: tDomain } = useTranslation('domain');
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
   const format = useFormat();
 
@@ -140,7 +139,30 @@ export function UsersPage() {
     pageSize: USERS_PAGE_SIZE,
   });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [openUser, setOpenUser] = useState<S3User | null>(null);
+  /**
+   * The user sheet and the group dialog are routes — `/users/$userId` and
+   * `/users/groups/$groupId` — so "show me this user" is a link. They act on the
+   * row behind them, so this page keeps ownership and the route says which
+   * overlay and which id.
+   */
+  const overlay = useRouteOverlay();
+  const closeOverlay = useCallback(() => {
+    void navigate({ to: '/users', search: true });
+  }, [navigate]);
+
+  const setOpenUser = useCallback(
+    (user: S3User) => {
+      void navigate({ to: '/users/$userId', params: { userId: user.id }, search: true });
+    },
+    [navigate],
+  );
+
+  const openGroup = useCallback(
+    (group: S3Group) => {
+      void navigate({ to: '/users/groups/$groupId', params: { groupId: group.id }, search: true });
+    },
+    [navigate],
+  );
   const [deleteUsers, setDeleteUsers] = useState<readonly S3User[]>([]);
   const [attachTo, setAttachTo] = useState<readonly S3User[]>([]);
   const [deleteGroup, setDeleteGroup] = useState<S3Group | null>(null);
@@ -158,13 +180,25 @@ export function UsersPage() {
     ...(serverId === null ? {} : { serverId }),
   });
   const policies = useIamPolicies(serverId === null ? {} : { serverId });
-  const setStatus = useSetIamUserStatus();
-  const setPolicies = useSetIamUserPolicies();
-  const removeUser = useDeleteIamUser();
+  const userBulk = useIamUserBulk();
   const removeGroup = useDeleteIamGroup();
 
   const items = useMemo(() => users.data?.items ?? [], [users.data]);
   const groupItems = useMemo(() => groups.data?.items ?? [], [groups.data]);
+
+  /**
+   * The entity behind an overlay route, resolved from its id in one request
+   * rather than looked up in the list: a link to a user has to work whatever
+   * filters this list happens to carry, and on a cold load there is no list yet.
+   */
+  const overlayUser = useIamUserById(
+    overlay.name === 'user-sheet' ? overlay.params.userId : undefined,
+  );
+  const overlayGroup = useIamGroupById(
+    overlay.name === 'group-edit' ? overlay.params.groupId : undefined,
+  );
+  const openUser = overlayUser.data ?? null;
+  const openGroupEntity = overlayGroup.data ?? null;
 
   const setSearch = useCallback(
     (next: Record<string, string | undefined>) => {
@@ -213,35 +247,45 @@ export function UsersPage() {
    * One request per user, because `/iam/users/bulk` does not exist. Bounded by the
    * selection on screen; a per-user failure is reported rather than swallowed.
    */
+  /**
+   * Reports one bulk response: a success toast when every row came back ok, and
+   * the count of rows the API could not reach otherwise. `results` has one entry
+   * per target, so "partial" is a fact rather than a guess.
+   */
+  const reportBulk = useCallback(
+    (results: readonly { readonly ok: boolean }[], successKey: string) => {
+      const total = results.length;
+      const failed = results.filter((row) => !row.ok).length;
+      if (failed === 0) {
+        toast.success(t(successKey), { description: t('users.bulk.applied', { count: total }) });
+        return;
+      }
+      toast.error(t('users.bulk.partial', { failed, total }));
+    },
+    [t],
+  );
+
+  /**
+   * One request for the whole selection — `POST /iam/users/bulk` — not a loop of
+   * one request per user. Forty selected users used to be forty requests, forty
+   * cache invalidations and no way to say which of them failed.
+   */
   const setStatusForMany = useCallback(
     (selected: readonly S3User[], next: 'enabled' | 'disabled') => {
-      let failed = 0;
-      const total = selected.length;
-      let done = 0;
-      for (const user of selected) {
-        setStatus.mutate(
-          { serverId: user.serverId, name: user.name, status: next },
-          {
-            onError: () => {
-              failed += 1;
-            },
-            onSettled: () => {
-              done += 1;
-              if (done < total) return;
-              if (failed === 0) {
-                toast.success(
-                  next === 'enabled' ? t('users.toast.enabled') : t('users.toast.disabled'),
-                  { description: t('users.bulk.applied', { count: total }) },
-                );
-                return;
-              }
-              toast.error(t('users.bulk.partial', { failed, total }));
-            },
-          },
-        );
-      }
+      if (selected.length === 0) return;
+      userBulk.mutate(
+        { ids: selected.map((user) => user.id), action: next === 'enabled' ? 'enable' : 'disable' },
+        {
+          onSuccess: (response) =>
+            reportBulk(
+              response.results,
+              next === 'enabled' ? 'users.toast.enabled' : 'users.toast.disabled',
+            ),
+          onError: (error) => apiError.toastError(error, t('users.toast.statusFailed')),
+        },
+      );
     },
-    [setStatus, t],
+    [apiError, reportBulk, t, userBulk],
   );
 
   /** Server-rendered, from the same filters the table shows. */
@@ -269,33 +313,19 @@ export function UsersPage() {
   const confirmDeleteUsers = useCallback(() => {
     const selected = deleteUsers;
     if (selected.length === 0) return;
-    let failed = 0;
-    let done = 0;
-    for (const user of selected) {
-      removeUser.mutate(
-        { serverId: user.serverId, name: user.name },
-        {
-          onError: () => {
-            failed += 1;
-          },
-          onSettled: () => {
-            done += 1;
-            if (done < selected.length) return;
-            if (failed === 0) {
-              toast.success(t('users.toast.deleted'), {
-                description: t('users.bulk.applied', { count: selected.length }),
-              });
-            } else {
-              toast.error(t('users.bulk.partial', { failed, total: selected.length }));
-            }
-            setDeleteUsers([]);
-            setRowSelection({});
-            setOpenUser(null);
-          },
+    userBulk.mutate(
+      { ids: selected.map((user) => user.id), action: 'delete' },
+      {
+        onSuccess: (response) => reportBulk(response.results, 'users.toast.deleted'),
+        onError: (error) => apiError.toastError(error, t('users.toast.deleteFailed')),
+        onSettled: () => {
+          setDeleteUsers([]);
+          setRowSelection({});
+          closeOverlay();
         },
-      );
-    }
-  }, [deleteUsers, removeUser, t]);
+      },
+    );
+  }, [apiError, closeOverlay, deleteUsers, reportBulk, t, userBulk]);
 
   const columns = useMemo<readonly ColumnDef<S3User, unknown>[]>(
     () => [
@@ -405,13 +435,14 @@ export function UsersPage() {
                     <SquarePenIcon />
                     {t('users.editUser')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() =>
-                      dialogs.open('create-access-key', { server: user.serverId, user: user.name })
-                    }
-                  >
-                    <KeyRoundIcon />
-                    {t('keys.create.action')}
+                  <DropdownMenuItem asChild>
+                    <Link
+                      to="/keys/new"
+                      state={routeState({ serverId: user.serverId, userName: user.name })}
+                    >
+                      <KeyRoundIcon />
+                      {t('keys.create.action')}
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setAttachTo([user])}>
                     <ShieldCheckIcon />
@@ -445,7 +476,7 @@ export function UsersPage() {
         },
       },
     ],
-    [copyArn, dialogs, setStatusForMany, t, tCommon],
+    [copyArn, setOpenUser, setStatusForMany, t, tCommon],
   );
 
   const groupColumns = useMemo<readonly ColumnDef<S3Group, unknown>[]>(
@@ -517,25 +548,11 @@ export function UsersPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() =>
-                    dialogs.openHere('create-s3-group', {
-                      server: group.serverId,
-                      group: group.name,
-                    })
-                  }
-                >
+                <DropdownMenuItem onSelect={() => openGroup(group)}>
                   <PencilIcon />
                   {t('users.groups.edit')}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    dialogs.openHere('create-s3-group', {
-                      server: group.serverId,
-                      group: group.name,
-                    })
-                  }
-                >
+                <DropdownMenuItem onSelect={() => openGroup(group)}>
                   <UserPlusIcon />
                   {t('users.groups.addMembers')}
                 </DropdownMenuItem>
@@ -550,7 +567,7 @@ export function UsersPage() {
         },
       },
     ],
-    [dialogs, t, tCommon, tDomain],
+    [openGroup, t, tCommon, tDomain],
   );
 
   return (
@@ -564,7 +581,7 @@ export function UsersPage() {
               <FileDownIcon />
               {t('users.exportList')}
             </Button>
-            <Button onClick={() => dialogs.openHere('create-s3-user')}>
+            <Button onClick={() => void navigate({ to: '/users/new', search: true })}>
               <UserPlusIcon />
               {t('users.create.action')}
             </Button>
@@ -674,7 +691,7 @@ export function UsersPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => setStatusForMany(selectedRows, 'disabled')}
-                      disabled={setStatus.isPending}
+                      disabled={userBulk.isPending}
                     >
                       <BanIcon />
                       {t('users.disable')}
@@ -683,7 +700,7 @@ export function UsersPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => setStatusForMany(selectedRows, 'enabled')}
-                      disabled={setStatus.isPending}
+                      disabled={userBulk.isPending}
                     >
                       <PlayIcon />
                       {t('users.enable')}
@@ -713,7 +730,7 @@ export function UsersPage() {
                           {t('users.resetFilters')}
                         </Button>
                       ) : (
-                        <Button onClick={() => dialogs.openHere('create-s3-user')}>
+                        <Button onClick={() => void navigate({ to: '/users/new', search: true })}>
                           <UserPlusIcon />
                           {t('users.create.action')}
                         </Button>
@@ -753,7 +770,7 @@ export function UsersPage() {
             <Button
               variant="outline"
               className="sm:ms-auto"
-              onClick={() => dialogs.openHere('create-s3-group')}
+              onClick={() => void navigate({ to: '/users/groups/new', search: true })}
             >
               <PlusIcon />
               {t('users.groups.create')}
@@ -778,7 +795,7 @@ export function UsersPage() {
                   title={t('users.groups.empty.title')}
                   description={t('users.groups.empty.description')}
                   action={
-                    <Button onClick={() => dialogs.openHere('create-s3-group')}>
+                    <Button onClick={() => void navigate({ to: '/users/groups/new', search: true })}>
                       <PlusIcon />
                       {t('users.groups.create')}
                     </Button>
@@ -790,11 +807,22 @@ export function UsersPage() {
         </TabsContent>
       </Tabs>
 
+      {/* `/users/new` and `/users/groups/new` render here. */}
+      <Outlet />
+
       {openUser === null ? null : (
         <UserSheet
           user={openUser}
-          onClose={() => setOpenUser(null)}
+          onClose={closeOverlay}
           onDelete={(user) => setDeleteUsers([user])}
+        />
+      )}
+
+      {openGroupEntity === null ? null : (
+        <CreateS3GroupDialog
+          existingGroup={openGroupEntity}
+          initialServerId={null}
+          onClose={closeOverlay}
         />
       )}
 
@@ -805,41 +833,28 @@ export function UsersPage() {
           label: policy.name,
           description: policy.description ?? undefined,
         }))}
-        busy={setPolicies.isPending}
+        busy={userBulk.isPending}
         onClose={() => setAttachTo([])}
         onAttach={(policyName) => {
-          let failed = 0;
-          let done = 0;
-          const selected = attachTo;
-          for (const user of selected) {
-            setPolicies.mutate(
-              {
-                serverId: user.serverId,
-                name: user.name,
-                policies: user.policies.includes(policyName)
-                  ? user.policies
-                  : [...user.policies, policyName],
+          if (attachTo.length === 0) return;
+          // One request: the API attaches the policy to every named user and
+          // reports a row each. Attaching is idempotent server-side, so the
+          // "already has it" case needs no client-side filtering.
+          userBulk.mutate(
+            {
+              ids: attachTo.map((user) => user.id),
+              action: 'attach-policy',
+              payload: { policy: policyName },
+            },
+            {
+              onSuccess: (response) => reportBulk(response.results, 'users.toast.policyAttached'),
+              onError: (error) => apiError.toastError(error, t('users.toast.policyFailed')),
+              onSettled: () => {
+                setAttachTo([]);
+                setRowSelection({});
               },
-              {
-                onError: () => {
-                  failed += 1;
-                },
-                onSettled: () => {
-                  done += 1;
-                  if (done < selected.length) return;
-                  if (failed === 0) {
-                    toast.success(t('users.toast.policyAttached'), {
-                      description: t('users.bulk.applied', { count: selected.length }),
-                    });
-                  } else {
-                    toast.error(t('users.bulk.partial', { failed, total: selected.length }));
-                  }
-                  setAttachTo([]);
-                  setRowSelection({});
-                },
-              },
-            );
-          }
+            },
+          );
         }}
       />
 
@@ -852,7 +867,7 @@ export function UsersPage() {
         description={t('users.delete.description')}
         confirmLabel={tCommon('action.delete')}
         destructive
-        busy={removeUser.isPending}
+        busy={userBulk.isPending}
         onConfirm={confirmDeleteUsers}
       >
         <Alert variant="danger">

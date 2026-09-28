@@ -1,6 +1,7 @@
 import type { RotateServerCredentialsRequest } from '@storage-io/contracts';
 import { KeyRoundIcon, RotateCwIcon, TriangleAlertIcon, WandSparklesIcon } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useNavigate, useParams } from '@tanstack/react-router';
+import { useCallback, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -22,7 +23,7 @@ import {
 } from '@/components/app';
 import { useRotateServerCredentials, useServer } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import type { DialogProps } from '@/lib/dialogs/route';
 
 /**
  * Rotate the admin credentials storage-io uses for a server.
@@ -40,7 +41,7 @@ export function RotateCredentialsDialog({ params, onClose }: DialogProps) {
   const { t: tCommon } = useTranslation();
   const apiError = useApiError();
 
-  const serverId = params.server ?? '';
+  const serverId = params.serverId ?? '';
   const server = useServer(serverId);
   const rotate = useRotateServerCredentials();
 
@@ -169,4 +170,13 @@ export function RotateCredentialsDialog({ params, onClose }: DialogProps) {
   );
 }
 
-registerDialog('rotate-server-credentials', RotateCredentialsDialog);
+/** `/servers/$serverId/rotate-credentials` — the dialog over the server's detail page. */
+export function RotateCredentialsRoute() {
+  const navigate = useNavigate();
+  const { serverId } = useParams({ from: '/protected/servers/$serverId/rotate-credentials' });
+  const close = useCallback(() => {
+    void navigate({ to: '/servers/$serverId', params: { serverId } });
+  }, [navigate, serverId]);
+  const params = useMemo(() => ({ serverId }), [serverId]);
+  return <RotateCredentialsDialog params={params} onClose={close} />;
+}

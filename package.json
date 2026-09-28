@@ -42,7 +42,7 @@
     "dev": "pnpm --filter @storage-io/contracts build && pnpm -r --parallel --filter ./apps/* dev",
     "build": "pnpm --filter @storage-io/contracts build && pnpm -r --filter='!@storage-io/contracts' build",
     "test": "pnpm -r test",
-    "lint": "eslint .",
+    "lint": "eslint . && pnpm --filter @storage-io/web lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",

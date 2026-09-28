@@ -12,12 +12,12 @@ import {
 } from 'lucide-react';
 
 /**
- * The sections of the Settings page, in order.
- *
- * One list drives the nav, the scroll spy and the anchors, so a section cannot
- * exist without a nav entry or be linked to by an id nothing renders. Other pages
- * deep-link here by these ids (`/settings#activity-forwarding` from the activity
- * log, `#transfers` from the jobs menu), which is why they are a typed union
+ * The sections of Settings, in order. Each one is a route —
+ * `/settings/$section` — and this list is the whole of what `$section` may be
+ * (docs/ROUTES.md). One list drives the nav and the routing, so a section cannot
+ * exist without a nav entry or be linked to by an id nothing renders; other pages
+ * deep-link here by these ids (`/settings/forwarding` from the activity log,
+ * `/settings/transfers` from the jobs menu), which is why they are a typed union
  * rather than free strings.
  */
 
@@ -28,6 +28,11 @@ export interface SettingsSection {
   readonly separatorBefore?: boolean;
 }
 
+/** Whether a `$section` route param names a real section. */
+export function isSettingsSection(value: string): value is SettingsSectionId {
+  return (SETTINGS_SECTION_IDS as readonly string[]).includes(value);
+}
+
 export const SETTINGS_SECTION_IDS = [
   'account',
   'security',
@@ -35,8 +40,8 @@ export const SETTINGS_SECTION_IDS = [
   'region',
   'transfers',
   'notifications',
-  'activity-forwarding',
-  'backup-retention',
+  'forwarding',
+  'backup',
   'about',
 ] as const;
 
@@ -49,7 +54,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: 'region', icon: LanguagesIcon },
   { id: 'transfers', icon: ArrowUpDownIcon },
   { id: 'notifications', icon: BellIcon },
-  { id: 'activity-forwarding', icon: WebhookIcon },
-  { id: 'backup-retention', icon: HardDriveDownloadIcon },
+  { id: 'forwarding', icon: WebhookIcon },
+  { id: 'backup', icon: HardDriveDownloadIcon },
   { id: 'about', icon: InfoIcon, separatorBefore: true },
 ];

@@ -23,6 +23,7 @@ import {
 import { HttpResponse, http } from 'msw';
 import { allBuckets } from './bucketState';
 import { mockDashboard, mockServers } from './fixtures';
+import { accessKeyId as mintKeyId, iamUserId } from './ids';
 
 /**
  * Mock handlers for the endpoints the overview, first-run, servers, server detail
@@ -221,6 +222,7 @@ const activity: readonly ActivityEvent[] = [
 
 const expiringKeys: readonly AccessKey[] = [
   {
+    id: mintKeyId(servers[0]!.id, 'AKIA5RJ2QK4LMNOPQ7F2'),
     serverId: servers[0]!.id,
     serverName: 'minio-prod-01',
     provider: 'minio',
@@ -235,6 +237,7 @@ const expiringKeys: readonly AccessKey[] = [
     rotation: null,
   },
   {
+    id: mintKeyId(servers[0]!.id, 'SIO3K8QW2LZXM81C'),
     serverId: servers[0]!.id,
     serverName: 'minio-prod-01',
     provider: 'minio',
@@ -249,6 +252,7 @@ const expiringKeys: readonly AccessKey[] = [
     rotation: null,
   },
   {
+    id: mintKeyId(servers[1]!.id, 'SIO9PLM4RT2KDA'),
     serverId: servers[1]!.id,
     serverName: 'seaweed-archive',
     provider: 'seaweedfs',
@@ -271,6 +275,7 @@ const iamUsers: readonly S3User[] = [
   ['app-staging', ['readonly'], 3, 'enabled', DAY_MS],
   ['readonly-audit', ['diagnostics'], 0, 'disabled', null],
 ].map(([name, policies, keys, status, lastUsed]) => ({
+  id: iamUserId(servers[0]!.id, name as string),
   serverId: servers[0]!.id,
   serverName: 'minio-prod-01',
   provider: 'minio' as const,
@@ -448,7 +453,7 @@ function dashboard(): Dashboard {
     ...mockDashboard,
     totals: {
       ...mockDashboard.totals,
-      usedBytes: totals.used,
+      bucketsBytes: totals.used,
       capacityBytes: totals.capacity,
       buckets: totals.buckets,
       objects: totals.objects,

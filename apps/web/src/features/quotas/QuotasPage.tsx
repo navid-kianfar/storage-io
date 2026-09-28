@@ -5,7 +5,7 @@ import {
   type QuotaRow,
   type QuotaSupport,
 } from '@storage-io/contracts';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ColumnDef, PaginationState } from '@tanstack/react-table';
 import {
   BellIcon,
@@ -63,13 +63,12 @@ import {
 } from '@/components/app';
 import { fetchQuotasCsv, useQuotas } from '@/features/quotas/api';
 import { useServers } from '@/features/servers/api';
+import { EditQuotaDialog } from '@/features/quotas/dialogs/EditQuotaDialog';
 import { useApiError } from '@/lib/api/useApiError';
 import { downloadBlob, timestampedFilename } from '@/lib/csv';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { useFormat } from '@/lib/format/FormatProvider';
 
 /** Registers the dialog this route owns; /servers and /buckets open it by URL. */
-import '@/features/quotas/dialogs/EditQuotaDialog';
 
 /**
  * Bucket size limits and how close each one is. The whole point of the page is the
@@ -106,7 +105,6 @@ export function QuotasPage() {
   const { t: tCommon } = useTranslation();
   const { t: tDomain } = useTranslation('domain');
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
   const format = useFormat();
 
@@ -172,6 +170,9 @@ export function QuotasPage() {
   );
 
   const [exporting, setExporting] = useState(false);
+  // "Set a quota" has no bucket yet, so it is a chooser, not an edit: local state
+  // until a bucket is picked, at which point it becomes that bucket's own route.
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   /**
    * The API writes the CSV. `GET /quotas/export.csv` takes the same filters, so the
@@ -198,11 +199,8 @@ export function QuotasPage() {
 
   const openEdit = useCallback(
     (row: QuotaRow) =>
-      dialogs.openHere('edit-quota', {
-        server: row.bucket.serverName,
-        bucket: row.bucket.name,
-      }),
-    [dialogs],
+      void navigate({ to: '/quotas/$bucketId', params: { bucketId: row.bucket.id } }),
+    [navigate],
   );
 
   const columns = useMemo<readonly ColumnDef<QuotaRow, unknown>[]>(
@@ -447,7 +445,7 @@ export function QuotasPage() {
               {exporting ? <Spinner /> : <FileDownIcon />}
               {tCommon('table.exportCsv')}
             </Button>
-            <Button onClick={() => dialogs.openHere('edit-quota')}>
+            <Button onClick={() => setPickerOpen(true)}>
               <GaugeIcon />
               {t('quotas.setAQuota')}
             </Button>
@@ -605,17 +603,14 @@ export function QuotasPage() {
             aria-label={t('quotas.table.title')}
             columns={columns}
             data={rows}
-            getRowId={(row) => `${row.bucket.serverId}/${row.bucket.name}`}
+            getRowId={(row) => row.bucket.id}
             loading={quotas.isLoading}
             pagination={pagination}
             onPaginationChange={setPagination}
             total={quotas.data?.total}
             showColumnsMenu
             onRowClick={(row) =>
-              void navigate({
-                to: '/buckets/$server/$bucket',
-                params: { server: row.bucket.serverName, bucket: row.bucket.name },
-              })
+              void navigate({ to: '/buckets/$bucketId', params: { bucketId: row.bucket.id } })
             }
             emptyState={
               <EmptyState
@@ -649,6 +644,20 @@ export function QuotasPage() {
         <AlertTitle>{t('quotas.note.title')}</AlertTitle>
         <AlertDescription>{t('quotas.note.body')}</AlertDescription>
       </Alert>
+
+      {pickerOpen ? (
+        <EditQuotaDialog
+          bucketId={null}
+          onClose={() => setPickerOpen(false)}
+          onPick={(bucketId) => {
+            setPickerOpen(false);
+            void navigate({ to: '/quotas/$bucketId', params: { bucketId } });
+          }}
+        />
+      ) : null}
+
+      {/* `/quotas/$bucketId` renders here. */}
+      <Outlet />
     </>
   );
 }

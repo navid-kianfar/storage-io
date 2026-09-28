@@ -19,6 +19,22 @@ export const EVENTS_PATH = '/events';
 /** Which query scopes each event makes stale. */
 const INVALIDATIONS: Readonly<Record<SseEventName, readonly QueryKey[]>> = {
   'server.health': [queryKeys.servers.all, queryKeys.dashboard.all],
+  // A server appearing or disappearing changes every list that is keyed by one:
+  // the inventory the buckets and quotas pages read, and the IAM aggregates.
+  'server.created': [
+    queryKeys.servers.all,
+    queryKeys.dashboard.all,
+    queryKeys.buckets.all,
+    queryKeys.quotas.all,
+    queryKeys.iam.all,
+  ],
+  'server.deleted': [
+    queryKeys.servers.all,
+    queryKeys.dashboard.all,
+    queryKeys.buckets.all,
+    queryKeys.quotas.all,
+    queryKeys.iam.all,
+  ],
   'job.progress': [queryKeys.jobs.all],
   'job.status': [queryKeys.jobs.all, queryKeys.dashboard.all, queryKeys.activity.all],
   // The activity scope goes stale on a notification too: every event the API

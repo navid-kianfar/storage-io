@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from '@/components/app/Dialog';
 import { Input } from '@/components/app/Input';
-import { Label } from '@/components/app/Label';
+import { FormField } from '@/components/app/FormField';
 import { OptionRow } from '@/components/app/FormRow';
 import { Spinner } from '@/components/app/Spinner';
 import { Switch } from '@/components/app/Switch';
@@ -109,9 +109,6 @@ function LifecycleRuleDialogBody({
 }) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
-  const nameId = useId();
-  const scopeId = useId();
-  const prefixId = useId();
 
   const initial = rule ?? emptyLifecycleRule();
   const isEdit = rule !== null;
@@ -174,55 +171,57 @@ function LifecycleRuleDialogBody({
         <DialogDescription>{t('bucket.lifecycle.dialog.description')}</DialogDescription>
       </DialogHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={nameId}>{t('bucket.lifecycle.dialog.name')}</Label>
-          <Input
-            id={nameId}
-            value={id}
-            onChange={(event) => setId(event.target.value)}
-            aria-invalid={duplicateId}
-            autoComplete="off"
-            spellCheck={false}
-            className="ltr-isolate font-mono"
-          />
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {duplicateId
-              ? t('bucket.lifecycle.dialog.duplicateId')
-              : t('bucket.lifecycle.dialog.nameHint')}
-          </p>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={scopeId}>{t('bucket.lifecycle.dialog.scope')}</Label>
-          <Combobox
-            id={scopeId}
-            options={[
-              { value: 'all', label: t('bucket.lifecycle.dialog.scopeAll') },
-              { value: 'prefix', label: t('bucket.lifecycle.dialog.scopePrefix') },
-              { value: 'tag', label: t('bucket.lifecycle.dialog.scopeTag') },
-            ]}
-            value={scope}
-            onValueChange={(next) => setScope(next ?? 'all')}
-            aria-label={t('bucket.lifecycle.dialog.scope')}
-          />
-        </div>
-        {scope === 'prefix' ? (
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor={prefixId}>{t('bucket.lifecycle.dialog.prefix')}</Label>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <FormField
+          label={t('bucket.lifecycle.dialog.name')}
+          error={duplicateId ? t('bucket.lifecycle.dialog.duplicateId') : undefined}
+          hint={t('bucket.lifecycle.dialog.nameHint')}
+        >
+          {({ id: fieldId, describedBy, invalid }) => (
             <Input
-              id={prefixId}
-              value={prefix}
-              onChange={(event) => setPrefix(event.target.value)}
-              placeholder="raw/"
+              id={fieldId}
+              aria-describedby={describedBy}
+              value={id}
+              onChange={(event) => setId(event.target.value)}
+              aria-invalid={invalid}
+              autoComplete="off"
+              spellCheck={false}
               className="ltr-isolate font-mono"
             />
-          </div>
+          )}
+        </FormField>
+        <FormField label={t('bucket.lifecycle.dialog.scope')}>
+          {({ id: fieldId }) => (
+            <Combobox
+              id={fieldId}
+              options={[
+                { value: 'all', label: t('bucket.lifecycle.dialog.scopeAll') },
+                { value: 'prefix', label: t('bucket.lifecycle.dialog.scopePrefix') },
+                { value: 'tag', label: t('bucket.lifecycle.dialog.scopeTag') },
+              ]}
+              value={scope}
+              onValueChange={(next) => setScope(next ?? 'all')}
+              aria-label={t('bucket.lifecycle.dialog.scope')}
+            />
+          )}
+        </FormField>
+        {scope === 'prefix' ? (
+          <FormField className="sm:col-span-2" label={t('bucket.lifecycle.dialog.prefix')}>
+            {({ id: fieldId }) => (
+              <Input
+                id={fieldId}
+                value={prefix}
+                onChange={(event) => setPrefix(event.target.value)}
+                placeholder="raw/"
+                className="ltr-isolate font-mono"
+              />
+            )}
+          </FormField>
         ) : null}
         {scope === 'tag' ? (
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <span className="text-sm font-medium">{t('bucket.lifecycle.dialog.tagFilter')}</span>
-            <TagEditor tags={tags} onTagsChange={setTags} limit={4} />
-          </div>
+          <FormField className="sm:col-span-2" label={t('bucket.lifecycle.dialog.tagFilter')}>
+            {() => <TagEditor tags={tags} onTagsChange={setTags} limit={4} />}
+          </FormField>
         ) : null}
       </div>
 

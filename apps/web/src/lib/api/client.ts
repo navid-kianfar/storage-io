@@ -31,21 +31,31 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler): void {
   onUnauthorized = handler;
 }
 
+/** An empty value is left out of the query string entirely, never sent as `?x=`. */
+function isEmptyParam(value: unknown): boolean {
+  return value === undefined || value === null || value === '';
+}
+
+/** One key's value, appended once per item when it is a list. */
+function appendParam(search: URLSearchParams, key: string, value: QueryParams[string]): void {
+  if (isEmptyParam(value)) return;
+  if (!Array.isArray(value)) {
+    search.append(key, String(value));
+    return;
+  }
+  for (const item of value) {
+    if (isEmptyParam(item)) continue;
+    search.append(key, String(item));
+  }
+}
+
 export function buildUrl(path: string, query?: QueryParams): string {
   const url = `${API_BASE_URL}${path}`;
   if (!query) return url;
 
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
-    if (value === undefined || value === null || value === '') continue;
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item === undefined || item === null || item === '') continue;
-        search.append(key, String(item));
-      }
-      continue;
-    }
-    search.append(key, String(value));
+    appendParam(search, key, value);
   }
   const qs = search.toString();
   return qs.length > 0 ? `${url}?${qs}` : url;

@@ -2,7 +2,7 @@ import {
   OBJECT_BATCH_MAX_KEYS,
   type ObjectBatchAction,
 } from '@storage-io/contracts';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import {
   ArchiveIcon,
   ChevronDownIcon,
@@ -68,14 +68,14 @@ import { useServerList } from '@/features/shell/api';
 import { enqueueDownload, enqueueUploads, recordCompletedDownload } from '@/features/transfers/engine';
 import { toastProblem } from '@/lib/api/problems';
 import { downloadBlob } from '@/lib/csv';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
+import { routeState } from '@/lib/dialogs/route';
+import { useBucketScope, type BucketScope } from '@/lib/entities/resolve';
 import { useRecentBuckets } from '@/stores/recentBuckets';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { objectContentUrl, useDownloadZip, useObjectListing, useObjectMeta } from './api';
 import { filterEntries, flattenPages, listingTotals, type Entry } from './entries';
 import { FILE_KINDS, guessContentType, type FileKind } from './fileKind';
-import { keysToGlob } from './keysToGlob';
 import { ObjectInspector } from './components/ObjectInspector';
 import { ObjectListing, type ListingView } from './components/ObjectListing';
 import { PathBar } from './components/PathBar';
@@ -84,22 +84,32 @@ import { BatchActionDialog } from './dialogs/BatchActionDialog';
 import { CopyMoveDialog } from './dialogs/CopyMoveDialog';
 import { DeleteObjectsDialog } from './dialogs/DeleteObjectsDialog';
 import { EditContentsSheet } from './dialogs/EditContentsSheet';
+import { NewFolderDialog } from './dialogs/NewFolderDialog';
 import { ObjectMetadataDialog } from './dialogs/ObjectMetadataDialog';
+import { ShareLinkDialog } from './dialogs/ShareLinkDialog';
 import { RenameObjectDialog } from './dialogs/RenameObjectDialog';
-import './dialogs/UploadDialog';
-import './dialogs/ImportUrlDialog';
-import './dialogs/NewFolderDialog';
-import './dialogs/ShareLinkDialog';
 
 /**
- * `/browse/$server/$bucket/$` — the object browser.
+ * The object browser — one component behind four routes (docs/ROUTES.md):
  *
- * The prefix is the route's splat, so a folder is a real address: back, forward,
- * bookmark and "send me the link" all work, and so does opening a deep prefix
- * directly. The filter, the view and the version toggle live in the search params
- * for the same reason; the selection deliberately does not, because a reload
- * restoring a selection the operator has forgotten about is how the wrong thing
- * gets deleted.
+ * ```
+ * /buckets/$bucketId/browse/$    the listing at that prefix
+ * /buckets/$bucketId/object/$    the same listing with the inspector on that key
+ * /buckets/$bucketId/upload/$    the upload dialog over it
+ * /buckets/$bucketId/import/$    the import-from-URL dialog over it
+ * ```
+ *
+ * They are children of one pathless layout route whose component this is, so
+ * opening the inspector or the upload sheet does **not** remount the listing
+ * underneath — the listing, the selection and the scroll position all survive.
+ *
+ * The prefix is the route's splat and the inspected object's key is its own, so a
+ * folder and an object are both real addresses: back, forward, bookmark and "send
+ * me the link" all work. An object key is the object's identity in S3 and has no
+ * other id, which is why it is a path segment and never a query param. The filter,
+ * the view and the version toggle are view state and live in the search params;
+ * the selection deliberately does not, because a reload restoring a selection the
+ * operator has forgotten about is how the wrong thing gets deleted.
  *
  * Everything that changes objects is a single request per action — copy, move,
  * delete and the ZIP download each take the whole selection — and the three
@@ -118,8 +128,10 @@ interface BrowseSearch {
   readonly view?: string;
   readonly versions?: string | boolean;
   readonly types?: string;
-  readonly obj?: string;
 }
+
+/** One stable placeholder while the bucket id resolves; the queries are disabled. */
+const EMPTY_SCOPE: BucketScope = { serverId: '', bucket: '' };
 
 type MenuTarget = { readonly entry: Entry; readonly x: number; readonly y: number };
 
@@ -127,28 +139,40 @@ export function ObjectBrowserPage() {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const isMobile = useIsMobile();
-  const params = useParams({ from: '/protected/browse/$server/$bucket/$' });
+  const params = useParams({ strict: false });
   const search: BrowseSearch = useSearch({ strict: false });
 
-  const prefix = normalizePrefix(params._splat ?? '');
-  const scope = useMemo(
-    () => ({ serverId: params.server, bucket: params.bucket }),
-    [params.server, params.bucket],
-  );
+  const bucketId = params.bucketId ?? '';
+  const splat = params._splat ?? '';
+  // Which child route matched, from its own `staticData` rather than from parsing
+  // the pathname back apart.
+  const mode = useRouterState({
+    select: (state) => {
+      const deepest = state.matches.at(-1);
+      return deepest?.staticData.browserMode ?? 'browse';
+    },
+  });
+
+  // On `/object/$` the splat is the object's key, and the folder it lives in is
+  // the listing to show behind the inspector.
+  const activeKey = mode === 'object' && splat !== '' ? splat : null;
+  const prefix = normalizePrefix(mode === 'object' ? parentPrefixOf(splat) : splat);
+
+  const resolved = useBucketScope(bucketId);
+  const scope = resolved.scope ?? EMPTY_SCOPE;
+  const scopeReady = resolved.scope !== null;
 
   const view: ListingView = search.view === 'grid' ? 'grid' : 'list';
   const showVersions = search.versions === 'true' || search.versions === true;
   const filterText = typeof search.q === 'string' ? search.q : '';
   const typeFilter = useMemo(() => parseTypes(search.types), [search.types]);
-  const activeKey = typeof search.obj === 'string' ? search.obj : null;
 
+  /** View state only — a filter, the view mode, the version toggle. */
   const setSearch = useCallback(
     (patch: Readonly<Record<string, string | undefined>>) => {
       void navigate({
-        to: '/browse/$server/$bucket/$',
-        params: { server: params.server, bucket: params.bucket, _splat: params._splat ?? '' },
+        to: '.',
         search: (previous: Record<string, unknown>) => {
           const next: Record<string, unknown> = { ...previous, ...patch };
           for (const [key, value] of Object.entries(patch)) {
@@ -159,33 +183,51 @@ export function ObjectBrowserPage() {
         replace: true,
       });
     },
-    [navigate, params._splat, params.bucket, params.server],
+    [navigate],
   );
 
   const goToPrefix = useCallback(
     (nextPrefix: string) => {
+      // Leaving the folder leaves the inspected object behind with it, which is
+      // exactly what navigating to the `browse` route means.
       void navigate({
-        to: '/browse/$server/$bucket/$',
-        params: { server: params.server, bucket: params.bucket, _splat: nextPrefix },
-        search: (previous: Record<string, unknown>) => {
-          const next = { ...previous };
-          // The inspected object belongs to the folder that was left behind.
-          delete next.obj;
-          return next;
-        },
+        to: '/buckets/$bucketId/browse/$',
+        params: { bucketId, _splat: nextPrefix },
+        search: true,
       });
     },
-    [navigate, params.bucket, params.server],
+    [navigate, bucketId],
   );
+
+  /** Opens the inspector on a key: its own route, not a query param. */
+  const goToObject = useCallback(
+    (key: string) => {
+      void navigate({
+        to: '/buckets/$bucketId/object/$',
+        params: { bucketId, _splat: key },
+        search: true,
+      });
+    },
+    [navigate, bucketId],
+  );
+
+  /** Closes the inspector: back to the folder the object lives in. */
+  const closeObject = useCallback(() => {
+    void navigate({
+      to: '/buckets/$bucketId/browse/$',
+      params: { bucketId, _splat: prefix },
+      search: true,
+    });
+  }, [navigate, bucketId, prefix]);
 
   /* ------------------------------ data ------------------------------ */
 
   const servers = useServerList();
   const server = useMemo(
-    () => servers.data?.items.find((item) => item.id === params.server || item.name === params.server),
-    [servers.data, params.server],
+    () => servers.data?.items.find((item) => item.id === scope.serverId),
+    [servers.data, scope.serverId],
   );
-  const bucket = useBucketDetail(scope);
+  const bucket = useBucketDetail(scope, scopeReady);
   const versioned = bucket.data?.versioning === 'enabled';
 
   // A provider that cannot do it at all should not offer it: MinIO has no CORS,
@@ -202,6 +244,7 @@ export function ObjectBrowserPage() {
   useEffect(() => {
     if (visited === undefined) return;
     rememberVisit({
+      bucketId: visited.id,
       serverId: visited.serverId,
       serverName: visited.serverName,
       bucket: visited.name,
@@ -307,9 +350,21 @@ export function ObjectBrowserPage() {
   const [renameKey, setRenameKey] = useState<string | null>(null);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [metadataOpen, setMetadataOpen] = useState(false);
+  // New folder and share-link create nothing addressable and are dismissed as
+  // soon as they are answered, so per docs/ROUTES.md they stay component state.
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [shareKey, setShareKey] = useState<string | null>(null);
   // A link that names an object (`?obj=`) is a link to that object: opening it
   // should show the object, not the folder with the inspector collapsed.
   const [inspectorOpen, setInspectorOpen] = useState(activeKey !== null);
+
+  const goToUpload = useCallback(() => {
+    void navigate({ to: '/buckets/$bucketId/upload/$', params: { bucketId, _splat: prefix } });
+  }, [navigate, bucketId, prefix]);
+
+  const goToImport = useCallback(() => {
+    void navigate({ to: '/buckets/$bucketId/import/$', params: { bucketId, _splat: prefix } });
+  }, [navigate, bucketId, prefix]);
 
   const zip = useDownloadZip(scope);
 
@@ -325,7 +380,7 @@ export function ObjectBrowserPage() {
             onSuccess: (blob) => {
               downloadBlob(`${entry.name}.zip`, blob);
               recordCompletedDownload(
-                { ...scope, serverName: server?.name ?? scope.serverId },
+                { ...scope, bucketId, serverName: server?.name ?? scope.serverId },
                 entry.prefix,
                 blob.size,
               );
@@ -336,7 +391,7 @@ export function ObjectBrowserPage() {
         return;
       }
       enqueueDownload({
-        scope: { ...scope, serverName: server?.name ?? scope.serverId },
+        scope: { ...scope, bucketId, serverName: server?.name ?? scope.serverId },
         key: entry.object.key,
         sizeBytes: entry.object.size,
         versionId: entry.object.versionId ?? undefined,
@@ -365,7 +420,7 @@ export function ObjectBrowserPage() {
         onSuccess: (blob) => {
           downloadBlob(ZIP_FILENAME, blob);
           recordCompletedDownload(
-            { ...scope, serverName: server?.name ?? scope.serverId },
+            { ...scope, bucketId, serverName: server?.name ?? scope.serverId },
             ZIP_FILENAME,
             blob.size,
           );
@@ -396,19 +451,29 @@ export function ObjectBrowserPage() {
   const batchable =
     !selectionHasFolders && selectedKeys.length > 0 && selectedKeys.length <= OBJECT_BATCH_MAX_KEYS;
 
-  /** Hands a selection to the job engine: one request describes the whole set. */
+  /**
+   * Hands a selection to the job engine. The selection is not identity and not
+   * view state, so it travels in router history state rather than in the URL —
+   * and it travels as the keys themselves: `CreateJobRequest.source.keys` takes
+   * them, so the glob that used to approximate a selection is gone.
+   */
   const runAsJob = useCallback(
     (jobType?: 'tag' | 'storage-class' | 'retention') => {
-      const keys = selectedKeys;
-      dialogs.open('new-job', {
-        server: scope.serverId,
-        bucket: scope.bucket,
-        prefix,
-        glob: keysToGlob(keys),
-        ...(jobType === undefined ? {} : { type: jobType }),
+      void navigate({
+        to: '/jobs/new',
+        state: routeState({
+          serverId: scope.serverId,
+          bucket: scope.bucket,
+          prefix,
+          keys: selectedKeys,
+          prefixes: selectedEntries
+            .filter((entry) => entry.kind === 'prefix')
+            .map((entry) => (entry.kind === 'prefix' ? entry.prefix : '')),
+          type: jobType,
+        }),
       });
     },
-    [dialogs, prefix, scope.bucket, scope.serverId, selectedKeys],
+    [navigate, prefix, scope.bucket, scope.serverId, selectedEntries, selectedKeys],
   );
 
   /** One entry point for the four metadata actions: batch now, or job wizard. */
@@ -448,10 +513,10 @@ export function ObjectBrowserPage() {
         goToPrefix(entry.prefix);
         return;
       }
-      setSearch({ obj: entry.object.key });
+      goToObject(entry.object.key);
       setInspectorOpen(true);
     },
-    [goToPrefix, setSearch],
+    [goToPrefix, goToObject],
   );
 
   /**
@@ -465,10 +530,10 @@ export function ObjectBrowserPage() {
         openEntry(entry);
         return;
       }
-      setSearch({ obj: entry.kind === 'object' ? entry.object.key : entry.prefix });
+      goToObject(entry.kind === 'object' ? entry.object.key : entry.prefix);
       setInspectorOpen(true);
     },
-    [isMobile, openEntry, setSearch],
+    [isMobile, openEntry, goToObject],
   );
 
   /* ------------------------- page-wide drag & drop ------------------- */
@@ -499,7 +564,7 @@ export function ObjectBrowserPage() {
       void filesFromDataTransfer(event.dataTransfer, { allowFolders: true }).then((dropped) => {
         if (dropped.length === 0) return;
         enqueueUploads({
-          scope: { ...scope, serverName: server?.name ?? scope.serverId },
+          scope: { ...scope, bucketId, serverName: server?.name ?? scope.serverId },
           items: dropped.map((entry) => ({ file: entry.file, relativePath: entry.relativePath })),
           destPrefix: prefix,
           overwrite: false,
@@ -551,7 +616,6 @@ export function ObjectBrowserPage() {
 
   /* -------------------------------- render -------------------------- */
 
-  const uploadParams = { server: params.server, bucket: params.bucket, prefix };
 
   const inspector =
     activeEntry === null || activeKey === null ? null : (
@@ -564,7 +628,7 @@ export function ObjectBrowserPage() {
         versioned={versioned}
         onClose={() => {
           setInspectorOpen(false);
-          setSearch({ obj: undefined });
+          closeObject();
         }}
         onDownload={() => downloadEntry(activeEntry)}
         onEditContents={() => setEditKey(activeKey)}
@@ -580,9 +644,9 @@ export function ObjectBrowserPage() {
         loading={bucket.isLoading}
         actions={
           <>
-            <BucketSettingsMenu server={params.server} bucket={params.bucket} />
+            <BucketSettingsMenu bucketId={bucketId} bucket={scope.bucket} />
             <ButtonGroup>
-              <Button onClick={() => dialogs.openHere('upload', uploadParams)}>
+              <Button onClick={goToUpload}>
                 <UploadIcon />
                 {tCommon('action.upload')}
               </Button>
@@ -593,15 +657,15 @@ export function ObjectBrowserPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => dialogs.openHere('upload', uploadParams)}>
+                  <DropdownMenuItem onSelect={goToUpload}>
                     <FilePlusIcon />
                     {t('browse.toolbar.uploadFiles')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => dialogs.openHere('upload', uploadParams)}>
+                  <DropdownMenuItem onSelect={goToUpload}>
                     <FolderUpIcon />
                     {t('browse.toolbar.uploadFolder')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => dialogs.openHere('import-url', uploadParams)}>
+                  <DropdownMenuItem onSelect={goToImport}>
                     <GlobeIcon />
                     {t('browse.toolbar.importUrl')}
                   </DropdownMenuItem>
@@ -621,7 +685,7 @@ export function ObjectBrowserPage() {
         <Card className="min-w-0 overflow-hidden p-0">
           {/* toolbar */}
           <div className="flex flex-wrap items-center gap-2 border-b p-3">
-            <PathBar bucket={params.bucket} prefix={prefix} onNavigate={goToPrefix} />
+            <PathBar bucket={scope.bucket} prefix={prefix} onNavigate={goToPrefix} />
 
             <div className="ms-auto flex flex-wrap items-center gap-2">
               <InputGroup className="w-full sm:w-56">
@@ -711,7 +775,7 @@ export function ObjectBrowserPage() {
                 variant="outline"
                 size="icon"
                 aria-label={t('browse.toolbar.newFolder')}
-                onClick={() => dialogs.openHere('new-folder', uploadParams)}
+                onClick={() => setNewFolderOpen(true)}
               >
                 <FolderPlusIcon />
               </Button>
@@ -860,12 +924,12 @@ export function ObjectBrowserPage() {
                   <div className="flex flex-wrap justify-center gap-2">
                     <Button
                       variant="outline"
-                      onClick={() => dialogs.openHere('new-folder', uploadParams)}
+                      onClick={() => setNewFolderOpen(true)}
                     >
                       <FolderPlusIcon />
                       {t('browse.toolbar.newFolder')}
                     </Button>
-                    <Button onClick={() => dialogs.openHere('upload', uploadParams)}>
+                    <Button onClick={goToUpload}>
                       <UploadIcon />
                       {tCommon('action.upload')}
                     </Button>
@@ -917,7 +981,7 @@ export function ObjectBrowserPage() {
             <UploadIcon className="size-6 text-primary" aria-hidden="true" />
             <span className="text-sm font-medium">{t('browse.dropActive')}</span>
             <span className="ltr-isolate font-mono text-xs text-muted-foreground">
-              {params.bucket}/{prefix}
+              {scope.bucket}/{prefix}
             </span>
           </div>
         </div>
@@ -941,11 +1005,7 @@ export function ObjectBrowserPage() {
                 return;
               case 'share':
                 if (entry.kind !== 'object') return;
-                dialogs.openHere('share-link', {
-                  server: params.server,
-                  bucket: params.bucket,
-                  key: entry.object.key,
-                });
+                setShareKey(entry.object.key);
                 return;
               case 'edit':
                 if (entry.kind !== 'object') return;
@@ -965,7 +1025,7 @@ export function ObjectBrowserPage() {
                 return;
               case 'metadata':
                 if (entry.kind !== 'object') return;
-                setSearch({ obj: entry.object.key });
+                goToObject(entry.object.key);
                 setMetadataOpen(true);
                 return;
               case 'delete':
@@ -998,7 +1058,7 @@ export function ObjectBrowserPage() {
         versioned={versioned}
         onDeleted={() => {
           setSelected(EMPTY_SELECTION);
-          setSearch({ obj: undefined });
+          closeObject();
         }}
       />
 
@@ -1022,7 +1082,7 @@ export function ObjectBrowserPage() {
           objectKey={renameKey}
           onRenamed={(newKey) => {
             setRenameKey(null);
-            setSearch({ obj: newKey });
+            goToObject(newKey);
           }}
         />
       )}
@@ -1050,11 +1110,32 @@ export function ObjectBrowserPage() {
           meta={meta.data}
         />
       )}
+
+      {newFolderOpen ? (
+        <NewFolderDialog
+          scope={scope}
+          prefix={prefix}
+          onClose={() => setNewFolderOpen(false)}
+        />
+      ) : null}
+
+      {shareKey === null ? null : (
+        <ShareLinkDialog scope={scope} objectKey={shareKey} onClose={() => setShareKey(null)} />
+      )}
+
+      {/* `/upload/$` and `/import/$` render their dialogs here. */}
+      <Outlet />
     </>
   );
 }
 
 /* ------------------------------- helpers -------------------------------- */
+
+/** The folder an object key lives in: `a/b/c.txt` -> `a/b/`. */
+function parentPrefixOf(key: string): string {
+  const cut = key.lastIndexOf('/');
+  return cut === -1 ? '' : key.slice(0, cut + 1);
+}
 
 function normalizePrefix(splat: string): string {
   if (splat === '') return '';
@@ -1077,10 +1158,10 @@ function hasFiles(dataTransfer: DataTransfer | null): boolean {
 
 /** The bucket-settings menu from the concept: every section, as a deep link. */
 function BucketSettingsMenu({
-  server,
+  bucketId,
   bucket,
 }: {
-  readonly server: string;
+  readonly bucketId: string;
   readonly bucket: string;
 }) {
   const { t } = useTranslation('pages');
@@ -1115,8 +1196,8 @@ function BucketSettingsMenu({
               key={section.id}
               onSelect={() =>
                 void navigate({
-                  to: '/buckets/$server/$bucket',
-                  params: { server, bucket },
+                  to: '/buckets/$bucketId',
+                  params: { bucketId },
                   hash: section.id,
                 })
               }
@@ -1131,8 +1212,8 @@ function BucketSettingsMenu({
           variant="destructive"
           onSelect={() =>
             void navigate({
-              to: '/buckets/$server/$bucket',
-              params: { server, bucket },
+              to: '/buckets/$bucketId',
+              params: { bucketId },
               hash: 'danger',
             })
           }

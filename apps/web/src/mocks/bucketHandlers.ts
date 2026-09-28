@@ -38,6 +38,7 @@ import {
   type BucketRecord,
 } from './bucketState';
 import { mockServers } from './fixtures';
+import { bucketId } from './ids';
 
 /**
  * The bucket half of the dev mock API: the aggregated list with its summary and
@@ -111,6 +112,7 @@ function emptyJob(entry: BucketRecord, includeVersions: boolean): Job {
         glob: null,
         tags: {},
       },
+      prefixes: [],
       keyCount: null,
     },
     target: null,
@@ -205,6 +207,7 @@ export const bucketHandlers = [
     }
 
     const bucket: Bucket = {
+      id: bucketId(serverId, body.name),
       serverId,
       serverName: server.name,
       provider: server.provider,
@@ -449,8 +452,9 @@ export const bucketHandlers = [
     const results = body.buckets.map((ref) => {
       const entry = findBucket(ref.serverId, ref.bucket);
       if (entry === undefined) {
-        return { ...ref, ok: false, message: 'No such bucket.' };
+        return { ...ref, id: null, ok: false, message: 'No such bucket.' };
       }
+      const id = entry.bucket.id;
 
       switch (body.action) {
         case 'quota':
@@ -458,30 +462,31 @@ export const bucketHandlers = [
             ...entry.bucket,
             quota: quotaFor(body.payload.limitBytes, body.payload.mode, body.payload.threshold),
           };
-          return { ...ref, ok: true, message: null };
+          return { ...ref, id, ok: true, message: null };
         case 'tags':
           entry.detail = { ...entry.detail, tags: { ...body.payload.tags } };
-          return { ...ref, ok: true, message: null };
+          return { ...ref, id, ok: true, message: null };
         case 'access':
           entry.bucket = { ...entry.bucket, access: body.payload.access };
-          return { ...ref, ok: true, message: null };
+          return { ...ref, id, ok: true, message: null };
         case 'lifecycle-rule': {
           const rules = entry.lifecycle.filter((rule) => rule.id !== body.payload.id);
           entry.lifecycle = [...rules, body.payload];
-          return { ...ref, ok: true, message: null };
+          return { ...ref, id, ok: true, message: null };
         }
         case 'delete': {
           const objects = objectsFor(ref.serverId, ref.bucket);
           if (objects.length > 0 && !body.payload.force) {
             return {
               ...ref,
+              id,
               ok: false,
               message: `BUCKET_NOT_EMPTY: ${String(objects.length)} objects`,
             };
           }
           objects.length = 0;
           deleteBucket(ref.serverId, ref.bucket);
-          return { ...ref, ok: true, message: null };
+          return { ...ref, id, ok: true, message: null };
         }
       }
     });

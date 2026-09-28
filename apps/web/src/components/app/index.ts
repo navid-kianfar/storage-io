@@ -24,7 +24,6 @@ export {
   type DatePickerProps,
   type DateRangePickerProps,
 } from './DatePicker';
-export { DialogHost } from './DialogHost';
 export { EmptyState } from './EmptyState';
 export {
   FileDropzone,

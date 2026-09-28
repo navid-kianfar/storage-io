@@ -50,15 +50,15 @@ export default function GrowthChart({ growth }: { readonly growth: Dashboard['gr
   const { t } = useTranslation('pages');
   const format = useFormat();
 
-  const observed = growth.map((point) => point.usedBytes);
+  const observed = growth.map((point) => point.bucketsBytes);
   const lastPoint = growth.at(-1);
   const canProject = growth.length >= MIN_POINTS_FOR_FIT && lastPoint !== undefined;
 
   const rows: Row[] = growth.map((point, index) => ({
     t: point.t,
-    used: point.usedBytes,
+    used: point.bucketsBytes,
     // The projection starts on the last measured point so the two lines meet.
-    projected: canProject && index === growth.length - 1 ? point.usedBytes : null,
+    projected: canProject && index === growth.length - 1 ? point.bucketsBytes : null,
   }));
 
   if (canProject) {

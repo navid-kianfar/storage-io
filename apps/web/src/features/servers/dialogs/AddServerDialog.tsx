@@ -31,7 +31,10 @@ import {
 } from '@/features/servers/connection-schema';
 import { useCreateServer, useTestConnection } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import type { DialogProps } from '@/lib/dialogs/route';
+
+/** This wizard takes no context: it always starts from an empty connection. */
+const EMPTY_PARAMS: Readonly<Record<string, string>> = {};
 
 /**
  * Add a server: provider → connection → verify, exactly as the concept's
@@ -107,8 +110,7 @@ export function AddServerDialog({ onClose }: DialogProps) {
             count: server.counts.buckets,
           }),
         });
-        onClose();
-        void navigate({ to: '/servers/$server', params: { server: server.name } });
+        void navigate({ to: '/servers/$serverId', params: { serverId: server.id } });
       },
       onError: (error) => {
         const matched = applyConnectionFieldErrors(error, form.setError);
@@ -216,4 +218,11 @@ export function AddServerDialog({ onClose }: DialogProps) {
   );
 }
 
-registerDialog('add-server', AddServerDialog);
+/** `/servers/new` — the wizard over the servers list. */
+export function AddServerRoute() {
+  const navigate = useNavigate();
+  const close = useCallback(() => {
+    void navigate({ to: '/servers' });
+  }, [navigate]);
+  return <AddServerDialog params={EMPTY_PARAMS} onClose={close} />;
+}

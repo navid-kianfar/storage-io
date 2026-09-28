@@ -19,11 +19,12 @@ import { SegmentedControl } from '@/components/app/SegmentedControl';
 import { Spinner } from '@/components/app/Spinner';
 import { Switch } from '@/components/app/Switch';
 import { toastProblem } from '@/lib/api/problems';
-import { registerDialog, type DialogProps } from '@/lib/dialogs/registry';
+import type { BucketScope } from '@/lib/entities/resolve';
 import { usePresignObject } from '../api';
 
 /**
- * Share link — `?dialog=share-link`, with `d_server`, `d_bucket` and `d_key`.
+ * Share link for one object. It is answered and dismissed in place, so per
+ * docs/ROUTES.md it is component state and has no URL.
  *
  * The link is a pre-signed URL from the API, signed with the server's own
  * credentials. It is generated on demand rather than on open: a signature has a
@@ -47,13 +48,20 @@ const EXPIRY_SECONDS: Readonly<Record<Expiry, number>> = {
   week: WEEK_SECONDS,
 };
 
-function ShareLinkDialog({ params, onClose }: DialogProps) {
+export interface ShareLinkDialogProps {
+  readonly scope: BucketScope;
+  readonly objectKey: string;
+  readonly onClose: () => void;
+}
+
+/**
+ * A presigned link for one object. It is answered and dismissed in place — there
+ * is nothing to come back to — so per docs/ROUTES.md it has no URL of its own.
+ */
+function ShareLinkDialog({ scope, objectKey, onClose }: ShareLinkDialogProps) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const forceId = useId();
-
-  const scope = { serverId: params.server ?? '', bucket: params.bucket ?? '' };
-  const objectKey = params.key ?? '';
 
   const [expiry, setExpiry] = useState<Expiry>('day');
   const [forceDownload, setForceDownload] = useState(true);
@@ -144,7 +152,5 @@ function ShareLinkDialog({ params, onClose }: DialogProps) {
     </Dialog>
   );
 }
-
-registerDialog('share-link', ShareLinkDialog);
 
 export { ShareLinkDialog };

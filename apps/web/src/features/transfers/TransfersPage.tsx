@@ -39,7 +39,7 @@ import {
 import { EmptyState } from '@/components/app/EmptyState';
 import { Bytes, BytesPerSecond, Duration, Num, Pct } from '@/components/app/Format';
 import { FormActions, OptionRow } from '@/components/app/FormRow';
-import { Label } from '@/components/app/Label';
+import { FormField } from '@/components/app/FormField';
 import { Meter, MeterStack } from '@/components/app/Meter';
 import { PageHeader } from '@/components/app/PageHeader';
 import { SegmentedControl } from '@/components/app/SegmentedControl';
@@ -400,8 +400,8 @@ function transferColumns({
     const lastSlash = transfer.key.lastIndexOf('/');
     const prefix = lastSlash === -1 ? '' : transfer.key.slice(0, lastSlash + 1);
     void navigate({
-      to: '/browse/$server/$bucket/$',
-      params: { server: transfer.serverName, bucket: transfer.bucket, _splat: prefix },
+      to: '/buckets/$bucketId/browse/$',
+      params: { bucketId: transfer.bucketId, _splat: prefix },
     });
   };
 
@@ -700,90 +700,100 @@ function SettingsForm({
         <CardDescription>{t('transfers.settings.description')}</CardDescription>
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="transfers-parallel">{t('transfers.settings.parallel')}</Label>
-          <div className="flex items-center gap-3">
-            <Slider
-              id="transfers-parallel"
-              min={PARALLEL_MIN}
-              max={PARALLEL_MAX}
-              step={1}
-              value={[draft.parallel]}
-              onValueChange={([value]) => patch({ parallel: value ?? PARALLEL_MIN })}
-              aria-label={t('transfers.settings.parallel')}
-              className="grow"
+      <CardContent className="grid items-start gap-4 sm:grid-cols-2">
+        <FormField
+          label={t('transfers.settings.parallel')}
+          hint={t('transfers.settings.parallelHint')}
+        >
+          {({ id, describedBy }) => (
+            <div className="flex h-(--control-h) items-center gap-3">
+              <Slider
+                id={id}
+                aria-describedby={describedBy}
+                min={PARALLEL_MIN}
+                max={PARALLEL_MAX}
+                step={1}
+                value={[draft.parallel]}
+                onValueChange={([value]) => patch({ parallel: value ?? PARALLEL_MIN })}
+                aria-label={t('transfers.settings.parallel')}
+                className="grow"
+              />
+              <Badge variant="secondary">
+                <Num value={draft.parallel} />
+              </Badge>
+            </div>
+          )}
+        </FormField>
+
+        <FormField
+          label={t('transfers.settings.partSize')}
+          hint={t('transfers.settings.partSizeHint')}
+        >
+          {({ id, describedBy }) => (
+            <Combobox
+              id={id}
+              aria-describedby={describedBy}
+              options={PART_SIZES.map((size) => ({
+                value: String(size),
+                label: `${String(size)} ${t('transfers.settings.megabytes')}`,
+              }))}
+              value={String(draft.partSizeMb)}
+              onValueChange={(value) => {
+                if (value === null) return;
+                const parsed = Number.parseInt(value, 10);
+                if (parsed !== 8 && parsed !== 16 && parsed !== 64) return;
+                patch({ partSizeMb: parsed });
+              }}
+              aria-label={t('transfers.settings.partSize')}
             />
-            <Badge variant="secondary">
-              <Num value={draft.parallel} />
-            </Badge>
-          </div>
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {t('transfers.settings.parallelHint')}
-          </p>
-        </div>
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">{t('transfers.settings.partSize')}</span>
-          <Combobox
-            options={PART_SIZES.map((size) => ({
-              value: String(size),
-              label: `${String(size)} ${t('transfers.settings.megabytes')}`,
-            }))}
-            value={String(draft.partSizeMb)}
-            onValueChange={(value) => {
-              if (value === null) return;
-              const parsed = Number.parseInt(value, 10);
-              if (parsed !== 8 && parsed !== 16 && parsed !== 64) return;
-              patch({ partSizeMb: parsed });
-            }}
-            aria-label={t('transfers.settings.partSize')}
-          />
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {t('transfers.settings.partSizeHint')}
-          </p>
-        </div>
+        <FormField
+          label={t('transfers.settings.retries')}
+          hint={t('transfers.settings.retriesHint')}
+        >
+          {({ id, describedBy }) => (
+            <div className="flex h-(--control-h) items-center gap-3">
+              <Slider
+                id={id}
+                aria-describedby={describedBy}
+                min={RETRIES_MIN}
+                max={RETRIES_MAX}
+                step={1}
+                value={[draft.retries]}
+                onValueChange={([value]) => patch({ retries: value ?? RETRIES_MIN })}
+                aria-label={t('transfers.settings.retries')}
+                className="grow"
+              />
+              <Badge variant="secondary">
+                <Num value={draft.retries} />
+              </Badge>
+            </div>
+          )}
+        </FormField>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="transfers-retries">{t('transfers.settings.retries')}</Label>
-          <div className="flex items-center gap-3">
-            <Slider
-              id="transfers-retries"
-              min={RETRIES_MIN}
-              max={RETRIES_MAX}
-              step={1}
-              value={[draft.retries]}
-              onValueChange={([value]) => patch({ retries: value ?? RETRIES_MIN })}
-              aria-label={t('transfers.settings.retries')}
-              className="grow"
+        <FormField
+          label={t('transfers.settings.keepIncomplete')}
+          hint={t('transfers.settings.keepIncompleteHint')}
+        >
+          {({ id, describedBy }) => (
+            <Combobox
+              id={id}
+              aria-describedby={describedBy}
+              options={KEEP_DAYS_CHOICES.map((days) => ({
+                value: String(days),
+                label: `${String(days)} ${t('transfers.settings.days')}`,
+              }))}
+              value={String(draft.keepIncompleteDays)}
+              onValueChange={(value) => {
+                if (value === null) return;
+                patch({ keepIncompleteDays: Number.parseInt(value, 10) });
+              }}
+              aria-label={t('transfers.settings.keepIncomplete')}
             />
-            <Badge variant="secondary">
-              <Num value={draft.retries} />
-            </Badge>
-          </div>
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {t('transfers.settings.retriesHint')}
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">{t('transfers.settings.keepIncomplete')}</span>
-          <Combobox
-            options={KEEP_DAYS_CHOICES.map((days) => ({
-              value: String(days),
-              label: `${String(days)} ${t('transfers.settings.days')}`,
-            }))}
-            value={String(draft.keepIncompleteDays)}
-            onValueChange={(value) => {
-              if (value === null) return;
-              patch({ keepIncompleteDays: Number.parseInt(value, 10) });
-            }}
-            aria-label={t('transfers.settings.keepIncomplete')}
-          />
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {t('transfers.settings.keepIncompleteHint')}
-          </p>
-        </div>
+          )}
+        </FormField>
       </CardContent>
 
       <div className="px-(--card-pad)">

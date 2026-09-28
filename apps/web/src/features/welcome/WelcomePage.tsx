@@ -240,7 +240,7 @@ export function WelcomePage() {
                     icon={ServerIcon}
                     label={t('welcome.done.addAnother')}
                     asChild={(content, className) => (
-                      <Link to="/servers" search={{ dialog: 'add-server' }} className={className}>
+                      <Link to="/servers/new" className={className}>
                         {content}
                       </Link>
                     )}
@@ -258,11 +258,7 @@ export function WelcomePage() {
                     icon={KeyRoundIcon}
                     label={t('welcome.done.createKey')}
                     asChild={(content, className) => (
-                      <Link
-                        to="/keys"
-                        search={{ dialog: 'create-access-key' }}
-                        className={className}
-                      >
+                      <Link to="/keys/new" className={className}>
                         {content}
                       </Link>
                     )}
@@ -414,7 +410,13 @@ function PreferencesPanel() {
 
         <FormField
           label={t('welcome.preferences.sizeUnits')}
-          hint={t('welcome.preferences.sizeUnitsHint')}
+          // The hint describes the option that is actually selected: a line about
+          // decimal under a binary selection is worse than no line at all.
+          hint={
+            (region?.sizeUnits ?? 'decimal') === 'binary'
+              ? t('welcome.preferences.sizeUnitsHintBinary')
+              : t('welcome.preferences.sizeUnitsHintDecimal')
+          }
         >
           {({ id }) => (
             <Select

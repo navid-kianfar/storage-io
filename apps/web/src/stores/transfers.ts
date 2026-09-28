@@ -26,6 +26,11 @@ export interface Transfer {
   readonly serverId: string;
   readonly serverName: string;
   readonly bucket: string;
+  /**
+   * The bucket's opaque id, so "open location" can build a route: every URL in
+   * the app is addressed by id, and a bucket name is not one.
+   */
+  readonly bucketId: string;
   /** The full object key, so "open location" knows which folder to go to. */
   readonly key: string;
   readonly totalBytes: number;

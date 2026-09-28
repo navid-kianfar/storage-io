@@ -18,6 +18,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FormField,
   Label,
   RadioGroup,
   RadioGroupItem,
@@ -166,57 +167,61 @@ function BatchActionForm({
       ) : null}
 
       {action === 'storage-class' ? (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">{t('browse.upload.storageClass')}</span>
-          <Combobox
-            options={STORAGE_CLASSES.map((name) => ({ value: name, label: name }))}
-            value={storageClass}
-            onValueChange={setStorageClass}
-            placeholder={tCommon('form.comboboxPlaceholder')}
-            aria-label={t('browse.upload.storageClass')}
-          />
-          <p className="text-[0.8125rem] text-muted-foreground">
-            {t('browse.batch.storageClassHint')}
-          </p>
-        </div>
+        <FormField
+          label={t('browse.upload.storageClass')}
+          hint={t('browse.batch.storageClassHint')}
+        >
+          {({ id }) => (
+            <Combobox
+              id={id}
+              options={STORAGE_CLASSES.map((name) => ({ value: name, label: name }))}
+              value={storageClass}
+              onValueChange={setStorageClass}
+              placeholder={tCommon('form.comboboxPlaceholder')}
+              aria-label={t('browse.upload.storageClass')}
+            />
+          )}
+        </FormField>
       ) : null}
 
       {action === 'retention' ? (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">{t('browse.batch.retentionMode')}</span>
-            <RadioGroup
-              value={mode}
-              onValueChange={(value) =>
-                setMode(value === 'COMPLIANCE' ? 'COMPLIANCE' : 'GOVERNANCE')
-              }
-              className="gap-2"
-            >
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="GOVERNANCE" id="batch-mode-governance" />
-                <Label htmlFor="batch-mode-governance" className="font-normal">
-                  {t('browse.batch.governance')}
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="COMPLIANCE" id="batch-mode-compliance" />
-                <Label htmlFor="batch-mode-compliance" className="font-normal">
-                  {t('browse.batch.compliance')}
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="batch-until">{t('browse.batch.retainUntil')}</Label>
-            <DatePicker
-              id="batch-until"
-              value={until}
-              onValueChange={setUntil}
-              fromDate={new Date()}
-              clearable={false}
-              aria-label={t('browse.batch.retainUntil')}
-            />
-          </div>
+          <FormField label={t('browse.batch.retentionMode')} className="gap-2">
+            {() => (
+              <RadioGroup
+                value={mode}
+                onValueChange={(value) =>
+                  setMode(value === 'COMPLIANCE' ? 'COMPLIANCE' : 'GOVERNANCE')
+                }
+                className="gap-2"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="GOVERNANCE" id="batch-mode-governance" />
+                  <Label htmlFor="batch-mode-governance" className="font-normal">
+                    {t('browse.batch.governance')}
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="COMPLIANCE" id="batch-mode-compliance" />
+                  <Label htmlFor="batch-mode-compliance" className="font-normal">
+                    {t('browse.batch.compliance')}
+                  </Label>
+                </div>
+              </RadioGroup>
+            )}
+          </FormField>
+          <FormField label={t('browse.batch.retainUntil')}>
+            {({ id }) => (
+              <DatePicker
+                id={id}
+                value={until}
+                onValueChange={setUntil}
+                fromDate={new Date()}
+                clearable={false}
+                aria-label={t('browse.batch.retainUntil')}
+              />
+            )}
+          </FormField>
           {mode === 'COMPLIANCE' ? (
             <Alert variant="warning">
               <AlertDescription>{t('browse.batch.complianceWarning')}</AlertDescription>

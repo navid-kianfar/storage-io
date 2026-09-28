@@ -31,7 +31,6 @@ import {
   TooltipTrigger,
   meterToneFor,
 } from '@/components/app';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 
 /**
  * The dashboard's two tables. Both are read-only summaries that link onward —
@@ -51,7 +50,6 @@ export function ServersOverviewTable({
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const dialogs = useDialogs();
 
   const columns = useMemo<readonly ColumnDef<Server, unknown>[]>(
     () => [
@@ -150,7 +148,7 @@ export function ServersOverviewTable({
         getRowId={(server) => server.id}
         loading={loading}
         onRowClick={(server) =>
-          void navigate({ to: '/servers/$server', params: { server: server.id } })
+          void navigate({ to: '/servers/$serverId', params: { serverId: server.id } })
         }
         emptyState={
           <EmptyState
@@ -158,7 +156,7 @@ export function ServersOverviewTable({
             title={t('servers.empty.title')}
             description={t('servers.empty.description')}
             action={
-              <Button onClick={() => dialogs.open('add-server')}>
+              <Button onClick={() => void navigate({ to: '/servers/new' })}>
                 <PlusIcon />
                 {t('servers.add')}
               </Button>
@@ -311,10 +309,7 @@ export function LargestBucketsTable({
         getRowId={(bucket) => `${bucket.serverId}/${bucket.name}`}
         loading={loading}
         onRowClick={(bucket) =>
-          void navigate({
-            to: '/buckets/$server/$bucket',
-            params: { server: bucket.serverId, bucket: bucket.name },
-          })
+          void navigate({ to: '/buckets/$bucketId', params: { bucketId: bucket.id } })
         }
         emptyState={<EmptyState icon={DatabaseIcon} title={t('overview.buckets.emptyTitle')} />}
       />

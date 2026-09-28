@@ -66,7 +66,12 @@ function fileOf(name: string): File {
   return new File([new Uint8Array(8)], name, { type: 'text/plain' });
 }
 
-const SCOPE = { serverId: 's1', serverName: 'minio-prod-01', bucket: 'media-prod' };
+const SCOPE = {
+  serverId: 's1',
+  serverName: 'minio-prod-01',
+  bucket: 'media-prod',
+  bucketId: 'bucket-media-prod',
+};
 
 function upload(names: readonly string[]) {
   return enqueueUploads({

@@ -117,9 +117,8 @@ export function ServerConnectionTab({ server }: { readonly server: Server }) {
             }),
           });
           form.reset(connectionValuesOf(updated));
-          if (updated.name !== server.name) {
-            void navigate({ to: '/servers/$server', params: { server: updated.name } });
-          }
+          // The URL carries the server's id, so a rename changes nothing about
+          // the address — there is nothing to navigate to any more.
         },
         onError: (error) => {
           if (applyConnectionFieldErrors(error, form.setError)) return;

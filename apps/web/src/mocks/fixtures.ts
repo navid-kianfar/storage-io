@@ -11,6 +11,7 @@ import {
   type Server,
   type Settings,
 } from '@storage-io/contracts';
+import { accessKeyId, bucketId } from './ids';
 
 /**
  * Fixtures for the dev mock API and the component tests.
@@ -138,6 +139,7 @@ export const mockServers: readonly Server[] = [
 function bucket(
   overrides: Partial<Bucket> & Pick<Bucket, 'name' | 'serverId' | 'serverName' | 'provider'>,
 ): Bucket {
+  const derivedId = bucketId(overrides.serverId, overrides.name);
   return {
     region: 'us-east-1',
     createdAt: isoAgo(120 * DAY_MS),
@@ -150,6 +152,7 @@ function bucket(
     quota: null,
     unavailable: false,
     ...overrides,
+    id: overrides.id ?? derivedId,
   };
 }
 
@@ -228,6 +231,7 @@ export const mockJobs: readonly Job[] = [
         glob: null,
         tags: {},
       },
+      prefixes: [],
       keyCount: null,
     },
     target: {
@@ -259,11 +263,11 @@ export const mockJobs: readonly Job[] = [
 
 export const mockDashboard: Dashboard = {
   totals: {
-    usedBytes: 18.4e12,
+    bucketsBytes: 18.4e12,
     capacityBytes: 33e12,
     objects: 48_200_000,
     buckets: 126,
-    usedDelta7dBytes: 1.2e12,
+    bucketsDelta7dBytes: 1.2e12,
     objectsDeltaToday: 312_000,
     users: 38,
     accessKeys: 61,
@@ -272,7 +276,7 @@ export const mockDashboard: Dashboard = {
   },
   growth: Array.from({ length: GROWTH_DAYS }, (_unused, index) => ({
     t: isoAgo((GROWTH_DAYS - index) * DAY_MS),
-    usedBytes: GROWTH_START_BYTES + index * GROWTH_PER_DAY_BYTES,
+    bucketsBytes: GROWTH_START_BYTES + index * GROWTH_PER_DAY_BYTES,
   })),
   byServer: mockServers.map((entry) => ({
     serverId: entry.id,
@@ -298,6 +302,7 @@ export const mockDashboard: Dashboard = {
 
 export const mockAccessKeys: readonly AccessKey[] = [
   {
+    id: accessKeyId(mockServers[0]!.id, 'AKIA5RJ2QK4LMNOPQ7F2'),
     serverId: mockServers[0]!.id,
     serverName: 'minio-prod-01',
     provider: 'minio',
@@ -351,13 +356,15 @@ export const mockSearchResults: readonly SearchResult[] = [
     id: entry.id,
     label: entry.name,
     sublabel: entry.endpoint,
-    href: `/servers/${entry.name}`,
+    href: `/servers/${entry.id}`,
+    status: null,
   })),
   ...mockBuckets.map((entry): SearchResult => ({
     type: 'bucket',
-    id: `${entry.serverId}/${entry.name}`,
+    id: entry.id,
     label: entry.name,
     sublabel: entry.serverName,
-    href: `/buckets/${entry.serverName}/${entry.name}`,
+    href: `/buckets/${entry.id}/browse/`,
+    status: null,
   })),
 ];

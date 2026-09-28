@@ -5,8 +5,8 @@ import {
   type AccessKeyFilter,
   type AccessKeyList,
 } from '@storage-io/contracts';
-import { useNavigate, useSearch } from '@tanstack/react-router';
-import type { ColumnDef, PaginationState } from '@tanstack/react-table';
+import { Outlet, useNavigate, useSearch } from '@tanstack/react-router';
+import type { ColumnDef, PaginationState, RowSelectionState } from '@tanstack/react-table';
 import {
   BanIcon,
   CopyIcon,
@@ -37,6 +37,7 @@ import {
   DEFAULT_PAGE_SIZE,
   DataTable,
   Dash,
+  selectionColumn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -56,22 +57,23 @@ import {
 } from '@/components/app';
 import {
   fetchAccessKeysCsv,
+  useAccessKeyById,
+  useAccessKeyBulk,
   useAccessKeys,
   useDeleteAccessKey,
   useUpdateAccessKey,
 } from '@/features/iam/api';
 import { EditAccessKeyDialog } from '@/features/iam/components/EditAccessKeyDialog';
+import { RotateAccessKeyDialog } from '@/features/iam/dialogs/RotateAccessKeyDialog';
 import { UnavailableServersAlert } from '@/features/iam/components/UnavailableServersAlert';
 import { DAY_MS, msUntil } from '@/features/iam/expiry';
 import { useServers } from '@/features/servers/api';
 import { useApiError } from '@/lib/api/useApiError';
+import { useRouteOverlay } from '@/lib/dialogs/route';
 import { csvFileName, downloadBlob } from '@/lib/csv/csv';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { useFormat } from '@/lib/format/FormatProvider';
 
 /** The two dialogs this route owns; the palette and the users page open them by URL. */
-import '@/features/iam/dialogs/CreateAccessKeyDialog';
-import '@/features/iam/dialogs/RotateAccessKeyDialog';
 
 /**
  * Every programmatic credential in the installation, on one page.
@@ -140,7 +142,6 @@ export function KeysPage() {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
   const navigate = useNavigate();
-  const dialogs = useDialogs();
   const apiError = useApiError();
   const format = useFormat();
 
@@ -153,8 +154,33 @@ export function KeysPage() {
     pageIndex: 0,
     pageSize: KEYS_PAGE_SIZE,
   });
-  const [editKey, setEditKey] = useState<AccessKey | null>(null);
+  /**
+   * Editing and rotating a key are that key's own routes — `/keys/$keyId/edit`
+   * and `/keys/$keyId/rotate` — so both are links. The page keeps ownership
+   * because both act on the row behind them and on this list's queries.
+   */
+  const overlay = useRouteOverlay();
+
+  const closeOverlay = useCallback(() => {
+    void navigate({ to: '/keys', search: true });
+  }, [navigate]);
+
+  const setEditKey = useCallback(
+    (key: AccessKey) => {
+      void navigate({ to: '/keys/$keyId/edit', params: { keyId: key.id }, search: true });
+    },
+    [navigate],
+  );
+
+  const openRotate = useCallback(
+    (key: AccessKey) => {
+      void navigate({ to: '/keys/$keyId/rotate', params: { keyId: key.id }, search: true });
+    },
+    [navigate],
+  );
   const [deleteKey, setDeleteKey] = useState<AccessKey | null>(null);
+  const [bulkDelete, setBulkDelete] = useState<readonly AccessKey[]>([]);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   const servers = useServers();
   const keys = useAccessKeys({
@@ -165,9 +191,15 @@ export function KeysPage() {
     pageSize: pagination.pageSize,
   });
   const updateKey = useUpdateAccessKey();
+  const keyBulk = useAccessKeyBulk();
   const removeKey = useDeleteAccessKey();
 
   const items = useMemo(() => keys.data?.items ?? [], [keys.data]);
+
+  /** The key an overlay route names, resolved from its id in one request. */
+  const overlayKey = useAccessKeyById(overlay.params.keyId);
+  const editKey = overlay.name === 'key-edit' ? (overlayKey.data ?? null) : null;
+  const rotateKey = overlay.name === 'key-rotate' ? (overlayKey.data ?? null) : null;
   const counts = keys.data?.counts;
 
   const setSearch = useCallback(
@@ -217,6 +249,38 @@ export function KeysPage() {
       (left, right) => Date.parse(left.expiresAt ?? '') - Date.parse(right.expiresAt ?? ''),
     );
   }, [items]);
+
+  /**
+   * A bulk action is one request — `POST /iam/access-keys/bulk` — and it reports
+   * a row per key, so a partial failure names what it did not reach.
+   */
+  const runBulk = useCallback(
+    (selected: readonly AccessKey[], action: 'enable' | 'disable' | 'delete', successKey: string) => {
+      if (selected.length === 0) return;
+      keyBulk.mutate(
+        { ids: selected.map((key) => key.id), action },
+        {
+          onSuccess: (response) => {
+            const total = response.results.length;
+            const failed = response.results.filter((row) => !row.ok).length;
+            if (failed === 0) {
+              toast.success(t(successKey), {
+                description: t('keys.bulk.applied', { count: total }),
+              });
+            } else {
+              toast.error(t('keys.bulk.partial', { failed, total }));
+            }
+          },
+          onError: (error) => apiError.toastError(error, t('keys.toast.updateFailed')),
+          onSettled: () => {
+            setBulkDelete([]);
+            setRowSelection({});
+          },
+        },
+      );
+    },
+    [apiError, keyBulk, t],
+  );
 
   const copyId = useCallback(
     (key: AccessKey) => {
@@ -298,6 +362,7 @@ export function KeysPage() {
 
   const columns = useMemo<readonly ColumnDef<AccessKey, unknown>[]>(
     () => [
+      selectionColumn<AccessKey>(),
       {
         id: 'accessKeyId',
         header: () => t('keys.column.accessKeyId'),
@@ -401,12 +466,7 @@ export function KeysPage() {
               accessKey={key}
               onCopyId={() => copyId(key)}
               onEdit={() => setEditKey(key)}
-              onRotate={() =>
-                dialogs.openHere('rotate-access-key', {
-                  server: key.serverId,
-                  key: key.accessKeyId,
-                })
-              }
+              onRotate={() => openRotate(key)}
               onDisable={() => disableKey(key)}
               onEnable={() => enableKey(key)}
               onDelete={() => setDeleteKey(key)}
@@ -415,7 +475,7 @@ export function KeysPage() {
         },
       },
     ],
-    [copyId, dialogs, disableKey, enableKey, t, tCommon],
+    [copyId, disableKey, enableKey, openRotate, setEditKey, t, tCommon],
   );
 
   const hasFilters = query.length > 0 || serverId !== null || filter !== 'all';
@@ -431,7 +491,7 @@ export function KeysPage() {
               <FileDownIcon />
               {tCommon('table.exportCsv')}
             </Button>
-            <Button onClick={() => dialogs.openHere('create-access-key')}>
+            <Button onClick={() => void navigate({ to: '/keys/new', search: true })}>
               <PlusIcon />
               {t('keys.create.action')}
             </Button>
@@ -463,10 +523,7 @@ export function KeysPage() {
               onClick={() => {
                 const first = expiringSoon[0];
                 if (first === undefined) return;
-                dialogs.openHere('rotate-access-key', {
-                  server: first.serverId,
-                  key: first.accessKeyId,
-                });
+                openRotate(first);
               }}
             >
               <RotateCwIcon />
@@ -526,12 +583,45 @@ export function KeysPage() {
             aria-label={t('keys.title')}
             columns={columns}
             data={items}
-            getRowId={(key) => `${key.serverId}/${key.accessKeyId}`}
+            getRowId={(key) => key.id}
             loading={keys.isLoading}
             pagination={pagination}
             onPaginationChange={setPagination}
             total={keys.data?.total}
+            rowSelection={rowSelection}
+            onRowSelectionChange={setRowSelection}
             showColumnsMenu
+            bulkActions={({ selectedRows }) => (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={keyBulk.isPending}
+                  onClick={() => runBulk(selectedRows, 'disable', 'keys.toast.disabled')}
+                >
+                  <BanIcon />
+                  {t('keys.disable')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={keyBulk.isPending}
+                  onClick={() => runBulk(selectedRows, 'enable', 'keys.toast.enabled')}
+                >
+                  <PlayIcon />
+                  {t('keys.enable')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={keyBulk.isPending}
+                  onClick={() => setBulkDelete(selectedRows)}
+                >
+                  <Trash2Icon />
+                  {tCommon('action.delete')}
+                </Button>
+              </>
+            )}
             emptyState={
               <EmptyState
                 icon={KeyRoundIcon}
@@ -548,7 +638,7 @@ export function KeysPage() {
                       {tCommon('action.clear')}
                     </Button>
                   ) : (
-                    <Button onClick={() => dialogs.openHere('create-access-key')}>
+                    <Button onClick={() => void navigate({ to: '/keys/new', search: true })}>
                       <PlusIcon />
                       {t('keys.create.action')}
                     </Button>
@@ -560,13 +650,33 @@ export function KeysPage() {
         )}
       </SectionCard>
 
+      {/* `/keys/new` renders here; edit and rotate are driven by their routes. */}
+      <Outlet />
+
       {editKey === null ? null : (
         <EditAccessKeyDialog
           accessKey={editKey}
           expirySupported={expirySupportedFor(editKey)}
-          onClose={() => setEditKey(null)}
+          onClose={closeOverlay}
         />
       )}
+
+      {rotateKey === null ? null : (
+        <RotateAccessKeyDialog accessKey={rotateKey} onClose={closeOverlay} />
+      )}
+
+      <ConfirmDialog
+        open={bulkDelete.length > 0}
+        onOpenChange={(open) => {
+          if (!open) setBulkDelete([]);
+        }}
+        destructive
+        title={t('keys.bulk.deleteTitle', { count: bulkDelete.length })}
+        description={t('keys.bulk.deleteDescription')}
+        confirmLabel={tCommon('action.delete')}
+        busy={keyBulk.isPending}
+        onConfirm={() => runBulk(bulkDelete, 'delete', 'keys.toast.deleted')}
+      />
 
       <ConfirmDialog
         open={deleteKey !== null}

@@ -30,6 +30,7 @@ import {
   validatePolicyDocument,
 } from '@storage-io/contracts';
 import { HttpResponse, http } from 'msw';
+import { iamGroupId, iamPolicyId, iamUserId, accessKeyId as mintKeyId } from './ids';
 import { mockServers } from './fixtures';
 
 /**
@@ -107,6 +108,7 @@ function user(
 ): S3User {
   const ref = serverRef(serverId);
   return {
+    id: iamUserId(serverId, name),
     ...ref,
     provider: mockServers.find((entry) => entry.id === serverId)?.provider ?? 'minio',
     name,
@@ -130,6 +132,7 @@ let users: S3User[] = [
 
 let groups: S3Group[] = [
   {
+    id: iamGroupId(PRIMARY!.id, 'automation'),
     ...serverRef(PRIMARY!.id),
     name: 'automation',
     members: ['backup-agent', 'ci-runner'],
@@ -137,6 +140,7 @@ let groups: S3Group[] = [
     status: 'enabled',
   },
   {
+    id: iamGroupId(PRIMARY!.id, 'analysts'),
     ...serverRef(PRIMARY!.id),
     name: 'analysts',
     members: ['analytics-read'],
@@ -144,6 +148,7 @@ let groups: S3Group[] = [
     status: 'enabled',
   },
   {
+    id: iamGroupId(SECONDARY!.id, 'archive'),
     ...serverRef(SECONDARY!.id),
     name: 'archive',
     members: [],
@@ -198,6 +203,7 @@ function policy(
   attachedCount: number,
 ): PolicyRecord {
   return {
+    id: iamPolicyId(serverId, name),
     ...serverRef(serverId),
     name,
     builtIn,
@@ -251,6 +257,7 @@ function accessKey(
 ): AccessKey {
   const ref = serverRef(serverId);
   return {
+    id: mintKeyId(serverId, accessKeyId),
     ...ref,
     provider: mockServers.find((entry) => entry.id === serverId)?.provider ?? 'minio',
     accessKeyId,
@@ -485,6 +492,7 @@ export const iamHandlers = [
       return problem(HTTP_CONFLICT, 'CONFLICT', `${body.name} already exists on this server.`);
     }
     const created: S3Group = {
+      id: iamGroupId(serverId, body.name),
       ...serverRef(serverId),
       name: body.name,
       members: body.members,
@@ -651,6 +659,7 @@ export const iamHandlers = [
     }
     if (existing === undefined) {
       const created: PolicyRecord = {
+        id: iamPolicyId(serverId, name),
         ...serverRef(serverId),
         name,
         builtIn: false,
@@ -842,6 +851,7 @@ function asDetail(entry: PolicyRecord): PolicyDetail {
     .filter((group) => group.serverId === entry.serverId && group.policies.includes(entry.name))
     .map((group) => group.name);
   return {
+    id: entry.id,
     serverId: entry.serverId,
     serverName: entry.serverName,
     name: entry.name,

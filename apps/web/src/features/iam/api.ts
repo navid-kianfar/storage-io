@@ -1,4 +1,8 @@
 import type {
+  AccessKeyBulkRequest,
+  AccessKeyBulkResponse,
+  IamUserBulkRequest,
+  IamUserBulkResponse,
   AccessKey,
   AccessKeyList,
   CreateAccessKeyRequest,
@@ -62,6 +66,53 @@ function useIamInvalidation(): () => void {
     void queryClient.invalidateQueries({ queryKey: queryKeys.iam.all });
     void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
   };
+}
+
+/* ---------------------------- resolve by id ------------------------------ */
+
+/**
+ * The resolve endpoints, which take the opaque id a URL carries and return the
+ * whole entity (docs/ROUTES.md). A page reached by id calls one of these and gets
+ * both halves in one request: what to render, and the `serverId` + `name` every
+ * other IAM endpoint is addressed by.
+ *
+ * They share the `entities` query scope with `lib/entities/resolve`, so a page and
+ * its breadcrumb resolve the same id once between them.
+ */
+const RESOLVE_STALE_MS = 5 * 60_000;
+
+function useResolveById<T>(kind: string, id: string | undefined, path: string) {
+  return useQuery<T>({
+    queryKey: queryKeys.entities.byId(kind, id ?? ''),
+    queryFn: ({ signal }) => api.get<T>(path, undefined, signal),
+    enabled: id !== undefined && id !== '',
+    staleTime: RESOLVE_STALE_MS,
+    retry: false,
+  });
+}
+
+export function useIamUserById(userId: string | undefined): UseQueryResult<S3UserDetail> {
+  return useResolveById<S3UserDetail>('user', userId, `/iam/users/${encodeURIComponent(userId ?? '')}`);
+}
+
+export function useIamGroupById(groupId: string | undefined): UseQueryResult<S3Group> {
+  return useResolveById<S3Group>('group', groupId, `/iam/groups/${encodeURIComponent(groupId ?? '')}`);
+}
+
+export function useIamPolicyById(policyId: string | undefined): UseQueryResult<PolicyDetail> {
+  return useResolveById<PolicyDetail>(
+    'policy',
+    policyId,
+    `/iam/policies/${encodeURIComponent(policyId ?? '')}`,
+  );
+}
+
+export function useAccessKeyById(keyId: string | undefined): UseQueryResult<AccessKey> {
+  return useResolveById<AccessKey>(
+    'key',
+    keyId,
+    `/iam/access-keys/${encodeURIComponent(keyId ?? '')}`,
+  );
 }
 
 /* ------------------------------- S3 users -------------------------------- */
@@ -168,6 +219,40 @@ export function useDeleteIamUser(): UseMutationResult<void, Error, UserRef> {
   return useMutation({
     mutationFn: ({ serverId, name }) =>
       api.delete<void>(iamPath(serverId, `users/${encodeURIComponent(name)}`)),
+    onSuccess: invalidate,
+  });
+}
+
+/* ------------------------------ bulk actions ----------------------------- */
+
+/**
+ * `POST /iam/users/bulk` and `POST /iam/access-keys/bulk`.
+ *
+ * A bulk action is **one** request. The lists send the opaque ids they already
+ * have, the API resolves them and reports one row per target, so a partial
+ * failure names the rows it did not reach instead of leaving the operator to
+ * guess which of forty requests failed.
+ */
+export function useIamUserBulk(): UseMutationResult<
+  IamUserBulkResponse,
+  Error,
+  IamUserBulkRequest
+> {
+  const invalidate = useIamInvalidation();
+  return useMutation({
+    mutationFn: (body) => api.post<IamUserBulkResponse>('/iam/users/bulk', body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAccessKeyBulk(): UseMutationResult<
+  AccessKeyBulkResponse,
+  Error,
+  AccessKeyBulkRequest
+> {
+  const invalidate = useIamInvalidation();
+  return useMutation({
+    mutationFn: (body) => api.post<AccessKeyBulkResponse>('/iam/access-keys/bulk', body),
     onSuccess: invalidate,
   });
 }

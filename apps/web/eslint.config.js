@@ -82,7 +82,14 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
-      'no-restricted-syntax': ['error', ...noNativePrimitives],
+      'no-restricted-syntax': [
+        'error',
+        ...noNativePrimitives,
+        {
+          selector: 'TSEnumDeclaration',
+          message: 'Use a `as const` array plus a union type; TS enums do not erase cleanly.',
+        },
+      ],
       'no-restricted-globals': [
         'error',
         { name: 'confirm', message: 'Use ConfirmDialog instead.' },
@@ -90,6 +97,28 @@ export default tseslint.config(
         { name: 'prompt', message: 'Use a Dialog with a form instead.' },
       ],
       eqeqeq: ['error', 'always', { null: 'ignore' }],
+
+      /*
+       * The team's code standard, as the root `eslint.config.mjs` states it. This
+       * package is ignored there — flat configs replace rather than extend — so
+       * the standard is repeated here instead of silently not applying.
+       */
+      // No fire-and-forget async: a rejected promise nobody observes is a
+      // silent failure the operator sees as "nothing happened".
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/require-await': 'error',
+      '@typescript-eslint/return-await': ['error', 'in-try-catch'],
+      // Never swallow an exception.
+      'no-empty': ['error', { allowEmptyCatch: false }],
+      // Immutable by default.
+      'prefer-const': 'error',
+      'no-var': 'error',
+      // Guard clauses and early returns, not nesting.
+      'max-depth': ['error', 3],
+      complexity: ['warn', 20],
+      // Match exhaustively on closed types.
+      '@typescript-eslint/switch-exhaustiveness-check': 'error',
     },
   },
   {

@@ -1,6 +1,6 @@
 import { CONFLICT_STRATEGIES, type ConflictStrategy } from '@storage-io/contracts';
 import { ChevronRightIcon, FolderIcon, HouseIcon } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/app/Alert';
@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/app/Dialog';
 import { Input } from '@/components/app/Input';
-import { Label } from '@/components/app/Label';
+import { FormField } from '@/components/app/FormField';
 import { ProviderMark } from '@/components/app/ProviderMark';
 import { SegmentedControl } from '@/components/app/SegmentedControl';
 import { Spinner } from '@/components/app/Spinner';
@@ -94,7 +94,6 @@ function Body({
 }) {
   const { t } = useTranslation('pages');
   const { t: tCommon } = useTranslation();
-  const prefixId = useId();
 
   const servers = useServerList();
   /**
@@ -189,47 +188,52 @@ function Body({
         </DialogDescription>
       </DialogHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">{t('browse.copy.server')}</span>
-          <Combobox
-            options={serverOptions}
-            value={chosenServerId}
-            onValueChange={(next) => {
-              setDestServerId(next);
-              // A bucket and a prefix only mean something on the server they were
-              // picked from, so choosing another server clears both.
-              if (next === chosenServerId) return;
-              setDestBucket(next === sourceServerId ? scope.bucket : null);
-              setDestPrefix(next === sourceServerId ? sourcePrefix : '');
-            }}
-            placeholder={tCommon('form.comboboxPlaceholder')}
-            aria-label={t('browse.copy.server')}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">{t('browse.copy.bucket')}</span>
-          <Combobox
-            options={bucketOptions}
-            value={destBucket}
-            onValueChange={setDestBucket}
-            placeholder={tCommon('form.comboboxPlaceholder')}
-            disabled={chosenServerId === null || bucketList.isLoading}
-            aria-label={t('browse.copy.bucket')}
-          />
-        </div>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <FormField label={t('browse.copy.server')}>
+          {({ id }) => (
+            <Combobox
+              id={id}
+              options={serverOptions}
+              value={chosenServerId}
+              onValueChange={(next) => {
+                setDestServerId(next);
+                // A bucket and a prefix only mean something on the server they were
+                // picked from, so choosing another server clears both.
+                if (next === chosenServerId) return;
+                setDestBucket(next === sourceServerId ? scope.bucket : null);
+                setDestPrefix(next === sourceServerId ? sourcePrefix : '');
+              }}
+              placeholder={tCommon('form.comboboxPlaceholder')}
+              aria-label={t('browse.copy.server')}
+            />
+          )}
+        </FormField>
+        <FormField label={t('browse.copy.bucket')}>
+          {({ id }) => (
+            <Combobox
+              id={id}
+              options={bucketOptions}
+              value={destBucket}
+              onValueChange={setDestBucket}
+              placeholder={tCommon('form.comboboxPlaceholder')}
+              disabled={chosenServerId === null || bucketList.isLoading}
+              aria-label={t('browse.copy.bucket')}
+            />
+          )}
+        </FormField>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={prefixId}>{t('browse.copy.prefix')}</Label>
-        <Input
-          id={prefixId}
-          value={destPrefix}
-          onChange={(event) => setDestPrefix(event.target.value)}
-          placeholder="2026/09/"
-          className="ltr-isolate font-mono"
-        />
-      </div>
+      <FormField label={t('browse.copy.prefix')}>
+        {({ id }) => (
+          <Input
+            id={id}
+            value={destPrefix}
+            onChange={(event) => setDestPrefix(event.target.value)}
+            placeholder="2026/09/"
+            className="ltr-isolate font-mono"
+          />
+        )}
+      </FormField>
 
       {chosenServerId === null || destBucket === null ? null : (
         <PrefixBrowser
@@ -239,19 +243,20 @@ function Body({
         />
       )}
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">{t('browse.copy.conflict')}</span>
-        <SegmentedControl
-          options={CONFLICT_STRATEGIES.map((value) => ({
-            value,
-            label: t(`browse.copy.conflict${value.charAt(0).toUpperCase()}${value.slice(1)}`),
-          }))}
-          value={conflict}
-          onValueChange={setConflict}
-          className="w-full"
-          aria-label={t('browse.copy.conflict')}
-        />
-      </div>
+      <FormField label={t('browse.copy.conflict')}>
+        {() => (
+          <SegmentedControl
+            options={CONFLICT_STRATEGIES.map((value) => ({
+              value,
+              label: t(`browse.copy.conflict${value.charAt(0).toUpperCase()}${value.slice(1)}`),
+            }))}
+            value={conflict}
+            onValueChange={setConflict}
+            className="w-full"
+            aria-label={t('browse.copy.conflict')}
+          />
+        )}
+      </FormField>
 
       {sameTarget ? (
         <Alert variant="warning">

@@ -5,7 +5,7 @@ import {
   type BucketRef,
   type BucketSort,
 } from '@storage-io/contracts';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ColumnDef, RowSelectionState, VisibilityState } from '@tanstack/react-table';
 import {
   CopyIcon,
@@ -46,7 +46,6 @@ import { Spinner } from '@/components/app/Spinner';
 import { useServerList } from '@/features/shell/api';
 import { toastProblem } from '@/lib/api/problems';
 import { downloadBlob, timestampedFilename } from '@/lib/csv';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
 import { fetchBucketsCsv, s3Uri, useBucketBulkAction, useBuckets } from './api';
 import { BUCKET_HIDDEN_COLUMNS, bucketColumns } from './columns';
 import { BucketAccessDialog } from './dialogs/BucketAccessDialog';
@@ -56,7 +55,6 @@ import { DeleteBucketDialog } from './dialogs/DeleteBucketDialog';
 import { EmptyBucketDialog } from './dialogs/EmptyBucketDialog';
 import { LifecycleRuleDialog } from './dialogs/LifecycleRuleDialog';
 import { reportBulkResult } from './dialogs/bulkResult';
-import './dialogs/CreateBucketDialog';
 
 /**
  * `/buckets` — every bucket on every server in one list.
@@ -105,7 +103,6 @@ export function BucketsPage() {
   const { t: tCommon } = useTranslation();
   const { t: tDomain } = useTranslation('domain');
   const navigate = useNavigate();
-  const dialogs = useDialogs();
 
   const search: BucketsSearch = useSearch({ strict: false });
   const servers = useServerList();
@@ -183,15 +180,12 @@ export function BucketsPage() {
           switch (action) {
             case 'browse':
               void navigate({
-                to: '/browse/$server/$bucket/$',
-                params: { server: bucket.serverName, bucket: bucket.name, _splat: '' },
+                to: '/buckets/$bucketId/browse/$',
+                params: { bucketId: bucket.id, _splat: '' },
               });
               return;
             case 'settings':
-              void navigate({
-                to: '/buckets/$server/$bucket',
-                params: { server: bucket.serverName, bucket: bucket.name },
-              });
+              void navigate({ to: '/buckets/$bucketId', params: { bucketId: bucket.id } });
               return;
             case 'copy-uri':
               void copyToClipboard(s3Uri(bucket.name), tCommon('action.copied'));
@@ -296,7 +290,7 @@ export function BucketsPage() {
               {exporting ? <Spinner /> : <FileDownIcon />}
               {t('buckets.export.action')}
             </Button>
-            <Button onClick={() => dialogs.openHere('create-bucket')}>
+            <Button onClick={() => void navigate({ to: '/buckets/new' })}>
               <PlusIcon />
               {t('buckets.create.title')}
             </Button>
@@ -361,7 +355,7 @@ export function BucketsPage() {
                 >
                   {t('buckets.empty.reset')}
                 </Button>
-                <Button onClick={() => dialogs.openHere('create-bucket')}>
+                <Button onClick={() => void navigate({ to: '/buckets/new' })}>
                   <PlusIcon />
                   {t('buckets.create.title')}
                 </Button>
@@ -555,6 +549,9 @@ export function BucketsPage() {
           );
         }}
       />
+
+      {/* `/buckets/new` renders here. */}
+      <Outlet />
     </>
   );
 }

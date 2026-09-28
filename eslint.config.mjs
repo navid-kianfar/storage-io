@@ -4,13 +4,18 @@ import globals from 'globals';
 import prettier from 'eslint-config-prettier';
 
 /**
- * One flat config for the whole workspace. Formatting is Prettier's job — every
- * stylistic rule is off — so what is left here is correctness and the team's
- * code standard.
+ * One flat config for the workspace's Node packages. Formatting is Prettier's job
+ * — every stylistic rule is off — so what is left here is correctness and the
+ * team's code standard.
  *
- * `apps/web` is not listed: the agent building it adds its own React/JSX block.
- * The shared blocks below already apply to it, so that agent extends rather than
- * replaces.
+ * `apps/web` is **ignored** here and linted by its own `apps/web/eslint.config.js`
+ * (`pnpm lint` at the root runs both). Flat configs do not cascade: a nested
+ * config replaces this one for its own files rather than extending it, so the two
+ * cannot be merged from here. The web config needs the React plugins, which are
+ * that package's dependencies and are not resolvable from the root, and it needs
+ * its own `tsconfigRootDir` for the type-aware rules. It carries this file's code
+ * standard — `max-depth`, no floating promises, exhaustive switches — as its own
+ * rules, so nothing here is lost by the split.
  */
 export default tseslint.config(
   {
@@ -22,6 +27,8 @@ export default tseslint.config(
       '**/drizzle/**',
       'design/**',
       '**/*.d.ts',
+      // Its own flat config; see the note above.
+      'apps/web/**',
     ],
   },
 

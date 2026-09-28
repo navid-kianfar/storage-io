@@ -19,8 +19,8 @@
     "addServer": "Add server",
     "createAccessKey": "Create access key",
     "createS3User": "Create S3 user",
-    "startBulkJob": "Start bulk job",
-    "shareLink": "Generate share link"
+    "createPolicy": "Create policy",
+    "startBulkJob": "Start bulk job"
   },
   "preference": {
     "toggleTheme": "Toggle theme",

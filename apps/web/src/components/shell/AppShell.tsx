@@ -2,7 +2,6 @@ import { Outlet } from '@tanstack/react-router';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { DialogHost } from '@/components/app/DialogHost';
 import { AppSidebar } from '@/components/shell/AppSidebar';
 import { CommandPalette } from '@/components/shell/CommandPalette';
 import { Topbar } from '@/components/shell/Topbar';
@@ -26,7 +25,7 @@ import { hasPaletteModifier } from '@/lib/platform';
  * `Settings.region` into the formatting context.
  *
  * Everything below it can assume: a session exists, formatting is configured, and
- * a dialog opened by `?dialog=` will render.
+ * a dialog route renders through the page's own `<Outlet/>`.
  */
 export function AppShell({ children }: { readonly children?: ReactNode }) {
   const { t } = useTranslation('auth');
@@ -104,7 +103,6 @@ export function AppShell({ children }: { readonly children?: ReactNode }) {
           </main>
         </SidebarInset>
 
-        <DialogHost />
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       </SidebarProvider>
     </FormatProvider>

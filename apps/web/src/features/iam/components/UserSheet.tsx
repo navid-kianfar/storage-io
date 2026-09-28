@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router';
 import type { AccessKey, S3User } from '@storage-io/contracts';
 import {
   BanIcon,
@@ -16,7 +17,7 @@ import {
   TriangleAlertIcon,
   UsersIcon,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -70,7 +71,7 @@ import {
 } from '@/features/iam/api';
 import { EditAccessKeyDialog } from '@/features/iam/components/EditAccessKeyDialog';
 import { useApiError } from '@/lib/api/useApiError';
-import { useDialogs } from '@/lib/dialogs/useDialogs';
+import { routeState } from '@/lib/dialogs/route';
 
 /**
  * Everything about one S3 user, in four tabs.
@@ -99,7 +100,7 @@ export function UserSheet({
   const { t: tCommon } = useTranslation();
   const { t: tDomain } = useTranslation('domain');
   const apiError = useApiError();
-  const dialogs = useDialogs();
+  const navigate = useNavigate();
 
   const ref: UserRef = { serverId: user.serverId, name: user.name };
   const detail = useIamUser(ref);
@@ -120,6 +121,14 @@ export function UserSheet({
   const ownPolicies = current?.policies ?? user.policies;
   const inherited = current?.inheritedPolicies ?? [];
   const keys = current?.accessKeys ?? [];
+
+  /** "New key for this user" — the `/keys/new` route, with the user as context. */
+  const newKeyForUser = useCallback(() => {
+    void navigate({
+      to: '/keys/new',
+      state: routeState({ serverId: user.serverId, userName: user.name }),
+    });
+  }, [navigate, user.serverId, user.name]);
   const memberGroups = current?.groups ?? user.groups;
 
   const arn = `arn:aws:iam:::user/${user.name}`;
@@ -239,11 +248,7 @@ export function UserSheet({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() =>
-                    dialogs.open('create-access-key', { server: user.serverId, user: user.name })
-                  }
-                >
+                <DropdownMenuItem onSelect={() => newKeyForUser()}>
                   <KeyRoundIcon />
                   {t('keys.create.action')}
                 </DropdownMenuItem>
@@ -432,9 +437,7 @@ export function UserSheet({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() =>
-                      dialogs.open('create-access-key', { server: user.serverId, user: user.name })
-                    }
+                    onClick={newKeyForUser}
                   >
                     <PlusIcon />
                     {t('keys.create.action')}
@@ -487,9 +490,9 @@ export function UserSheet({
                               size="sm"
                               disabled={key.status === 'expired'}
                               onClick={() =>
-                                dialogs.open('rotate-access-key', {
-                                  server: key.serverId,
-                                  key: key.accessKeyId,
+                                void navigate({
+                                  to: '/keys/$keyId/rotate',
+                                  params: { keyId: key.id },
                                 })
                               }
                             >

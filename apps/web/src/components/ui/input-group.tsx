@@ -13,7 +13,10 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
       role="group"
       className={cn(
         "group/input-group relative flex w-full items-center rounded-md border border-input shadow-xs transition-[color,box-shadow] outline-none dark:bg-input/30",
-        "h-9 min-w-0 has-[>textarea]:h-auto",
+        // --control-h, not h-9: an input group sits beside an Input, a Select or a
+        // Combobox in a two-column row, and a fixed height is a row whose controls
+        // do not line up — and one that ignores the density setting.
+        "h-(--control-h) min-w-0 has-[>textarea]:h-auto",
 
         // Variants based on alignment.
         "has-[>[data-align=inline-start]]:[&>input]:ps-2",
